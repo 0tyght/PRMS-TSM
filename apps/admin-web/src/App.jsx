@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ORGANIZATION } from "@prms/shared";
 import { CasesPage, PetsPage, RegistrationsPage, ReportsPage, SettingsPage } from "./pages/Operations.jsx";
+import { createApi, IS_GITHUB_DEMO } from "./lib/api.js";
 
 const menu = [
   ["dashboard", "▦", "ภาพรวม"], ["registrations", "⌁", "คำขอขึ้นทะเบียน"],
@@ -68,6 +69,7 @@ function VillageBars({ rows=[] }) { const data = rows.length ? rows.map(r => ({ 
 
 function Login({ onLogin }) {
   const devMode = import.meta.env.DEV;
+  const passwordOptional = devMode || IS_GITHUB_DEMO;
   const [email, setEmail] = useState("admin@thapho.go.th");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -75,6 +77,11 @@ function Login({ onLogin }) {
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError("");
     try {
+      if (IS_GITHUB_DEMO && password.length === 0) {
+        sessionStorage.setItem("prms_access_token", "github-pages-demo");
+        onLogin("github-pages-demo");
+        return;
+      }
       const useDevelopmentAccess = devMode && password.length === 0;
       const response = await fetch(useDevelopmentAccess ? "/api/auth/dev-login" : "/api/auth/login", {
         method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ email, password }),
@@ -86,7 +93,7 @@ function Login({ onLogin }) {
     } catch (err) { setError(err.message || "ไม่สามารถเข้าสู่ระบบได้"); }
     finally { setBusy(false); }
   }
-  return <main className="login-page"><section className="login-card"><div className="login-brand">ทพ</div><p className="eyebrow">{ORGANIZATION.productName}</p><h1>เข้าสู่ระบบเจ้าหน้าที่</h1><p>{ORGANIZATION.shortName}</p><form onSubmit={submit}><label>อีเมล<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required /></label><label>รหัสผ่าน {devMode&&<span className="optional">ไม่ต้องกรอกในช่วงพัฒนา</span>}<input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength="8" required={!devMode} placeholder={devMode?"เว้นว่างเพื่อเข้าสู่ระบบ":"กรอกรหัสผ่าน"}/></label>{error&&<div className="login-error">{error}</div>}<button disabled={busy}>{busy ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบ"}</button></form><small>{devMode?"เมื่อเปิดใช้งานจริง ระบบจะบังคับใช้รหัสผ่าน":"ระบบสำหรับเจ้าหน้าที่ผู้ได้รับอนุญาตเท่านั้น"}</small></section></main>;
+  return <main className="login-page"><section className="login-card"><div className="login-brand">ทพ</div><p className="eyebrow">{ORGANIZATION.productName}</p><h1>เข้าสู่ระบบเจ้าหน้าที่</h1><p>{ORGANIZATION.shortName}</p><form onSubmit={submit}><label>อีเมล<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required /></label><label>รหัสผ่าน {passwordOptional&&<span className="optional">ไม่ต้องกรอกในช่วงพัฒนา</span>}<input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength="8" required={!passwordOptional} placeholder={passwordOptional?"เว้นว่างเพื่อเข้าสู่ระบบ":"กรอกรหัสผ่าน"}/></label>{error&&<div className="login-error">{error}</div>}<button disabled={busy}>{busy ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบ"}</button></form><small>{passwordOptional?"เว็บไซต์สาธิตสำหรับตรวจสอบระบบก่อนเปิดใช้งานจริง":"ระบบสำหรับเจ้าหน้าที่ผู้ได้รับอนุญาตเท่านั้น"}</small></section></main>;
 }
 
 export default function App() {
@@ -101,11 +108,10 @@ export default function App() {
 
   useEffect(() => {
     if (!token) return;
+    const api = createApi(token);
     Promise.all([
-      fetch("/api/admin/dashboard", { headers: { Authorization: `Bearer ${token}` } }).then(r => r.ok ? r.json() : Promise.reject()),
-      fetch("/api/admin/registrations", { headers: { Authorization: `Bearer ${token}` } }).then(r => r.ok ? r.json() : Promise.reject()),
-      fetch("/api/admin/reports/villages", { headers: { Authorization: `Bearer ${token}` } }).then(r => r.ok ? r.json() : Promise.reject()),
-    ]).then(([a, b, c]) => { setStats(a.data); setRequests(b.data); setVillages(c.data); setLive(true); }).catch(() => setLive(false));
+      api.get("/api/admin/dashboard"), api.get("/api/admin/registrations"), api.get("/api/admin/reports/villages"),
+    ]).then(([a, b, c]) => { setStats(a); setRequests(b); setVillages(c); setLive(true); }).catch(() => setLive(false));
   }, [token]);
 
   if (!token) return <Login onLogin={setToken} />;

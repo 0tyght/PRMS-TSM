@@ -1,5 +1,10 @@
+import { demoRequest } from "./demoData.js";
+
+export const IS_GITHUB_DEMO = import.meta.env.VITE_GITHUB_DEMO === "true";
+
 export function createApi(token) {
   async function request(path, options = {}) {
+    if (IS_GITHUB_DEMO) return demoRequest(path, options);
     const response = await fetch(path, {
       ...options,
       headers: { "Content-Type":"application/json", Authorization:`Bearer ${token}`, ...options.headers },

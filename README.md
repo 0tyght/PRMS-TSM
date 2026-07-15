@@ -26,6 +26,8 @@ Citizen Web: `http://localhost:5174`
 
 API: `http://localhost:4100/api/health`
 
+เว็บไซต์สาธิต Admin Web: `https://0tyght.github.io/PRMS-TSM/`
+
 ข้อมูลระบบจริงต้องผ่าน API และฐานข้อมูลกลางเท่านั้น ห้ามใช้ `localStorage` เป็นแหล่งข้อมูลหลัก
 
 ## ลำดับความสำคัญ
