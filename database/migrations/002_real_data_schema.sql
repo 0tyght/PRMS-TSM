@@ -4,20 +4,24 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- =========================================================
--- PRMS-TSM Database Migration
+-- PRMS-TSM Migration 002
 -- เพิ่มโครงสร้างสำหรับใช้งานข้อมูลจริง
--- ไม่ลบตารางและไม่ลบข้อมูลเดิม
+--
+-- ไฟล์นี้:
+-- 1. ไม่ลบตารางเดิม
+-- 2. ไม่ลบข้อมูลเดิม
+-- 3. สามารถรันซ้ำได้
 -- =========================================================
 
 DELIMITER $$
 
--- ---------------------------------------------------------
--- เพิ่มคอลัมน์เฉพาะเมื่อยังไม่มี
--- ---------------------------------------------------------
+-- =========================================================
+-- Procedure: เพิ่มคอลัมน์เมื่อยังไม่มี
+-- =========================================================
 
-DROP PROCEDURE IF EXISTS add_column_if_missing$$
+DROP PROCEDURE IF EXISTS prms_add_column_if_missing$$
 
-CREATE PROCEDURE add_column_if_missing(
+CREATE PROCEDURE prms_add_column_if_missing(
     IN p_table_name VARCHAR(64),
     IN p_column_name VARCHAR(64),
     IN p_column_definition TEXT
@@ -30,7 +34,7 @@ BEGIN
           AND table_name = p_table_name
           AND column_name = p_column_name
     ) THEN
-        SET @sql_statement = CONCAT(
+        SET @ddl_statement = CONCAT(
             'ALTER TABLE `',
             REPLACE(p_table_name, '`', '``'),
             '` ADD COLUMN `',
@@ -39,19 +43,19 @@ BEGIN
             p_column_definition
         );
 
-        PREPARE prepared_statement FROM @sql_statement;
-        EXECUTE prepared_statement;
-        DEALLOCATE PREPARE prepared_statement;
+        PREPARE prms_statement FROM @ddl_statement;
+        EXECUTE prms_statement;
+        DEALLOCATE PREPARE prms_statement;
     END IF;
 END$$
 
--- ---------------------------------------------------------
--- เพิ่ม Index เฉพาะเมื่อยังไม่มี
--- ---------------------------------------------------------
+-- =========================================================
+-- Procedure: เพิ่ม Index เมื่อยังไม่มี
+-- =========================================================
 
-DROP PROCEDURE IF EXISTS add_index_if_missing$$
+DROP PROCEDURE IF EXISTS prms_add_index_if_missing$$
 
-CREATE PROCEDURE add_index_if_missing(
+CREATE PROCEDURE prms_add_index_if_missing(
     IN p_table_name VARCHAR(64),
     IN p_index_name VARCHAR(64),
     IN p_index_definition TEXT
@@ -64,7 +68,7 @@ BEGIN
           AND table_name = p_table_name
           AND index_name = p_index_name
     ) THEN
-        SET @sql_statement = CONCAT(
+        SET @ddl_statement = CONCAT(
             'ALTER TABLE `',
             REPLACE(p_table_name, '`', '``'),
             '` ADD INDEX `',
@@ -73,104 +77,110 @@ BEGIN
             p_index_definition
         );
 
-        PREPARE prepared_statement FROM @sql_statement;
-        EXECUTE prepared_statement;
-        DEALLOCATE PREPARE prepared_statement;
+        PREPARE prms_statement FROM @ddl_statement;
+        EXECUTE prms_statement;
+        DEALLOCATE PREPARE prms_statement;
     END IF;
 END$$
 
 DELIMITER ;
 
 -- =========================================================
--- 1. ปรับตาราง households
+-- 1. เพิ่มข้อมูลวันที่แก้ไขและ Soft Delete ให้ครัวเรือน
 -- =========================================================
 
-CALL add_column_if_missing(
+CALL prms_add_column_if_missing(
     'households',
     'updated_at',
     'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`'
 );
 
-CALL add_column_if_missing(
+CALL prms_add_column_if_missing(
     'households',
     'deleted_at',
     'DATETIME NULL AFTER `updated_at`'
 );
 
 -- =========================================================
--- 2. ปรับตาราง owners
+-- 2. เพิ่ม Soft Delete ให้เจ้าของสัตว์
+-- owners มี updated_at อยู่แล้วในโครงสร้างเดิม
 -- =========================================================
 
-CALL add_column_if_missing(
+CALL prms_add_column_if_missing(
     'owners',
     'deleted_at',
     'DATETIME NULL AFTER `updated_at`'
 );
 
 -- =========================================================
--- 3. ปรับตาราง pets
--- registered_at คือวันที่สัตว์ได้รับการอนุมัติขึ้นทะเบียนจริง
+-- 3. เพิ่มวันที่อนุมัติขึ้นทะเบียนจริงให้สัตว์
 -- =========================================================
 
-CALL add_column_if_missing(
+CALL prms_add_column_if_missing(
     'pets',
     'registered_at',
     'DATETIME NULL AFTER `photo_path`'
 );
 
 -- =========================================================
--- 4. เพิ่มดัชนีสำหรับค้นหาและสรุปข้อมูลจริง
+-- 4. เพิ่ม Index สำหรับการค้นหาและรายงาน
 -- =========================================================
 
-CALL add_index_if_missing(
+CALL prms_add_index_if_missing(
     'households',
-    'idx_household_deleted',
-    '(`deleted_at`)'
+    'idx_household_active_location',
+    '(`deleted_at`, `village_id`, `house_no`)'
 );
 
-CALL add_index_if_missing(
+CALL prms_add_index_if_missing(
+    'owners',
+    'idx_owner_active_household',
+    '(`deleted_at`, `household_id`)'
+);
+
+CALL prms_add_index_if_missing(
     'owners',
     'idx_owner_name_phone',
     '(`full_name`, `phone`)'
 );
 
-CALL add_index_if_missing(
-    'owners',
-    'idx_owner_household_active',
-    '(`household_id`, `deleted_at`)'
-);
-
-CALL add_index_if_missing(
+CALL prms_add_index_if_missing(
     'pets',
     'idx_pet_owner_name',
     '(`owner_id`, `name`)'
 );
 
-CALL add_index_if_missing(
+CALL prms_add_index_if_missing(
     'pets',
-    'idx_pet_status_deleted',
-    '(`status`, `deleted_at`)'
+    'idx_pet_active_status',
+    '(`deleted_at`, `status`)'
 );
 
-CALL add_index_if_missing(
+CALL prms_add_index_if_missing(
+    'pets',
+    'idx_pet_registered_at',
+    '(`registered_at`)'
+);
+
+CALL prms_add_index_if_missing(
     'registrations',
     'idx_registration_pet_status',
     '(`pet_id`, `status`)'
 );
 
-CALL add_index_if_missing(
+CALL prms_add_index_if_missing(
     'registrations',
     'idx_registration_owner_status',
     '(`owner_id`, `status`)'
 );
 
-CALL add_index_if_missing(
+CALL prms_add_index_if_missing(
     'vaccination_records',
-    'idx_vaccination_due',
+    'idx_vaccination_next_due',
     '(`next_due_at`)'
 );
 
-CALL add_index_if_missing(
+CALL prms_add_index_if_missing(
     'cases',
     'idx_case_village_status',
     '(`village_id`, `status`)'
@@ -178,12 +188,10 @@ CALL add_index_if_missing(
 
 -- =========================================================
 -- 5. ตารางประวัติสถานะสัตว์
--- ใช้เก็บทุกครั้งที่สถานะสัตว์เปลี่ยน เช่น
--- ACTIVE, MISSING, TRANSFERRED, DECEASED
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS pet_status_history (
-    id CHAR(36) PRIMARY KEY,
+    id CHAR(36) NOT NULL,
 
     pet_id CHAR(36) NOT NULL,
 
@@ -209,20 +217,26 @@ CREATE TABLE IF NOT EXISTS pet_status_history (
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
+    PRIMARY KEY (id),
+
     CONSTRAINT fk_pet_status_history_pet
         FOREIGN KEY (pet_id)
-        REFERENCES pets(id),
+        REFERENCES pets(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
 
     CONSTRAINT fk_pet_status_history_user
         FOREIGN KEY (recorded_by)
-        REFERENCES users(id),
+        REFERENCES users(id)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL,
 
     INDEX idx_pet_status_history_pet_date (
         pet_id,
         effective_at
     ),
 
-    INDEX idx_pet_status_history_status (
+    INDEX idx_pet_status_history_status_date (
         new_status,
         effective_at
     )
@@ -231,12 +245,11 @@ CREATE TABLE IF NOT EXISTS pet_status_history (
   COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
--- 6. ตารางประวัติการเปลี่ยนเจ้าของ
--- ป้องกันข้อมูลเจ้าของเดิมสูญหายเมื่อมีการโอนสัตว์
+-- 6. ตารางประวัติการเปลี่ยนเจ้าของสัตว์
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS pet_owner_history (
-    id CHAR(36) PRIMARY KEY,
+    id CHAR(36) NOT NULL,
 
     pet_id CHAR(36) NOT NULL,
 
@@ -252,21 +265,31 @@ CREATE TABLE IF NOT EXISTS pet_owner_history (
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
+    PRIMARY KEY (id),
+
     CONSTRAINT fk_pet_owner_history_pet
         FOREIGN KEY (pet_id)
-        REFERENCES pets(id),
+        REFERENCES pets(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
 
     CONSTRAINT fk_pet_owner_history_previous_owner
         FOREIGN KEY (previous_owner_id)
-        REFERENCES owners(id),
+        REFERENCES owners(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
 
     CONSTRAINT fk_pet_owner_history_new_owner
         FOREIGN KEY (new_owner_id)
-        REFERENCES owners(id),
+        REFERENCES owners(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
 
     CONSTRAINT fk_pet_owner_history_user
         FOREIGN KEY (recorded_by)
-        REFERENCES users(id),
+        REFERENCES users(id)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL,
 
     INDEX idx_pet_owner_history_pet_date (
         pet_id,
@@ -283,7 +306,6 @@ CREATE TABLE IF NOT EXISTS pet_owner_history (
 
 -- =========================================================
 -- 7. เติมวันที่ขึ้นทะเบียนให้ข้อมูลเดิมที่อนุมัติแล้ว
--- เลือกวันที่ตรวจสอบก่อน หากไม่มีจึงใช้วันที่ยื่นคำขอ
 -- =========================================================
 
 UPDATE pets AS p
@@ -306,8 +328,7 @@ SET p.registered_at = approved_registration.approved_at
 WHERE p.registered_at IS NULL;
 
 -- =========================================================
--- 8. สร้างประวัติสถานะเริ่มต้นสำหรับสัตว์เดิม
--- จะไม่เพิ่มซ้ำหากสัตว์มีประวัติอยู่แล้ว
+-- 8. สร้างประวัติสถานะเริ่มต้นให้สัตว์เดิม
 -- =========================================================
 
 INSERT INTO pet_status_history (
@@ -339,8 +360,7 @@ WHERE NOT EXISTS (
 );
 
 -- =========================================================
--- 9. สร้างประวัติเจ้าของเริ่มต้นสำหรับสัตว์เดิม
--- จะไม่เพิ่มซ้ำหากสัตว์มีประวัติเจ้าของอยู่แล้ว
+-- 9. สร้างประวัติเจ้าของเริ่มต้นให้สัตว์เดิม
 -- =========================================================
 
 INSERT INTO pet_owner_history (
@@ -372,18 +392,22 @@ WHERE NOT EXISTS (
 );
 
 -- =========================================================
--- 10. ลบ Stored Procedure ชั่วคราว
+-- 10. ลบ Procedure ชั่วคราว
 -- =========================================================
 
-DROP PROCEDURE IF EXISTS add_column_if_missing;
-DROP PROCEDURE IF EXISTS add_index_if_missing;
+DROP PROCEDURE IF EXISTS prms_add_column_if_missing;
+DROP PROCEDURE IF EXISTS prms_add_index_if_missing;
 
 -- =========================================================
--- 11. แสดงผลตรวจสอบหลัง Migration
+-- 11. ผลตรวจสอบ
 -- =========================================================
 
 SELECT
-    'Migration completed successfully' AS migration_status;
+    'Migration 002 completed successfully' AS migration_status;
+
+SELECT
+    COUNT(*) AS total_pets
+FROM pets;
 
 SELECT
     COUNT(*) AS total_pet_status_history
