@@ -38,7 +38,7 @@ function Sidebar({ page, setPage, open, close, pending }) {
     </aside></>;
 }
 
-function Dashboard({ stats, requests, villages, mapItems, live }) {
+function Dashboard({ stats, requests, villages, mapItems, live, onNavigate }) {
   const total = Number(stats.total || 0);
   const vaccinationCoverage = total ? Math.round(Number(stats.vaccinations || 0) * 100 / total) : 0;
   const sterilizationCoverage = total ? Math.round(Number(stats.sterilizations || 0) * 100 / total) : 0;
@@ -50,15 +50,18 @@ function Dashboard({ stats, requests, villages, mapItems, live }) {
       <StatCard tone="blue" icon="✚" label="รับวัคซีนปีนี้" value={stats.vaccinations} detail={`คิดเป็น ${vaccinationCoverage}% ของสัตว์ทั้งหมด`} />
       <StatCard tone="violet" icon="◇" label="ทำหมันแล้ว" value={stats.sterilizations} detail={`คิดเป็น ${sterilizationCoverage}% ของสัตว์ทั้งหมด`} />
     </section>
-    <DashboardMap items={mapItems} villages={villages} />
-    <section className="main-grid">
-      <article className="panel requests"><div className="panel-head"><div><h2>คำขอล่าสุด</h2><p>รายการจากประชาชนที่ต้องดำเนินการ</p></div><button className="text-btn">ดูทั้งหมด →</button></div><RequestTable requests={requests} /></article>
+    <section className="dashboard-focus-grid">
+      <DashboardMap items={mapItems} villages={villages} />
       <aside className="panel coverage"><div className="panel-head"><div><h2>ความครอบคลุมบริการ</h2><p>เป้าหมายประจำปี 2569</p></div></div>
         <Progress label="วัคซีนพิษสุนัขบ้า" value={vaccinationCoverage} color="green" /><Progress label="การทำหมัน" value={sterilizationCoverage} color="violet" />
-        <div className="case-callout"><span>!</span><div><b>{stats.openCases || 0} เหตุที่กำลังดำเนินการ</b><small>ตรวจสอบรายละเอียดในเมนูแจ้งเหตุ</small></div><button>ตรวจสอบ</button></div>
+        <div className="service-summary"><div><span>สัตว์ขึ้นทะเบียน</span><b>{total.toLocaleString("th-TH")}</b></div><div><span>มีประวัติวัคซีน</span><b>{Number(stats.vaccinations||0).toLocaleString("th-TH")}</b></div><div><span>ทำหมันแล้ว</span><b>{Number(stats.sterilizations||0).toLocaleString("th-TH")}</b></div></div>
+        <div className="case-callout"><span>!</span><div><b>{stats.openCases || 0} เหตุที่กำลังดำเนินการ</b><small>ตรวจสอบรายละเอียดในเมนูแจ้งเหตุ</small></div><button onClick={()=>onNavigate("cases")}>ตรวจสอบ</button></div>
       </aside>
     </section>
-    <section className="village-panel panel"><div className="panel-head"><div><h2>ภาพรวมรายหมู่บ้าน</h2><p>ความครอบคลุมวัคซีนจากข้อมูลจริงในระบบ</p></div><select aria-label="เลือกช่วงเวลา"><option>ปีงบประมาณ 2569</option></select></div><VillageBars rows={villages} /></section>
+    <section className="dashboard-bottom-grid">
+      <article className="panel requests"><div className="panel-head"><div><h2>คำขอล่าสุด</h2><p>รายการจากประชาชนที่ต้องดำเนินการ</p></div><button className="text-btn" onClick={()=>onNavigate("registrations")}>ดูทั้งหมด →</button></div><RequestTable requests={requests.slice(0,6)} /></article>
+      <article className="village-panel panel"><div className="panel-head"><div><h2>ภาพรวมรายหมู่บ้าน</h2><p>ความครอบคลุมวัคซีนจากข้อมูลจริง</p></div><button className="text-btn" onClick={()=>onNavigate("reports")}>ดูรายงาน →</button></div><VillageBars rows={villages} /></article>
+    </section>
   </>;
 }
 
@@ -117,6 +120,6 @@ export default function App() {
   const logout = () => { sessionStorage.removeItem("prms_access_token"); setToken(null); };
 
   return <div className="app-shell"><Header onMenu={() => setMobileMenu(true)} onLogout={logout} /><Sidebar page={page} setPage={setPage} open={mobileMenu} close={() => setMobileMenu(false)} pending={stats.pending} />
-    <main className="content" aria-label={title}>{page === "dashboard" ? <Dashboard stats={stats} requests={requests} villages={villages} mapItems={mapItems} live={live} /> : page === "registrations" ? <RegistrationsPage token={token} onChanged={()=>setLive(false)} /> : page === "pets" ? <PetsPage token={token} /> : page === "services" ? <PetsPage token={token} serviceMode /> : page === "cases" ? <CasesPage token={token} /> : page === "reports" ? <ReportsPage token={token} /> : page === "map" ? <><section className="page-title"><p className="eyebrow">ข้อมูลเชิงพื้นที่</p><h1>แผนที่สัตว์ขึ้นทะเบียน</h1><p>ภาพรวมตำแหน่งสัตว์และจำนวนรายหมู่บ้าน</p></section><DashboardMap items={mapItems} villages={villages}/></> : <SettingsPage />}</main>
+    <main className="content" aria-label={title}>{page === "dashboard" ? <Dashboard stats={stats} requests={requests} villages={villages} mapItems={mapItems} live={live} onNavigate={setPage} /> : page === "registrations" ? <RegistrationsPage token={token} onChanged={()=>setLive(false)} /> : page === "pets" ? <PetsPage token={token} /> : page === "services" ? <PetsPage token={token} serviceMode /> : page === "cases" ? <CasesPage token={token} /> : page === "reports" ? <ReportsPage token={token} /> : page === "map" ? <><section className="page-title"><p className="eyebrow">ข้อมูลเชิงพื้นที่</p><h1>แผนที่สัตว์ขึ้นทะเบียน</h1><p>ภาพรวมตำแหน่งสัตว์และจำนวนรายหมู่บ้าน</p></section><DashboardMap items={mapItems} villages={villages}/></> : <SettingsPage />}</main>
   </div>;
 }
