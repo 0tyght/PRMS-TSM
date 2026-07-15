@@ -20,9 +20,9 @@ export default function DashboardMap({items=[],villages=[]}){
     const animationFrame=requestAnimationFrame(refreshSize);
     const firstTimer=setTimeout(refreshSize,120);
     const secondTimer=setTimeout(refreshSize,450);
-    const observer=new ResizeObserver(refreshSize);
-    observer.observe(elementRef.current);
-    return()=>{cancelAnimationFrame(animationFrame);clearTimeout(firstTimer);clearTimeout(secondTimer);observer.disconnect();map.remove()};
+    const observer=typeof ResizeObserver === "function" ? new ResizeObserver(refreshSize) : null;
+    observer?.observe(elementRef.current);
+    return()=>{cancelAnimationFrame(animationFrame);clearTimeout(firstTimer);clearTimeout(secondTimer);observer?.disconnect();map.remove()};
   },[items,villages]);
   return <section className="dashboard-map panel"><div className="panel-head"><div><h2>แผนที่ภาพรวมเทศบาลท่าโพธ์</h2><p>ตำแหน่งสัตว์ขึ้นทะเบียนและจำนวนรายหมู่บ้าน</p></div><div className="map-legend"><span><i className="dog-dot"/>สุนัข</span><span><i className="cat-dot"/>แมว</span></div></div><div ref={elementRef} className="leaflet-dashboard-map"/><div className="map-foot"><span>กดหมู่บ้านเพื่อขยายพื้นที่</span><span>แสดงสัตว์ที่อนุมัติทะเบียนแล้ว {items.length} ตัว</span></div></section>
 }

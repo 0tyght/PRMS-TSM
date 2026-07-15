@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Component, useEffect, useMemo, useState } from "react";
 import { ORGANIZATION } from "@prms/shared";
 import { CasesPage, PetsPage, RegistrationsPage, ReportsPage, SettingsPage } from "./pages/Operations.jsx";
 import { createApi, IS_GITHUB_DEMO } from "./lib/api.js";
@@ -16,6 +16,16 @@ const statusLabel = {
   SUBMITTED: ["รอตรวจสอบ", "amber"], UNDER_REVIEW: ["กำลังตรวจ", "blue"],
   NEED_MORE_INFO: ["ขอข้อมูลเพิ่ม", "rose"], APPROVED: ["อนุมัติแล้ว", "green"], REJECTED: ["ไม่อนุมัติ", "gray"],
 };
+
+class PageErrorBoundary extends Component {
+  state = { error:null };
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, details) { console.error("PRMS page render failed", error, details); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return <section className="panel page-error" role="alert"><i>!</i><h1>หน้านี้แสดงผลไม่สำเร็จ</h1><p>ระบบเก็บส่วนเมนูไว้ให้แล้ว คุณสามารถกลับไปหน้าภาพรวมและลองเปิดหน้านี้ใหม่ได้</p><button onClick={this.props.onRecover}>กลับหน้าภาพรวม</button></section>;
+  }
+}
 
 function StatCard({ tone, icon, label, value, detail }) {
   return <article className={`stat ${tone}`}><div className="stat-icon">{icon}</div><div><p>{label}</p><strong>{Number(value || 0).toLocaleString("th-TH")}</strong><small>{detail}</small></div></article>;
@@ -119,13 +129,19 @@ export default function App() {
     const api = createApi(token);
     Promise.all([
       api.get("/api/admin/dashboard"), api.get("/api/admin/registrations"), api.get("/api/admin/reports/villages"), api.get("/api/admin/map"),
-    ]).then(([a, b, c, d]) => { setStats(a); setRequests(b); setVillages(c); setMapItems(d); setLive(true); }).catch(() => setLive(false));
+    ]).then(([a, b, c, d]) => {
+      setStats(a && typeof a === "object" && !Array.isArray(a) ? a : initialStats);
+      setRequests(Array.isArray(b) ? b : []);
+      setVillages(Array.isArray(c) ? c : []);
+      setMapItems(Array.isArray(d) ? d : []);
+      setLive(true);
+    }).catch(() => setLive(false));
   }, [token]);
 
   if (!token) return <Login onLogin={setToken} />;
   const logout = () => { sessionStorage.removeItem("prms_access_token"); setToken(null); };
 
   return <div className="app-shell"><Header onMenu={() => setMobileMenu(true)} onLogout={logout} /><Sidebar page={page} setPage={navigate} open={mobileMenu} close={() => setMobileMenu(false)} pending={stats.pending} />
-    <main key={page} className="content page-enter" aria-label={title}>{page === "dashboard" ? <Dashboard stats={stats} requests={requests} villages={villages} mapItems={mapItems} live={live} onNavigate={navigate} /> : page === "registrations" ? <RegistrationsPage token={token} onChanged={()=>setLive(false)} /> : page === "pets" ? <PetsPage token={token} /> : page === "services" ? <PetsPage token={token} serviceMode /> : page === "cases" ? <CasesPage token={token} /> : page === "reports" ? <ReportsPage token={token} /> : page === "map" ? <><section className="page-title"><p className="eyebrow">ข้อมูลเชิงพื้นที่</p><h1>แผนที่สัตว์ขึ้นทะเบียน</h1><p>ภาพรวมตำแหน่งสัตว์และจำนวนรายหมู่บ้าน</p></section><DashboardMap items={mapItems} villages={villages}/></> : <SettingsPage />}</main>
+    <main key={page} className="content page-enter" aria-label={title}><PageErrorBoundary key={page} onRecover={()=>navigate("dashboard")}>{page === "dashboard" ? <Dashboard stats={stats} requests={requests} villages={villages} mapItems={mapItems} live={live} onNavigate={navigate} /> : page === "registrations" ? <RegistrationsPage token={token} onChanged={()=>setLive(false)} /> : page === "pets" ? <PetsPage token={token} /> : page === "services" ? <PetsPage token={token} serviceMode /> : page === "cases" ? <CasesPage token={token} /> : page === "reports" ? <ReportsPage token={token} /> : page === "map" ? <><section className="page-title"><p className="eyebrow">ข้อมูลเชิงพื้นที่</p><h1>แผนที่สัตว์ขึ้นทะเบียน</h1><p>ภาพรวมตำแหน่งสัตว์และจำนวนรายหมู่บ้าน</p></section><DashboardMap items={mapItems} villages={villages}/></> : <SettingsPage />}</PageErrorBoundary></main>
   </div>;
 }
