@@ -1,0 +1,24 @@
+{
+  "name": "prms-tsm",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pet Registration Management System for เทศบาลท่าโพธ์",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:admin dev:citizen",
+    "dev:api": "npm run dev --workspace @prms/api",
+    "dev:admin": "npm run dev --workspace @prms/admin-web",
+    "dev:citizen": "npm run dev --workspace @prms/citizen-web",
+    "build": "npm run build --workspace @prms/shared && npm run build --workspace @prms/admin-web && npm run build --workspace @prms/citizen-web",
+    "test": "npm run test --workspace @prms/api && npm run test --workspace @prms/shared",
+    "create-admin": "node scripts/create-admin.js",
+    "seed:demo": "node scripts/seed-demo.js"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  }
+}
