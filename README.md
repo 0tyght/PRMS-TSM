@@ -9,7 +9,6 @@
 - `apps/api` — API, การยืนยันตัวตน และกฎธุรกิจ
 - `packages/shared` — แบบข้อมูลและค่ากลางที่ใช้ร่วมกัน
 - `database` — Schema, migration และ seed data
-- `legacy/prototype` — เว็บต้นแบบเดิม เก็บไว้อ้างอิงเท่านั้น
 
 ## เริ่มใช้งานสำหรับพัฒนา
 
@@ -26,7 +25,7 @@ Citizen Web: `http://localhost:5174`
 
 API: `http://localhost:4100/api/health`
 
-เว็บไซต์สาธิต Admin Web: `https://0tyght.github.io/PRMS-TSM/`
+Admin Web: `https://0tyght.github.io/PRMS-TSM/`
 
 เปิดช่องทางทดสอบสาธารณะแบบเดียวกับ postsales-iot ด้วย `powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1` หน้า GitHub Pages จะเชื่อม API ผ่าน Cloudflare Quick Tunnel และกลับไปใช้ข้อมูลสาธิตอัตโนมัติเมื่อ Tunnel ออฟไลน์
 
