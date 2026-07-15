@@ -15,6 +15,8 @@ const dogBreeds = ["ไทยหลังอาน","พันธุ์ทาง
 const catBreeds = ["ไทย","วิเชียรมาศ","เปอร์เซีย","พันธุ์ทาง"];
 const colors = ["ดำ","ขาว–น้ำตาล","ลายเสือ","ส้ม","ขาว","น้ำตาล","เทา"];
 const statuses = Array.from({length:30},(_,i)=>i<24?"APPROVED":i<27?"SUBMITTED":i<29?"UNDER_REVIEW":"REJECTED");
+const villageOffsets={1:[2,.25],2:[2.46,-.39],3:[1.39,-.52],4:[-1.82,-.98],5:[0,-.63],6:[-1.79,0],7:[-.04,.21],8:[.68,.77],9:[-.62,1.98],10:[-1.79,-.47],11:[-1.33,-1.62]};
+function mapPosition(village,index){const[cx,cy]=villageOffsets[village];const angle=index*2.399963;const r=.06+.035*(index%4);const x=cx+Math.cos(angle)*r,y=cy+Math.sin(angle)*r;return[16.755-y/111.32,100.195+x/(111.32*Math.cos(16.755*Math.PI/180))]}
 
 await db.beginTransaction();
 try {
@@ -31,7 +33,8 @@ try {
     const no=i+1, village=(i%11)+1, species=i%3===1?"CAT":"DOG", approved=statuses[i]==="APPROVED";
     const houseId=uuid("1",no), ownerId=uuid("2",no), petId=uuid("3",no), regId=uuid("4",no);
     const submittedDay=String(2+(i%13)).padStart(2,"0");
-    await db.execute("INSERT INTO households (id,house_no,village_id,address_detail,latitude,longitude) VALUES (?,?,?,?,?,?)",[houseId,`${18+(i*7)%190}${i%5===0?'/1':''}`,village,"เทศบาลท่าโพธ์",16.80+(i%11)*0.0012,100.25+(i%7)*0.0014]);
+    const [latitude,longitude]=mapPosition(village,i);
+    await db.execute("INSERT INTO households (id,house_no,village_id,address_detail,latitude,longitude) VALUES (?,?,?,?,?,?)",[houseId,`${18+(i*7)%190}${i%5===0?'/1':''}`,village,"เทศบาลท่าโพธ์",latitude,longitude]);
     await db.execute("INSERT INTO owners (id,household_id,full_name,national_id,phone,line_user_id,consent_at) VALUES (?,?,?,NULL,?,?,NOW())",[ownerId,houseId,ownerNames[i],`08${String(10000000+i*7919).slice(-8)}`,i<22?`U_DEMO_${String(no).padStart(3,'0')}`:null]);
     await db.execute("INSERT INTO pets (id,owner_id,registration_no,name,species,sex,breed,color,birth_date,status) VALUES (?,?,?,?,?,?,?,?,?,'ACTIVE')",[petId,ownerId,approved?`PET-2569-${String(no).padStart(4,"0")}`:null,petNames[i],species,i%4===0?"UNKNOWN":i%2===0?"MALE":"FEMALE",species==="DOG"?dogBreeds[i%dogBreeds.length]:catBreeds[i%catBreeds.length],colors[i%colors.length],`202${1+(i%5)}-${String(1+(i%12)).padStart(2,'0')}-${String(1+(i%25)).padStart(2,'0')}`]);
     await db.execute("INSERT INTO registrations (id,reference_no,owner_id,pet_id,status,review_note,reviewed_by,submitted_at,reviewed_at) VALUES (?,?,?,?,?,?,?,?,?)",[regId,`TSM-2569-${100100+no}`,ownerId,petId,statuses[i],approved?"ตรวจสอบข้อมูลและหลักฐานครบถ้วน":statuses[i]==="REJECTED"?"ที่อยู่นอกเขตให้บริการ":null,approved||statuses[i]==="REJECTED"?admin.id:null,`2026-07-${submittedDay} ${String(8+(i%8)).padStart(2,'0')}:30:00`,approved||statuses[i]==="REJECTED"?`2026-07-${String(Math.min(15,4+(i%12))).padStart(2,'0')} 10:15:00`:null]);

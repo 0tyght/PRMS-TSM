@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ORGANIZATION } from "@prms/shared";
 import { CasesPage, PetsPage, RegistrationsPage, ReportsPage, SettingsPage } from "./pages/Operations.jsx";
 import { createApi, IS_GITHUB_DEMO } from "./lib/api.js";
+import DashboardMap from "./components/DashboardMap.jsx";
 
 const menu = [
   ["dashboard", "▦", "ภาพรวม"], ["registrations", "⌁", "คำขอขึ้นทะเบียน"],
@@ -37,7 +38,7 @@ function Sidebar({ page, setPage, open, close, pending }) {
     </aside></>;
 }
 
-function Dashboard({ stats, requests, villages, live }) {
+function Dashboard({ stats, requests, villages, mapItems, live }) {
   const total = Number(stats.total || 0);
   const vaccinationCoverage = total ? Math.round(Number(stats.vaccinations || 0) * 100 / total) : 0;
   const sterilizationCoverage = total ? Math.round(Number(stats.sterilizations || 0) * 100 / total) : 0;
@@ -49,6 +50,7 @@ function Dashboard({ stats, requests, villages, live }) {
       <StatCard tone="blue" icon="✚" label="รับวัคซีนปีนี้" value={stats.vaccinations} detail={`คิดเป็น ${vaccinationCoverage}% ของสัตว์ทั้งหมด`} />
       <StatCard tone="violet" icon="◇" label="ทำหมันแล้ว" value={stats.sterilizations} detail={`คิดเป็น ${sterilizationCoverage}% ของสัตว์ทั้งหมด`} />
     </section>
+    <DashboardMap items={mapItems} villages={villages} />
     <section className="main-grid">
       <article className="panel requests"><div className="panel-head"><div><h2>คำขอล่าสุด</h2><p>รายการจากประชาชนที่ต้องดำเนินการ</p></div><button className="text-btn">ดูทั้งหมด →</button></div><RequestTable requests={requests} /></article>
       <aside className="panel coverage"><div className="panel-head"><div><h2>ความครอบคลุมบริการ</h2><p>เป้าหมายประจำปี 2569</p></div></div>
@@ -98,6 +100,7 @@ export default function App() {
   const [stats, setStats] = useState(initialStats);
   const [requests, setRequests] = useState([]);
   const [villages, setVillages] = useState([]);
+  const [mapItems, setMapItems] = useState([]);
   const [live, setLive] = useState(false);
   const [token, setToken] = useState(() => sessionStorage.getItem("prms_access_token"));
   const title = useMemo(() => menu.find(m => m[0] === page)?.[2], [page]);
@@ -106,14 +109,14 @@ export default function App() {
     if (!token) return;
     const api = createApi(token);
     Promise.all([
-      api.get("/api/admin/dashboard"), api.get("/api/admin/registrations"), api.get("/api/admin/reports/villages"),
-    ]).then(([a, b, c]) => { setStats(a); setRequests(b); setVillages(c); setLive(true); }).catch(() => setLive(false));
+      api.get("/api/admin/dashboard"), api.get("/api/admin/registrations"), api.get("/api/admin/reports/villages"), api.get("/api/admin/map"),
+    ]).then(([a, b, c, d]) => { setStats(a); setRequests(b); setVillages(c); setMapItems(d); setLive(true); }).catch(() => setLive(false));
   }, [token]);
 
   if (!token) return <Login onLogin={setToken} />;
   const logout = () => { sessionStorage.removeItem("prms_access_token"); setToken(null); };
 
   return <div className="app-shell"><Header onMenu={() => setMobileMenu(true)} onLogout={logout} /><Sidebar page={page} setPage={setPage} open={mobileMenu} close={() => setMobileMenu(false)} pending={stats.pending} />
-    <main className="content" aria-label={title}>{page === "dashboard" ? <Dashboard stats={stats} requests={requests} villages={villages} live={live} /> : page === "registrations" ? <RegistrationsPage token={token} onChanged={()=>setLive(false)} /> : page === "pets" ? <PetsPage token={token} /> : page === "services" ? <PetsPage token={token} serviceMode /> : page === "cases" ? <CasesPage token={token} /> : page === "reports" ? <ReportsPage token={token} /> : page === "map" ? <ReportsPage token={token} mapOnly /> : <SettingsPage />}</main>
+    <main className="content" aria-label={title}>{page === "dashboard" ? <Dashboard stats={stats} requests={requests} villages={villages} mapItems={mapItems} live={live} /> : page === "registrations" ? <RegistrationsPage token={token} onChanged={()=>setLive(false)} /> : page === "pets" ? <PetsPage token={token} /> : page === "services" ? <PetsPage token={token} serviceMode /> : page === "cases" ? <CasesPage token={token} /> : page === "reports" ? <ReportsPage token={token} /> : page === "map" ? <><section className="page-title"><p className="eyebrow">ข้อมูลเชิงพื้นที่</p><h1>แผนที่สัตว์ขึ้นทะเบียน</h1><p>ภาพรวมตำแหน่งสัตว์และจำนวนรายหมู่บ้าน</p></section><DashboardMap items={mapItems} villages={villages}/></> : <SettingsPage />}</main>
   </div>;
 }

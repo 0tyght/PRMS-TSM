@@ -155,6 +155,19 @@ export function createApp() {
     } catch (error) { next(error); }
   });
 
+  app.get("/api/admin/map", authenticate, async (_req, res, next) => {
+    try {
+      const [rows] = await pool.query(`SELECT p.id,p.name petName,p.species,o.full_name ownerName,
+        h.house_no houseNo,v.village_no villageNo,h.latitude,h.longitude,
+        EXISTS(SELECT 1 FROM vaccination_records vr WHERE vr.pet_id=p.id AND vr.vaccinated_at>=DATE_SUB(CURDATE(),INTERVAL 1 YEAR)) vaccinated,
+        EXISTS(SELECT 1 FROM sterilization_records sr WHERE sr.pet_id=p.id) sterilized
+        FROM pets p JOIN registrations r ON r.pet_id=p.id AND r.status='APPROVED'
+        JOIN owners o ON o.id=p.owner_id JOIN households h ON h.id=o.household_id JOIN villages v ON v.id=h.village_id
+        WHERE p.deleted_at IS NULL ORDER BY v.village_no,p.name`);
+      res.json({ data:rows });
+    } catch (error) { next(error); }
+  });
+
   app.post("/api/admin/pets/:petId/vaccinations", authenticate, requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
     try {
       const input = z.object({ vaccineName:z.string().trim().min(2).max(150), vaccinatedAt:z.string().date(), nextDueAt:z.string().date().optional().or(z.literal("")), lotNo:z.string().max(100).optional().default(""), providerName:z.string().max(150).optional().default("") }).parse(req.body);
