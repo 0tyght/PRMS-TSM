@@ -7,21 +7,58 @@ import {
   getMetricMaximum,
   getMetricValue,
 } from "../lib/dashboardVillageData.js";
-import { THA_PHO_VILLAGES } from "../lib/thaPhoVillageMapData.js";
 
 const SVG_WIDTH = 1920;
 const SVG_HEIGHT = 1600;
-const MAP_BOUNDS = Object.freeze([[-SVG_HEIGHT, 0], [0, SVG_WIDTH]]);
-const HOME_BOUNDS = Object.freeze([[-1450, 100], [-80, 1800]]);
+
+// ขอบเขตสำหรับวาง SVG ต้นแบบทับบนแผนที่จริง
+// เป็นการปรับตำแหน่งเบื้องต้นเพื่อใช้งานระหว่างรอ GeoJSON/KML จากหน่วยงาน
+const THA_PHO_BOUNDS = Object.freeze([
+  [16.69, 100.15],
+  [16.90, 100.31],
+]);
+
+const THA_PHO_CENTER = Object.freeze([16.80, 100.225]);
+const DEFAULT_ZOOM = 12;
+
+const BASE_LAYERS = Object.freeze({
+  streets: Object.freeze({
+    label: "แผนที่ถนน",
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    options: {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    },
+  }),
+  satellite: Object.freeze({
+    label: "ภาพถ่ายดาวเทียม",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    options: {
+      maxZoom: 19,
+      attribution: "Tiles &copy; Esri",
+    },
+  }),
+});
 
 const COLOR_RAMPS = Object.freeze({
-  total: ["#e7f3ee", "#0b6847"],
-  pending: ["#fff1d4", "#d97706"],
-  cases: ["#fde7e4", "#c94f45"],
+  total: ["#dfeee8", "#08724f"],
+  pending: ["#fff0cf", "#c7790c"],
+  cases: ["#fde5e2", "#c64d45"],
 });
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function toNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isValidCoordinate(item) {
+  const latitude = toNumber(item?.latitude);
+  const longitude = toNumber(item?.longitude);
+  return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 && latitude !== 0 && longitude !== 0;
 }
 
 function hexToRgb(hex) {
@@ -43,29 +80,19 @@ function mixColor(from, to, ratio) {
 }
 
 function coverageColor(value, hasData) {
-  if (!hasData) return "#e8eeeb";
-  if (value < 50) return mixColor("#f8e2de", "#d65d50", value / 50);
-  if (value < 75) return mixColor("#fff0cb", "#e3a323", (value - 50) / 25);
-  return mixColor("#dff2e9", "#17845f", (value - 75) / 25);
+  if (!hasData) return "#dfe7e4";
+  if (value < 50) return mixColor("#f8dcd8", "#cc4f45", value / 50);
+  if (value < 75) return mixColor("#fff0c8", "#d99817", (value - 50) / 25);
+  return mixColor("#d8eee5", "#08724f", (value - 75) / 25);
 }
 
 function villageColor(row, metric, maximum) {
   const value = getMetricValue(row, metric);
-
   if (metric === "vaccination" || metric === "sterilization") {
     return coverageColor(value, row.totalPets > 0);
   }
-
   const [from, to] = COLOR_RAMPS[metric] || COLOR_RAMPS.total;
   return mixColor(from, to, maximum ? value / maximum : 0);
-}
-
-function toLeafletBounds(row) {
-  if (!row?.bbox) return L.latLngBounds(HOME_BOUNDS);
-  return L.latLngBounds([
-    [-row.bbox.y2, row.bbox.x1],
-    [-row.bbox.y1, row.bbox.x2],
-  ]);
 }
 
 function createSvgElement(name, attributes = {}) {
@@ -74,27 +101,101 @@ function createSvgElement(name, attributes = {}) {
   return element;
 }
 
+function svgPointToLatLng(x, y) {
+  const [[south, west], [north, east]] = THA_PHO_BOUNDS;
+  return L.latLng(
+    north - (y / SVG_HEIGHT) * (north - south),
+    west + (x / SVG_WIDTH) * (east - west),
+  );
+}
+
+function villageBounds(row) {
+  if (!row?.bbox) return L.latLngBounds(THA_PHO_BOUNDS);
+  const northWest = svgPointToLatLng(row.bbox.x1, row.bbox.y1);
+  const southEast = svgPointToLatLng(row.bbox.x2, row.bbox.y2);
+  return L.latLngBounds(
+    [southEast.lat, northWest.lng],
+    [northWest.lat, southEast.lng],
+  );
+}
+
+function groupPetLocations(rows) {
+  const groups = new Map();
+
+  rows.forEach((row) => {
+    (row.pets || []).forEach((pet) => {
+      if (!isValidCoordinate(pet)) return;
+      const latitude = toNumber(pet.latitude);
+      const longitude = toNumber(pet.longitude);
+      const key = `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
+      const current = groups.get(key) || {
+        latitude,
+        longitude,
+        villageNo: row.id,
+        pets: [],
+      };
+      current.pets.push({ ...pet, villageNo: row.id });
+      groups.set(key, current);
+    });
+  });
+
+  return [...groups.values()];
+}
+
+function markerTone(group, metric) {
+  if (metric === "vaccination") {
+    const covered = group.pets.filter((pet) => Boolean(pet.vaccinated)).length;
+    return covered === group.pets.length ? "good" : covered === 0 ? "danger" : "warning";
+  }
+  if (metric === "sterilization") {
+    const covered = group.pets.filter((pet) => Boolean(pet.sterilized)).length;
+    return covered === group.pets.length ? "good" : covered === 0 ? "danger" : "warning";
+  }
+  return "primary";
+}
+
+function markerHtml(group, metric) {
+  const tone = markerTone(group, metric);
+  return `<div class="real-map-marker real-map-marker--${tone}"><span>${group.pets.length}</span></div>`;
+}
+
+function popupHtml(group) {
+  const dogs = group.pets.filter((pet) => pet.species === "DOG").length;
+  const cats = group.pets.filter((pet) => pet.species === "CAT").length;
+  const names = group.pets.slice(0, 4).map((pet) => pet.petName || "ไม่ระบุชื่อ").join(" · ");
+  const more = Math.max(0, group.pets.length - 4);
+
+  return `
+    <div class="real-map-popup">
+      <strong>จุดเลี้ยงสัตว์ หมู่ ${group.villageNo}</strong>
+      <div><span>สัตว์ในจุดนี้</span><b>${group.pets.length} ตัว</b></div>
+      <div><span>สุนัข / แมว</span><b>${dogs} / ${cats}</b></div>
+      <p>${names}${more ? ` · อีก ${more} ตัว` : ""}</p>
+      <small>พิกัด ${group.latitude.toFixed(5)}, ${group.longitude.toFixed(5)}</small>
+    </div>
+  `;
+}
+
 function MapTooltip({ tooltip, metric }) {
   if (!tooltip.open || !tooltip.row) return null;
-
   const { row } = tooltip;
+
   return (
-    <div
-      className="compact-map-tooltip"
-      style={{ left: tooltip.x, top: tooltip.y }}
-      role="status"
-    >
-      <div className="compact-map-tooltip__head">
-        <b>{row.name}</b>
+    <div className="real-map-tooltip" style={{ left: tooltip.x, top: tooltip.y }} role="status">
+      <div className="real-map-tooltip__head">
+        <div>
+          <small>พื้นที่หมู่บ้าน</small>
+          <b>{row.villageName || row.name}</b>
+        </div>
         <strong>{formatMetricValue(row, metric)}</strong>
       </div>
-      <div className="compact-map-tooltip__grid">
-        <span><small>สัตว์ทั้งหมด</small><b>{row.totalPets}</b></span>
+      <div className="real-map-tooltip__grid">
+        <span><small>สัตว์ทั้งหมด</small><b>{row.totalPets.toLocaleString("th-TH")}</b></span>
         <span><small>สุนัข / แมว</small><b>{row.dogs} / {row.cats}</b></span>
         <span><small>วัคซีน</small><b>{row.vaccinationCoverage}%</b></span>
         <span><small>ทำหมัน</small><b>{row.sterilizationCoverage}%</b></span>
       </div>
-      <small className="compact-map-tooltip__hint">คลิกเพื่อเลือกและซูมพื้นที่</small>
+      <p>คลิกเพื่อเลือกพื้นที่และกรองข้อมูลทั้งหน้า</p>
     </div>
   );
 }
@@ -111,70 +212,77 @@ export default function DashboardMap({
   const shellRef = useRef(null);
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
+  const baseLayerRef = useRef(null);
   const overlayRef = useRef(null);
-  const connectorRef = useRef(null);
-  const focusMarkerRef = useRef(null);
+  const markerLayerRef = useRef(null);
+  const selectionLayerRef = useRef(null);
   const pathRefs = useRef(new Map());
+
+  const [baseMap, setBaseMap] = useState("streets");
+  const [showBoundaries, setShowBoundaries] = useState(true);
+  const [showPoints, setShowPoints] = useState(true);
+  const [wheelZoom, setWheelZoom] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [tooltip, setTooltip] = useState({ open: false, x: 0, y: 0, row: null });
 
   const maximum = useMemo(() => getMetricMaximum(rows, metric), [rows, metric]);
   const metricInfo = DASHBOARD_METRICS[metric] || DASHBOARD_METRICS.total;
+  const locationGroups = useMemo(() => groupPetLocations(rows), [rows]);
+  const totalPets = useMemo(() => rows.reduce((sum, row) => sum + toNumber(row.totalPets), 0), [rows]);
+  const petsWithCoordinates = useMemo(
+    () => rows.flatMap((row) => row.pets || []).filter(isValidCoordinate).length,
+    [rows],
+  );
+  const missingCoordinates = Math.max(0, totalPets - petsWithCoordinates);
 
-  const fitHome = useCallback(() => {
-    mapRef.current?.fitBounds(HOME_BOUNDS, {
-      padding: [18, 18],
-      animate: true,
-      duration: 0.45,
-    });
+  const fitThaPho = useCallback(() => {
+    mapRef.current?.fitBounds(THA_PHO_BOUNDS, { padding: [18, 18], animate: true, duration: 0.45 });
   }, []);
+
+  const fitPetPoints = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !locationGroups.length) {
+      fitThaPho();
+      return;
+    }
+    map.fitBounds(
+      L.latLngBounds(locationGroups.map((item) => [item.latitude, item.longitude])),
+      { padding: [42, 42], maxZoom: 16, animate: true },
+    );
+  }, [locationGroups, fitThaPho]);
 
   const focusVillage = useCallback((villageId) => {
     const map = mapRef.current;
     const row = rows.find((item) => item.id === Number(villageId));
     if (!map || !row) return;
-
-    map.fitBounds(toLeafletBounds(row), {
-      padding: [72, 72],
-      maxZoom: 1.75,
-      animate: true,
-      duration: 0.5,
-    });
+    map.fitBounds(villageBounds(row), { padding: [54, 54], maxZoom: 15, animate: true, duration: 0.5 });
   }, [rows]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return undefined;
 
     const map = L.map(mapContainerRef.current, {
-      crs: L.CRS.Simple,
-      minZoom: -1.2,
-      maxZoom: 2.8,
-      zoomSnap: 0.25,
-      zoomDelta: 0.5,
-      wheelPxPerZoomLevel: 90,
+      center: THA_PHO_CENTER,
+      zoom: DEFAULT_ZOOM,
+      minZoom: 10,
+      maxZoom: 19,
+      zoomControl: false,
+      scrollWheelZoom: false,
       doubleClickZoom: true,
-      scrollWheelZoom: true,
       keyboard: true,
       boxZoom: true,
-      attributionControl: false,
-      zoomControl: true,
-      preferCanvas: false,
+      preferCanvas: true,
     });
 
+    L.control.zoom({ position: "bottomright" }).addTo(map);
     mapRef.current = map;
-    map.zoomControl.setPosition("topright");
-    map.setMaxBounds(L.latLngBounds(MAP_BOUNDS).pad(0.32));
-    map.fitBounds(HOME_BOUNDS, { padding: [18, 18] });
-
-    const handleMapClick = () => setTooltip((current) => ({ ...current, open: false }));
-    map.on("click", handleMapClick);
+    map.fitBounds(THA_PHO_BOUNDS, { padding: [18, 18] });
 
     const resizeObserver = new ResizeObserver(() => map.invalidateSize({ pan: false }));
     resizeObserver.observe(mapContainerRef.current);
 
     return () => {
       resizeObserver.disconnect();
-      map.off("click", handleMapClick);
       map.remove();
       mapRef.current = null;
     };
@@ -182,26 +290,39 @@ export default function DashboardMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map) return;
+    if (wheelZoom) map.scrollWheelZoom.enable();
+    else map.scrollWheelZoom.disable();
+  }, [wheelZoom]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (baseLayerRef.current) map.removeLayer(baseLayerRef.current);
+    const config = BASE_LAYERS[baseMap] || BASE_LAYERS.streets;
+    baseLayerRef.current = L.tileLayer(config.url, config.options).addTo(map);
+    baseLayerRef.current.bringToBack();
+  }, [baseMap]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || !rows.length) return undefined;
 
-    if (overlayRef.current) {
-      map.removeLayer(overlayRef.current);
-      overlayRef.current = null;
-    }
-
+    if (overlayRef.current) map.removeLayer(overlayRef.current);
     pathRefs.current.clear();
 
     const svg = createSvgElement("svg", {
       viewBox: `0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`,
       preserveAspectRatio: "none",
       role: "img",
-      "aria-label": "แผนที่เขตหมู่บ้าน ตำบลท่าโพธ์",
+      "aria-label": "แนวเขตหมู่ 1 ถึง 11 ตำบลท่าโพธ์",
     });
-    svg.classList.add("compact-village-svg");
+    svg.classList.add("real-village-svg");
 
     const shapesGroup = createSvgElement("g");
     const labelsGroup = createSvgElement("g");
-    labelsGroup.classList.add("compact-village-labels");
+    labelsGroup.classList.add("real-village-labels");
 
     rows.forEach((row) => {
       const path = createSvgElement("path", {
@@ -211,16 +332,16 @@ export default function DashboardMap({
         role: "button",
         "aria-label": `${row.name} ${formatMetricValue(row, metric)}`,
       });
-      path.classList.add("compact-village-shape");
+      path.classList.add("real-village-shape");
       path.dataset.villageId = String(row.id);
 
       const showTooltip = (event) => {
         const rect = mapContainerRef.current?.getBoundingClientRect();
         if (!rect) return;
-        const tooltipWidth = 230;
-        const tooltipHeight = 156;
-        const x = clamp(event.clientX - rect.left + 14, 10, rect.width - tooltipWidth - 10);
-        const y = clamp(event.clientY - rect.top + 14, 10, rect.height - tooltipHeight - 10);
+        const width = 280;
+        const height = 198;
+        const x = clamp(event.clientX - rect.left + 16, 12, Math.max(12, rect.width - width - 12));
+        const y = clamp(event.clientY - rect.top + 16, 12, Math.max(12, rect.height - height - 12));
         setTooltip({ open: true, x, y, row });
       };
 
@@ -237,41 +358,35 @@ export default function DashboardMap({
       path.addEventListener("blur", () => onVillageHover?.(null));
       path.addEventListener("click", (event) => {
         event.stopPropagation();
-        const nextVillage = Number(selectedVillage) === row.id ? null : row.id;
-        onVillageSelect?.(nextVillage);
+        onVillageSelect?.(Number(selectedVillage) === row.id ? null : row.id);
       });
       path.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          const nextVillage = Number(selectedVillage) === row.id ? null : row.id;
-          onVillageSelect?.(nextVillage);
+          onVillageSelect?.(Number(selectedVillage) === row.id ? null : row.id);
         }
       });
 
       pathRefs.current.set(row.id, path);
       shapesGroup.appendChild(path);
 
-      const label = createSvgElement("g", {
-        transform: `translate(${row.label.x} ${row.label.y})`,
-      });
-      const circle = createSvgElement("circle", { r: 35 });
-      const villageNumber = createSvgElement("text", { x: 0, y: -3 });
-      villageNumber.textContent = String(row.id);
-      villageNumber.classList.add("compact-village-label__number");
-      const villageValue = createSvgElement("text", { x: 0, y: 20 });
-      villageValue.textContent = metricInfo.unit === "%"
-        ? `${getMetricValue(row, metric)}%`
-        : String(getMetricValue(row, metric));
-      villageValue.classList.add("compact-village-label__value");
-      label.append(circle, villageNumber, villageValue);
+      const label = createSvgElement("g", { transform: `translate(${row.label.x} ${row.label.y})` });
+      const circle = createSvgElement("circle", { r: 39 });
+      const number = createSvgElement("text", { x: 0, y: -5 });
+      number.textContent = String(row.id);
+      number.classList.add("real-village-label__number");
+      const value = createSvgElement("text", { x: 0, y: 22 });
+      value.textContent = metricInfo.unit === "%" ? `${getMetricValue(row, metric)}%` : String(getMetricValue(row, metric));
+      value.classList.add("real-village-label__value");
+      label.append(circle, number, value);
       labelsGroup.appendChild(label);
     });
 
     svg.append(shapesGroup, labelsGroup);
-    const overlay = L.svgOverlay(svg, MAP_BOUNDS, {
+    const overlay = L.svgOverlay(svg, THA_PHO_BOUNDS, {
       interactive: true,
-      opacity: 1,
-      className: "compact-village-overlay",
+      opacity: showBoundaries ? 0.72 : 0,
+      className: "real-village-overlay",
     }).addTo(map);
     overlayRef.current = overlay;
 
@@ -280,7 +395,7 @@ export default function DashboardMap({
       if (overlayRef.current === overlay) overlayRef.current = null;
       pathRefs.current.clear();
     };
-  }, [rows, metric, maximum, metricInfo.unit, onVillageHover, onVillageSelect, selectedVillage]);
+  }, [rows, metric, maximum, metricInfo.unit, onVillageHover, onVillageSelect, selectedVillage, showBoundaries]);
 
   useEffect(() => {
     pathRefs.current.forEach((path, villageId) => {
@@ -295,65 +410,76 @@ export default function DashboardMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map) return undefined;
+
+    if (markerLayerRef.current) map.removeLayer(markerLayerRef.current);
+    const layer = L.layerGroup();
+
+    if (showPoints) {
+      locationGroups.forEach((group) => {
+        if (selectedVillage && Number(group.villageNo) !== Number(selectedVillage)) return;
+        const icon = L.divIcon({
+          className: "real-map-marker-shell",
+          html: markerHtml(group, metric),
+          iconSize: [42, 42],
+          iconAnchor: [21, 21],
+          popupAnchor: [0, -18],
+        });
+        L.marker([group.latitude, group.longitude], { icon, keyboard: true })
+          .bindPopup(popupHtml(group), { minWidth: 240, maxWidth: 290 })
+          .addTo(layer);
+      });
+    }
+
+    layer.addTo(map);
+    markerLayerRef.current = layer;
+
+    return () => {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+      if (markerLayerRef.current === layer) markerLayerRef.current = null;
+    };
+  }, [locationGroups, metric, selectedVillage, showPoints]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map) return;
 
-    if (connectorRef.current) {
-      map.removeLayer(connectorRef.current);
-      connectorRef.current = null;
-    }
-    if (focusMarkerRef.current) {
-      map.removeLayer(focusMarkerRef.current);
-      focusMarkerRef.current = null;
+    if (selectionLayerRef.current) {
+      map.removeLayer(selectionLayerRef.current);
+      selectionLayerRef.current = null;
     }
 
     const row = rows.find((item) => item.id === Number(selectedVillage));
-    if (!row) {
-      fitHome();
-      return;
-    }
+    if (!row) return;
 
     focusVillage(row.id);
-    const center = L.latLng(-row.label.y, row.label.x);
-    connectorRef.current = L.polyline(
-      [center, L.latLng(center.lat, SVG_WIDTH - 60)],
-      {
-        color: "#0b6847",
-        weight: 2,
-        opacity: 0.72,
-        dashArray: "7 9",
-        interactive: false,
-        className: "compact-map-connector",
-      },
-    ).addTo(map);
-    focusMarkerRef.current = L.circleMarker(center, {
-      radius: 11,
+    const center = svgPointToLatLng(row.label.x, row.label.y);
+    selectionLayerRef.current = L.circleMarker(center, {
+      radius: 15,
       color: "#ffffff",
-      weight: 4,
-      fillColor: "#0b6847",
+      weight: 5,
+      fillColor: "#08724f",
       fillOpacity: 1,
       interactive: false,
-      className: "compact-map-focus-marker",
+      className: "real-map-focus-marker",
     }).addTo(map);
-  }, [selectedVillage, rows, fitHome, focusVillage]);
+  }, [selectedVillage, rows, focusVillage]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") {
-        if (document.fullscreenElement) {
-          document.exitFullscreen?.();
-        } else if (selectedVillage) {
-          onVillageSelect?.(null);
-        }
-      }
+      if (event.key !== "Escape") return;
+      if (document.fullscreenElement) document.exitFullscreen?.();
+      else if (wheelZoom) setWheelZoom(false);
+      else if (selectedVillage) onVillageSelect?.(null);
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectedVillage, onVillageSelect]);
+  }, [selectedVillage, wheelZoom, onVillageSelect]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
       setFullscreen(document.fullscreenElement === shellRef.current);
-      window.setTimeout(() => mapRef.current?.invalidateSize(), 80);
+      window.setTimeout(() => mapRef.current?.invalidateSize(), 90);
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
@@ -366,72 +492,69 @@ export default function DashboardMap({
   };
 
   return (
-    <section className="compact-map-card" ref={shellRef}>
-      <header className="compact-map-card__head">
+    <section className="real-map-card" ref={shellRef}>
+      <header className="real-map-card__head">
         <div>
-          <h2>แผนที่เขตหมู่บ้าน</h2>
-          <span>คลิกพื้นที่เพื่อดูข้อมูลและซูมอัตโนมัติ</span>
+          <small>ข้อมูลเชิงพื้นที่</small>
+          <h2>ตำแหน่งสัตว์บนแผนที่ท่าโพธ์</h2>
+          <p>แสดงถนน สถานที่จริง จุดเลี้ยงสัตว์ และแนวเขตหมู่แบบโต้ตอบ</p>
         </div>
-        <label className="compact-map-metric">
-          <span>แสดง</span>
-          <select value={metric} onChange={(event) => onMetricChange?.(event.target.value)}>
-            {Object.values(DASHBOARD_METRICS).map((item) => (
-              <option key={item.id} value={item.id}>{item.label}</option>
+
+        <div className="real-map-card__head-tools">
+          <label>
+            <span>ชั้นข้อมูล</span>
+            <select value={metric} onChange={(event) => onMetricChange?.(event.target.value)}>
+              {Object.values(DASHBOARD_METRICS).map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <div className="real-map-basemap" aria-label="รูปแบบแผนที่">
+            {Object.entries(BASE_LAYERS).map(([id, item]) => (
+              <button type="button" key={id} className={baseMap === id ? "is-active" : ""} onClick={() => setBaseMap(id)}>
+                {item.label}
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
       </header>
 
-      <div className="compact-map-stage">
-        <div ref={mapContainerRef} className="compact-leaflet-map" />
+      <div className="real-map-stage">
+        <div ref={mapContainerRef} className="real-leaflet-map" />
 
-        <div className="compact-map-quick-controls" aria-label="เครื่องมือแผนที่">
-          <button type="button" onClick={fitHome} title="ดูทุกหมู่บ้าน" aria-label="ดูทุกหมู่บ้าน">⌂</button>
-          <button
-            type="button"
-            onClick={() => selectedVillage && focusVillage(selectedVillage)}
-            disabled={!selectedVillage}
-            title="กลับไปยังหมู่ที่เลือก"
-            aria-label="กลับไปยังหมู่ที่เลือก"
-          >
-            ◎
+        <div className="real-map-toolbar" aria-label="เครื่องมือแผนที่">
+          <button type="button" onClick={fitThaPho} title="ดูพื้นที่ท่าโพธ์ทั้งหมด">ดูทั้งตำบล</button>
+          <button type="button" onClick={fitPetPoints} title="ซูมให้เห็นจุดสัตว์ทั้งหมด">ดูจุดสัตว์</button>
+          <button type="button" onClick={() => selectedVillage && focusVillage(selectedVillage)} disabled={!selectedVillage} title="กลับไปพื้นที่ที่เลือก">
+            พื้นที่ที่เลือก
           </button>
-          <button type="button" onClick={toggleFullscreen} title="เต็มหน้าจอ" aria-label="เต็มหน้าจอ">
-            {fullscreen ? "↙" : "⛶"}
+          <span />
+          <button type="button" className={showBoundaries ? "is-active" : ""} onClick={() => setShowBoundaries((value) => !value)}>
+            แนวเขตหมู่
           </button>
+          <button type="button" className={showPoints ? "is-active" : ""} onClick={() => setShowPoints((value) => !value)}>
+            จุดสัตว์
+          </button>
+          <button type="button" className={wheelZoom ? "is-active" : ""} onClick={() => setWheelZoom((value) => !value)} title="เปิดหรือปิดการซูมด้วยล้อเมาส์">
+            ล้อเมาส์
+          </button>
+          <button type="button" onClick={toggleFullscreen}>{fullscreen ? "ออกเต็มจอ" : "เต็มจอ"}</button>
         </div>
 
-        <div className="compact-map-legend">
-          <i className="low" /><span>ต่ำ</span>
-          <i className="mid" /><span>ติดตาม</span>
-          <i className="high" /><span>สูง</span>
+        <div className="real-map-status">
+          <strong>{locationGroups.length.toLocaleString("th-TH")} จุด</strong>
+          <span>มีพิกัด {petsWithCoordinates.toLocaleString("th-TH")} ตัว</span>
+          <span className={missingCoordinates ? "is-warning" : ""}>ขาดพิกัด {missingCoordinates.toLocaleString("th-TH")} ตัว</span>
         </div>
 
-        <div className="compact-map-help">ลากเพื่อเลื่อน · หมุนล้อเพื่อซูม · กด Esc เพื่อล้าง</div>
+        {!wheelZoom ? (
+          <button type="button" className="real-map-wheel-hint" onClick={() => setWheelZoom(true)}>
+            คลิกเพื่อเปิดการซูมด้วยล้อเมาส์
+          </button>
+        ) : null}
+
+        <div className="real-map-note">แนวเขตหมู่เป็นการวางทับจาก SVG ต้นแบบ และควรแทนด้วย GeoJSON ทางการเมื่อได้รับข้อมูล</div>
         <MapTooltip tooltip={tooltip} metric={metric} />
-      </div>
-
-      <div className="compact-village-rail" aria-label="เลือกหมู่บ้านแบบรวดเร็ว">
-        {rows.map((row) => {
-          const active = Number(selectedVillage) === row.id;
-          const hovered = Number(hoveredVillage) === row.id;
-          return (
-            <button
-              type="button"
-              key={row.id}
-              className={`${active ? "is-active" : ""} ${hovered ? "is-hovered" : ""}`}
-              onClick={() => onVillageSelect?.(active ? null : row.id)}
-              onMouseEnter={() => onVillageHover?.(row.id)}
-              onMouseLeave={() => onVillageHover?.(null)}
-              onFocus={() => onVillageHover?.(row.id)}
-              onBlur={() => onVillageHover?.(null)}
-              title={`${row.name}: ${formatMetricValue(row, metric)}`}
-            >
-              <span>หมู่ {row.id}</span>
-              <b>{metricInfo.unit === "%" ? `${getMetricValue(row, metric)}%` : getMetricValue(row, metric)}</b>
-            </button>
-          );
-        })}
       </div>
     </section>
   );
