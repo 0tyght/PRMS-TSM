@@ -4,22 +4,17 @@ import "leaflet/dist/leaflet.css";
 import {
   DASHBOARD_METRICS,
   formatMetricValue,
-  getMetricMaximum,
   getMetricValue,
 } from "../lib/dashboardVillageData.js";
 
-const SVG_WIDTH = 1920;
-const SVG_HEIGHT = 1600;
-
-// ขอบเขตสำหรับวาง SVG ต้นแบบทับบนแผนที่จริง
-// เป็นการปรับตำแหน่งเบื้องต้นเพื่อใช้งานระหว่างรอ GeoJSON/KML จากหน่วยงาน
-const THA_PHO_BOUNDS = Object.freeze([
-  [16.69, 100.15],
-  [16.90, 100.31],
+const THA_PHO_FALLBACK_BOUNDS = Object.freeze([
+  [16.69, 100.13],
+  [16.88, 100.33],
 ]);
 
-const THA_PHO_CENTER = Object.freeze([16.80, 100.225]);
+const THA_PHO_CENTER = Object.freeze([16.77, 100.22]);
 const DEFAULT_ZOOM = 12;
+const BOUNDARY_CACHE_KEY = "prms-thapho-osm-boundary-v2";
 
 const BASE_LAYERS = Object.freeze({
   streets: Object.freeze({
@@ -31,19 +26,13 @@ const BASE_LAYERS = Object.freeze({
     },
   }),
   satellite: Object.freeze({
-    label: "ภาพถ่ายดาวเทียม",
+    label: "ดาวเทียม",
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     options: {
       maxZoom: 19,
       attribution: "Tiles &copy; Esri",
     },
   }),
-});
-
-const COLOR_RAMPS = Object.freeze({
-  total: ["#dfeee8", "#08724f"],
-  pending: ["#fff0cf", "#c7790c"],
-  cases: ["#fde5e2", "#c64d45"],
 });
 
 function clamp(value, minimum, maximum) {
@@ -58,144 +47,252 @@ function toNumber(value) {
 function isValidCoordinate(item) {
   const latitude = toNumber(item?.latitude);
   const longitude = toNumber(item?.longitude);
-  return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 && latitude !== 0 && longitude !== 0;
-}
 
-function hexToRgb(hex) {
-  const normalized = hex.replace("#", "");
-  const value = Number.parseInt(normalized, 16);
-  return {
-    r: (value >> 16) & 255,
-    g: (value >> 8) & 255,
-    b: value & 255,
-  };
-}
-
-function mixColor(from, to, ratio) {
-  const start = hexToRgb(from);
-  const end = hexToRgb(to);
-  const amount = clamp(ratio, 0, 1);
-  const channel = (key) => Math.round(start[key] + (end[key] - start[key]) * amount);
-  return `rgb(${channel("r")}, ${channel("g")}, ${channel("b")})`;
-}
-
-function coverageColor(value, hasData) {
-  if (!hasData) return "#dfe7e4";
-  if (value < 50) return mixColor("#f8dcd8", "#cc4f45", value / 50);
-  if (value < 75) return mixColor("#fff0c8", "#d99817", (value - 50) / 25);
-  return mixColor("#d8eee5", "#08724f", (value - 75) / 25);
-}
-
-function villageColor(row, metric, maximum) {
-  const value = getMetricValue(row, metric);
-  if (metric === "vaccination" || metric === "sterilization") {
-    return coverageColor(value, row.totalPets > 0);
-  }
-  const [from, to] = COLOR_RAMPS[metric] || COLOR_RAMPS.total;
-  return mixColor(from, to, maximum ? value / maximum : 0);
-}
-
-function createSvgElement(name, attributes = {}) {
-  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
-  Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
-  return element;
-}
-
-function svgPointToLatLng(x, y) {
-  const [[south, west], [north, east]] = THA_PHO_BOUNDS;
-  return L.latLng(
-    north - (y / SVG_HEIGHT) * (north - south),
-    west + (x / SVG_WIDTH) * (east - west),
+  return (
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180 &&
+    latitude !== 0 &&
+    longitude !== 0
   );
 }
 
-function villageBounds(row) {
-  if (!row?.bbox) return L.latLngBounds(THA_PHO_BOUNDS);
-  const northWest = svgPointToLatLng(row.bbox.x1, row.bbox.y1);
-  const southEast = svgPointToLatLng(row.bbox.x2, row.bbox.y2);
-  return L.latLngBounds(
-    [southEast.lat, northWest.lng],
-    [northWest.lat, southEast.lng],
+function normalizePets(rows) {
+  return rows.flatMap((row) =>
+    (row.pets || [])
+      .filter(isValidCoordinate)
+      .map((pet) => ({
+        ...pet,
+        latitude: toNumber(pet.latitude),
+        longitude: toNumber(pet.longitude),
+        villageNo: Number(row.id),
+        villageName: row.villageName || row.name,
+      })),
   );
 }
 
-function groupPetLocations(rows) {
+function groupHouseholds(pets) {
   const groups = new Map();
 
-  rows.forEach((row) => {
-    (row.pets || []).forEach((pet) => {
-      if (!isValidCoordinate(pet)) return;
-      const latitude = toNumber(pet.latitude);
-      const longitude = toNumber(pet.longitude);
-      const key = `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
-      const current = groups.get(key) || {
-        latitude,
-        longitude,
-        villageNo: row.id,
-        pets: [],
-      };
-      current.pets.push({ ...pet, villageNo: row.id });
-      groups.set(key, current);
-    });
+  pets.forEach((pet) => {
+    const coordinateKey = `${pet.latitude.toFixed(5)},${pet.longitude.toFixed(5)}`;
+    const current = groups.get(coordinateKey) || {
+      latitude: pet.latitude,
+      longitude: pet.longitude,
+      pets: [],
+      houseNumbers: new Set(),
+      villages: new Set(),
+    };
+
+    current.pets.push(pet);
+    if (pet.houseNo) current.houseNumbers.add(String(pet.houseNo));
+    current.villages.add(Number(pet.villageNo));
+    groups.set(coordinateKey, current);
   });
 
-  return [...groups.values()];
+  return [...groups.values()].map((group) => ({
+    ...group,
+    houseNumbers: [...group.houseNumbers],
+    villages: [...group.villages],
+  }));
 }
 
-function markerTone(group, metric) {
+function clusterCellSize(zoom) {
+  if (zoom <= 11) return 0.03;
+  if (zoom === 12) return 0.016;
+  if (zoom === 13) return 0.009;
+  if (zoom === 14) return 0.0045;
+  if (zoom === 15) return 0.0022;
+  return 0;
+}
+
+function clusterHouseholds(households, zoom) {
+  const cellSize = clusterCellSize(zoom);
+  if (!cellSize) {
+    return households.map((item) => ({
+      latitude: item.latitude,
+      longitude: item.longitude,
+      households: [item],
+      pets: item.pets,
+      villages: item.villages,
+    }));
+  }
+
+  const clusters = new Map();
+
+  households.forEach((household) => {
+    const row = Math.round(household.latitude / cellSize);
+    const column = Math.round(household.longitude / cellSize);
+    const key = `${row}:${column}`;
+    const current = clusters.get(key) || {
+      latitudeTotal: 0,
+      longitudeTotal: 0,
+      count: 0,
+      households: [],
+      pets: [],
+      villages: new Set(),
+    };
+
+    current.latitudeTotal += household.latitude;
+    current.longitudeTotal += household.longitude;
+    current.count += 1;
+    current.households.push(household);
+    current.pets.push(...household.pets);
+    household.villages.forEach((village) => current.villages.add(village));
+    clusters.set(key, current);
+  });
+
+  return [...clusters.values()].map((cluster) => ({
+    latitude: cluster.latitudeTotal / cluster.count,
+    longitude: cluster.longitudeTotal / cluster.count,
+    households: cluster.households,
+    pets: cluster.pets,
+    villages: [...cluster.villages],
+  }));
+}
+
+function percentage(numerator, denominator) {
+  return denominator ? Math.round((numerator * 100) / denominator) : 0;
+}
+
+function markerTone(cluster, metric) {
   if (metric === "vaccination") {
-    const covered = group.pets.filter((pet) => Boolean(pet.vaccinated)).length;
-    return covered === group.pets.length ? "good" : covered === 0 ? "danger" : "warning";
+    const covered = cluster.pets.filter((pet) => Boolean(pet.vaccinated)).length;
+    const value = percentage(covered, cluster.pets.length);
+    return value >= 75 ? "good" : value >= 50 ? "warning" : "danger";
   }
+
   if (metric === "sterilization") {
-    const covered = group.pets.filter((pet) => Boolean(pet.sterilized)).length;
-    return covered === group.pets.length ? "good" : covered === 0 ? "danger" : "warning";
+    const covered = cluster.pets.filter((pet) => Boolean(pet.sterilized)).length;
+    const value = percentage(covered, cluster.pets.length);
+    return value >= 60 ? "good" : value >= 35 ? "warning" : "danger";
   }
+
   return "primary";
 }
 
-function markerHtml(group, metric) {
-  const tone = markerTone(group, metric);
-  return `<div class="real-map-marker real-map-marker--${tone}"><span>${group.pets.length}</span></div>`;
-}
-
-function popupHtml(group) {
-  const dogs = group.pets.filter((pet) => pet.species === "DOG").length;
-  const cats = group.pets.filter((pet) => pet.species === "CAT").length;
-  const names = group.pets.slice(0, 4).map((pet) => pet.petName || "ไม่ระบุชื่อ").join(" · ");
-  const more = Math.max(0, group.pets.length - 4);
+function markerHtml(cluster, metric, selectedVillage, hoveredVillage) {
+  const tone = markerTone(cluster, metric);
+  const selected = selectedVillage && cluster.villages.includes(Number(selectedVillage));
+  const hovered = hoveredVillage && cluster.villages.includes(Number(hoveredVillage));
+  const classes = [
+    "map-cluster-marker",
+    `map-cluster-marker--${tone}`,
+    selected ? "is-selected" : "",
+    hovered ? "is-hovered" : "",
+  ].filter(Boolean).join(" ");
 
   return `
-    <div class="real-map-popup">
-      <strong>จุดเลี้ยงสัตว์ หมู่ ${group.villageNo}</strong>
-      <div><span>สัตว์ในจุดนี้</span><b>${group.pets.length} ตัว</b></div>
-      <div><span>สุนัข / แมว</span><b>${dogs} / ${cats}</b></div>
-      <p>${names}${more ? ` · อีก ${more} ตัว` : ""}</p>
-      <small>พิกัด ${group.latitude.toFixed(5)}, ${group.longitude.toFixed(5)}</small>
+    <div class="${classes}">
+      <strong>${cluster.pets.length}</strong>
+      <small>${cluster.households.length > 1 ? `${cluster.households.length} จุด` : "จุดเลี้ยง"}</small>
     </div>
   `;
 }
 
-function MapTooltip({ tooltip, metric }) {
-  if (!tooltip.open || !tooltip.row) return null;
-  const { row } = tooltip;
+function popupHtml(cluster) {
+  const dogs = cluster.pets.filter((pet) => pet.species === "DOG").length;
+  const cats = cluster.pets.filter((pet) => pet.species === "CAT").length;
+  const vaccinated = cluster.pets.filter((pet) => Boolean(pet.vaccinated)).length;
+  const sterilized = cluster.pets.filter((pet) => Boolean(pet.sterilized)).length;
+  const villages = cluster.villages.sort((a, b) => a - b).map((value) => `หมู่ ${value}`).join(", ");
+  const houseNumbers = [...new Set(cluster.households.flatMap((item) => item.houseNumbers))];
+  const petNames = cluster.pets.slice(0, 5).map((pet) => pet.petName || "ไม่ระบุชื่อ").join(" · ");
+  const more = Math.max(0, cluster.pets.length - 5);
 
+  return `
+    <div class="map-data-popup">
+      <div class="map-data-popup__title">
+        <strong>${cluster.households.length > 1 ? "กลุ่มจุดเลี้ยงสัตว์" : "จุดเลี้ยงสัตว์"}</strong>
+        <span>${villages || "ไม่ระบุหมู่"}</span>
+      </div>
+      <div class="map-data-popup__stats">
+        <span><small>สัตว์</small><b>${cluster.pets.length} ตัว</b></span>
+        <span><small>บ้าน/จุด</small><b>${cluster.households.length}</b></span>
+        <span><small>สุนัข / แมว</small><b>${dogs} / ${cats}</b></span>
+        <span><small>วัคซีน / ทำหมัน</small><b>${vaccinated} / ${sterilized}</b></span>
+      </div>
+      <p>${petNames}${more ? ` · อีก ${more} ตัว` : ""}</p>
+      ${houseNumbers.length ? `<small>บ้านเลขที่ ${houseNumbers.slice(0, 6).join(", ")}${houseNumbers.length > 6 ? "…" : ""}</small>` : ""}
+    </div>
+  `;
+}
+
+function readBoundaryCache() {
+  try {
+    const value = window.localStorage.getItem(BOUNDARY_CACHE_KEY);
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeBoundaryCache(value) {
+  try {
+    window.localStorage.setItem(BOUNDARY_CACHE_KEY, JSON.stringify(value));
+  } catch {
+    // ไม่ให้การบันทึก cache กระทบการแสดงแผนที่
+  }
+}
+
+async function fetchThaPhoBoundary() {
+  const cached = readBoundaryCache();
+  if (cached?.geometry) return cached;
+
+  const query = new URLSearchParams({
+    format: "geojson",
+    polygon_geojson: "1",
+    limit: "5",
+    countrycodes: "th",
+    "accept-language": "th",
+    q: "Tha Pho, Mueang Phitsanulok, Phitsanulok, Thailand",
+  });
+
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${query.toString()}`, {
+    headers: { Accept: "application/geo+json, application/json" },
+  });
+
+  if (!response.ok) throw new Error("โหลดขอบเขตตำบลไม่สำเร็จ");
+  const data = await response.json();
+  const feature = (data.features || []).find((item) =>
+    ["Polygon", "MultiPolygon"].includes(item?.geometry?.type),
+  );
+
+  if (!feature) throw new Error("ไม่พบขอบเขตตำบลจาก OpenStreetMap");
+  writeBoundaryCache(feature);
+  return feature;
+}
+
+function VillageStrip({ rows, selectedVillage, hoveredVillage, onSelect, onHover }) {
   return (
-    <div className="real-map-tooltip" style={{ left: tooltip.x, top: tooltip.y }} role="status">
-      <div className="real-map-tooltip__head">
-        <div>
-          <small>พื้นที่หมู่บ้าน</small>
-          <b>{row.villageName || row.name}</b>
-        </div>
-        <strong>{formatMetricValue(row, metric)}</strong>
+    <div className="map-village-strip" aria-label="เลือกหมู่บ้าน">
+      <div className="map-village-strip__label">
+        <strong>เลือกหมู่</strong>
+        <small>ซูมตามจุดข้อมูลจริง</small>
       </div>
-      <div className="real-map-tooltip__grid">
-        <span><small>สัตว์ทั้งหมด</small><b>{row.totalPets.toLocaleString("th-TH")}</b></span>
-        <span><small>สุนัข / แมว</small><b>{row.dogs} / {row.cats}</b></span>
-        <span><small>วัคซีน</small><b>{row.vaccinationCoverage}%</b></span>
-        <span><small>ทำหมัน</small><b>{row.sterilizationCoverage}%</b></span>
+      <div className="map-village-strip__list">
+        {rows.map((row) => {
+          const active = Number(selectedVillage) === row.id;
+          const hovered = Number(hoveredVillage) === row.id;
+          return (
+            <button
+              type="button"
+              key={row.id}
+              className={`${active ? "is-active" : ""} ${hovered ? "is-hovered" : ""}`}
+              onMouseEnter={() => onHover?.(row.id)}
+              onMouseLeave={() => onHover?.(null)}
+              onFocus={() => onHover?.(row.id)}
+              onBlur={() => onHover?.(null)}
+              onClick={() => onSelect?.(active ? null : row.id)}
+              aria-pressed={active}
+            >
+              <span>หมู่ {row.id}</span>
+              <b>{row.totalPets.toLocaleString("th-TH")}</b>
+            </button>
+          );
+        })}
       </div>
-      <p>คลิกเพื่อเลือกพื้นที่และกรองข้อมูลทั้งหน้า</p>
     </div>
   );
 }
@@ -213,50 +310,55 @@ export default function DashboardMap({
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const baseLayerRef = useRef(null);
-  const overlayRef = useRef(null);
+  const boundaryLayerRef = useRef(null);
   const markerLayerRef = useRef(null);
-  const selectionLayerRef = useRef(null);
-  const pathRefs = useRef(new Map());
 
   const [baseMap, setBaseMap] = useState("streets");
-  const [showBoundaries, setShowBoundaries] = useState(true);
-  const [showPoints, setShowPoints] = useState(true);
-  const [wheelZoom, setWheelZoom] = useState(false);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [fullscreen, setFullscreen] = useState(false);
-  const [tooltip, setTooltip] = useState({ open: false, x: 0, y: 0, row: null });
+  const [boundaryState, setBoundaryState] = useState("loading");
+  const [mapMessage, setMapMessage] = useState("");
 
-  const maximum = useMemo(() => getMetricMaximum(rows, metric), [rows, metric]);
+  const allPets = useMemo(() => normalizePets(rows), [rows]);
+  const visiblePets = useMemo(() => {
+    if (!selectedVillage) return allPets;
+    return allPets.filter((pet) => Number(pet.villageNo) === Number(selectedVillage));
+  }, [allPets, selectedVillage]);
+  const households = useMemo(() => groupHouseholds(visiblePets), [visiblePets]);
+  const clusters = useMemo(() => clusterHouseholds(households, zoom), [households, zoom]);
   const metricInfo = DASHBOARD_METRICS[metric] || DASHBOARD_METRICS.total;
-  const locationGroups = useMemo(() => groupPetLocations(rows), [rows]);
-  const totalPets = useMemo(() => rows.reduce((sum, row) => sum + toNumber(row.totalPets), 0), [rows]);
-  const petsWithCoordinates = useMemo(
-    () => rows.flatMap((row) => row.pets || []).filter(isValidCoordinate).length,
-    [rows],
-  );
-  const missingCoordinates = Math.max(0, totalPets - petsWithCoordinates);
+  const totalPets = rows.reduce((sum, row) => sum + toNumber(row.totalPets), 0);
+  const missingCoordinates = Math.max(0, totalPets - allPets.length);
 
   const fitThaPho = useCallback(() => {
-    mapRef.current?.fitBounds(THA_PHO_BOUNDS, { padding: [18, 18], animate: true, duration: 0.45 });
+    const map = mapRef.current;
+    if (!map) return;
+
+    const boundaryBounds = boundaryLayerRef.current?.getBounds?.();
+    if (boundaryBounds?.isValid?.()) {
+      map.fitBounds(boundaryBounds, { padding: [24, 24], animate: true, maxZoom: 14 });
+      return;
+    }
+
+    map.fitBounds(THA_PHO_FALLBACK_BOUNDS, { padding: [24, 24], animate: true, maxZoom: 13 });
   }, []);
 
-  const fitPetPoints = useCallback(() => {
+  const fitPoints = useCallback((pets = visiblePets) => {
     const map = mapRef.current;
-    if (!map || !locationGroups.length) {
+    if (!map || !pets.length) {
+      setMapMessage(selectedVillage ? `หมู่ ${selectedVillage} ยังไม่มีพิกัดที่พร้อมแสดง` : "ยังไม่มีพิกัดที่พร้อมแสดงบนแผนที่");
       fitThaPho();
       return;
     }
-    map.fitBounds(
-      L.latLngBounds(locationGroups.map((item) => [item.latitude, item.longitude])),
-      { padding: [42, 42], maxZoom: 16, animate: true },
-    );
-  }, [locationGroups, fitThaPho]);
 
-  const focusVillage = useCallback((villageId) => {
-    const map = mapRef.current;
-    const row = rows.find((item) => item.id === Number(villageId));
-    if (!map || !row) return;
-    map.fitBounds(villageBounds(row), { padding: [54, 54], maxZoom: 15, animate: true, duration: 0.5 });
-  }, [rows]);
+    setMapMessage("");
+    const bounds = L.latLngBounds(pets.map((pet) => [pet.latitude, pet.longitude]));
+    map.fitBounds(bounds, {
+      padding: [52, 52],
+      animate: true,
+      maxZoom: pets.length === 1 ? 17 : 16,
+    });
+  }, [fitThaPho, selectedVillage, visiblePets]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return undefined;
@@ -264,7 +366,7 @@ export default function DashboardMap({
     const map = L.map(mapContainerRef.current, {
       center: THA_PHO_CENTER,
       zoom: DEFAULT_ZOOM,
-      minZoom: 10,
+      minZoom: 9,
       maxZoom: 19,
       zoomControl: false,
       scrollWheelZoom: false,
@@ -276,24 +378,31 @@ export default function DashboardMap({
 
     L.control.zoom({ position: "bottomright" }).addTo(map);
     mapRef.current = map;
-    map.fitBounds(THA_PHO_BOUNDS, { padding: [18, 18] });
+    map.fitBounds(THA_PHO_FALLBACK_BOUNDS, { padding: [18, 18], maxZoom: 13 });
+
+    const handleZoom = () => setZoom(map.getZoom());
+    map.on("zoomend", handleZoom);
+
+    const container = map.getContainer();
+    const handleWheel = (event) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      const direction = event.deltaY < 0 ? 1 : -1;
+      map.setZoom(clamp(map.getZoom() + direction, map.getMinZoom(), map.getMaxZoom()), { animate: true });
+    };
+    container.addEventListener("wheel", handleWheel, { passive: false });
 
     const resizeObserver = new ResizeObserver(() => map.invalidateSize({ pan: false }));
     resizeObserver.observe(mapContainerRef.current);
 
     return () => {
       resizeObserver.disconnect();
+      container.removeEventListener("wheel", handleWheel);
+      map.off("zoomend", handleZoom);
       map.remove();
       mapRef.current = null;
     };
   }, []);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (wheelZoom) map.scrollWheelZoom.enable();
-    else map.scrollWheelZoom.disable();
-  }, [wheelZoom]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -307,106 +416,40 @@ export default function DashboardMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !rows.length) return undefined;
+    if (!map) return undefined;
 
-    if (overlayRef.current) map.removeLayer(overlayRef.current);
-    pathRefs.current.clear();
+    let cancelled = false;
+    setBoundaryState("loading");
 
-    const svg = createSvgElement("svg", {
-      viewBox: `0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`,
-      preserveAspectRatio: "none",
-      role: "img",
-      "aria-label": "แนวเขตหมู่ 1 ถึง 11 ตำบลท่าโพธ์",
-    });
-    svg.classList.add("real-village-svg");
+    fetchThaPhoBoundary()
+      .then((feature) => {
+        if (cancelled || !mapRef.current) return;
+        if (boundaryLayerRef.current) map.removeLayer(boundaryLayerRef.current);
 
-    const shapesGroup = createSvgElement("g");
-    const labelsGroup = createSvgElement("g");
-    labelsGroup.classList.add("real-village-labels");
+        const layer = L.geoJSON(feature, {
+          style: {
+            color: "#08724f",
+            weight: 3,
+            opacity: 0.9,
+            fillColor: "#3aa67d",
+            fillOpacity: 0.06,
+            dashArray: "8 7",
+          },
+          interactive: false,
+        }).addTo(map);
 
-    rows.forEach((row) => {
-      const path = createSvgElement("path", {
-        d: row.path,
-        fill: villageColor(row, metric, maximum),
-        tabindex: 0,
-        role: "button",
-        "aria-label": `${row.name} ${formatMetricValue(row, metric)}`,
+        boundaryLayerRef.current = layer;
+        setBoundaryState("ready");
+        fitThaPho();
+      })
+      .catch(() => {
+        if (!cancelled) setBoundaryState("fallback");
       });
-      path.classList.add("real-village-shape");
-      path.dataset.villageId = String(row.id);
-
-      const showTooltip = (event) => {
-        const rect = mapContainerRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        const width = 280;
-        const height = 198;
-        const x = clamp(event.clientX - rect.left + 16, 12, Math.max(12, rect.width - width - 12));
-        const y = clamp(event.clientY - rect.top + 16, 12, Math.max(12, rect.height - height - 12));
-        setTooltip({ open: true, x, y, row });
-      };
-
-      path.addEventListener("mouseenter", (event) => {
-        onVillageHover?.(row.id);
-        showTooltip(event);
-      });
-      path.addEventListener("mousemove", showTooltip);
-      path.addEventListener("mouseleave", () => {
-        onVillageHover?.(null);
-        setTooltip((current) => ({ ...current, open: false }));
-      });
-      path.addEventListener("focus", () => onVillageHover?.(row.id));
-      path.addEventListener("blur", () => onVillageHover?.(null));
-      path.addEventListener("click", (event) => {
-        event.stopPropagation();
-        onVillageSelect?.(Number(selectedVillage) === row.id ? null : row.id);
-      });
-      path.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onVillageSelect?.(Number(selectedVillage) === row.id ? null : row.id);
-        }
-      });
-
-      pathRefs.current.set(row.id, path);
-      shapesGroup.appendChild(path);
-
-      const label = createSvgElement("g", { transform: `translate(${row.label.x} ${row.label.y})` });
-      const circle = createSvgElement("circle", { r: 39 });
-      const number = createSvgElement("text", { x: 0, y: -5 });
-      number.textContent = String(row.id);
-      number.classList.add("real-village-label__number");
-      const value = createSvgElement("text", { x: 0, y: 22 });
-      value.textContent = metricInfo.unit === "%" ? `${getMetricValue(row, metric)}%` : String(getMetricValue(row, metric));
-      value.classList.add("real-village-label__value");
-      label.append(circle, number, value);
-      labelsGroup.appendChild(label);
-    });
-
-    svg.append(shapesGroup, labelsGroup);
-    const overlay = L.svgOverlay(svg, THA_PHO_BOUNDS, {
-      interactive: true,
-      opacity: showBoundaries ? 0.72 : 0,
-      className: "real-village-overlay",
-    }).addTo(map);
-    overlayRef.current = overlay;
 
     return () => {
-      if (map.hasLayer(overlay)) map.removeLayer(overlay);
-      if (overlayRef.current === overlay) overlayRef.current = null;
-      pathRefs.current.clear();
+      cancelled = true;
     };
-  }, [rows, metric, maximum, metricInfo.unit, onVillageHover, onVillageSelect, selectedVillage, showBoundaries]);
-
-  useEffect(() => {
-    pathRefs.current.forEach((path, villageId) => {
-      const selected = Number(selectedVillage) === villageId;
-      const hovered = Number(hoveredVillage) === villageId;
-      const dimmed = selectedVillage && !selected;
-      path.classList.toggle("is-selected", selected);
-      path.classList.toggle("is-hovered", hovered);
-      path.classList.toggle("is-dimmed", Boolean(dimmed));
-    });
-  }, [selectedVillage, hoveredVillage, rows, metric]);
+  }, [fitThaPho]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -415,21 +458,23 @@ export default function DashboardMap({
     if (markerLayerRef.current) map.removeLayer(markerLayerRef.current);
     const layer = L.layerGroup();
 
-    if (showPoints) {
-      locationGroups.forEach((group) => {
-        if (selectedVillage && Number(group.villageNo) !== Number(selectedVillage)) return;
-        const icon = L.divIcon({
-          className: "real-map-marker-shell",
-          html: markerHtml(group, metric),
-          iconSize: [42, 42],
-          iconAnchor: [21, 21],
-          popupAnchor: [0, -18],
-        });
-        L.marker([group.latitude, group.longitude], { icon, keyboard: true })
-          .bindPopup(popupHtml(group), { minWidth: 240, maxWidth: 290 })
-          .addTo(layer);
+    clusters.forEach((cluster) => {
+      const icon = L.divIcon({
+        className: "map-cluster-marker-shell",
+        html: markerHtml(cluster, metric, selectedVillage, hoveredVillage),
+        iconSize: [52, 52],
+        iconAnchor: [26, 26],
+        popupAnchor: [0, -22],
       });
-    }
+
+      L.marker([cluster.latitude, cluster.longitude], {
+        icon,
+        keyboard: true,
+        riseOnHover: true,
+      })
+        .bindPopup(popupHtml(cluster), { minWidth: 280, maxWidth: 340 })
+        .addTo(layer);
+    });
 
     layer.addTo(map);
     markerLayerRef.current = layer;
@@ -438,49 +483,33 @@ export default function DashboardMap({
       if (map.hasLayer(layer)) map.removeLayer(layer);
       if (markerLayerRef.current === layer) markerLayerRef.current = null;
     };
-  }, [locationGroups, metric, selectedVillage, showPoints]);
+  }, [clusters, hoveredVillage, metric, selectedVillage]);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (selectionLayerRef.current) {
-      map.removeLayer(selectionLayerRef.current);
-      selectionLayerRef.current = null;
+    if (!selectedVillage) {
+      setMapMessage("");
+      return;
     }
-
-    const row = rows.find((item) => item.id === Number(selectedVillage));
-    if (!row) return;
-
-    focusVillage(row.id);
-    const center = svgPointToLatLng(row.label.x, row.label.y);
-    selectionLayerRef.current = L.circleMarker(center, {
-      radius: 15,
-      color: "#ffffff",
-      weight: 5,
-      fillColor: "#08724f",
-      fillOpacity: 1,
-      interactive: false,
-      className: "real-map-focus-marker",
-    }).addTo(map);
-  }, [selectedVillage, rows, focusVillage]);
+    fitPoints(visiblePets);
+  }, [selectedVillage, visiblePets, fitPoints]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key !== "Escape") return;
       if (document.fullscreenElement) document.exitFullscreen?.();
-      else if (wheelZoom) setWheelZoom(false);
       else if (selectedVillage) onVillageSelect?.(null);
     };
+
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectedVillage, wheelZoom, onVillageSelect]);
+  }, [onVillageSelect, selectedVillage]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
       setFullscreen(document.fullscreenElement === shellRef.current);
-      window.setTimeout(() => mapRef.current?.invalidateSize(), 90);
+      window.setTimeout(() => mapRef.current?.invalidateSize(), 100);
     };
+
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
@@ -497,7 +526,7 @@ export default function DashboardMap({
         <div>
           <small>ข้อมูลเชิงพื้นที่</small>
           <h2>ตำแหน่งสัตว์บนแผนที่ท่าโพธ์</h2>
-          <p>แสดงถนน สถานที่จริง จุดเลี้ยงสัตว์ และแนวเขตหมู่แบบโต้ตอบ</p>
+          <p>จุดบนแผนที่มาจากพิกัดบ้านที่บันทึกจริง และรวมเป็นกลุ่มอัตโนมัติเพื่อลดการซ้อนทับ</p>
         </div>
 
         <div className="real-map-card__head-tools">
@@ -509,6 +538,7 @@ export default function DashboardMap({
               ))}
             </select>
           </label>
+
           <div className="real-map-basemap" aria-label="รูปแบบแผนที่">
             {Object.entries(BASE_LAYERS).map(([id, item]) => (
               <button type="button" key={id} className={baseMap === id ? "is-active" : ""} onClick={() => setBaseMap(id)}>
@@ -523,39 +553,35 @@ export default function DashboardMap({
         <div ref={mapContainerRef} className="real-leaflet-map" />
 
         <div className="real-map-toolbar" aria-label="เครื่องมือแผนที่">
-          <button type="button" onClick={fitThaPho} title="ดูพื้นที่ท่าโพธ์ทั้งหมด">ดูทั้งตำบล</button>
-          <button type="button" onClick={fitPetPoints} title="ซูมให้เห็นจุดสัตว์ทั้งหมด">ดูจุดสัตว์</button>
-          <button type="button" onClick={() => selectedVillage && focusVillage(selectedVillage)} disabled={!selectedVillage} title="กลับไปพื้นที่ที่เลือก">
-            พื้นที่ที่เลือก
-          </button>
+          <button type="button" onClick={fitThaPho}>ขอบเขตท่าโพธ์</button>
+          <button type="button" onClick={() => fitPoints(allPets)} disabled={!allPets.length}>จุดทั้งหมด</button>
+          <button type="button" onClick={() => fitPoints(visiblePets)} disabled={!selectedVillage}>หมู่ที่เลือก</button>
           <span />
-          <button type="button" className={showBoundaries ? "is-active" : ""} onClick={() => setShowBoundaries((value) => !value)}>
-            แนวเขตหมู่
-          </button>
-          <button type="button" className={showPoints ? "is-active" : ""} onClick={() => setShowPoints((value) => !value)}>
-            จุดสัตว์
-          </button>
-          <button type="button" className={wheelZoom ? "is-active" : ""} onClick={() => setWheelZoom((value) => !value)} title="เปิดหรือปิดการซูมด้วยล้อเมาส์">
-            ล้อเมาส์
-          </button>
           <button type="button" onClick={toggleFullscreen}>{fullscreen ? "ออกเต็มจอ" : "เต็มจอ"}</button>
         </div>
 
-        <div className="real-map-status">
-          <strong>{locationGroups.length.toLocaleString("th-TH")} จุด</strong>
-          <span>มีพิกัด {petsWithCoordinates.toLocaleString("th-TH")} ตัว</span>
-          <span className={missingCoordinates ? "is-warning" : ""}>ขาดพิกัด {missingCoordinates.toLocaleString("th-TH")} ตัว</span>
+        <div className="real-map-data-status">
+          <span><b>{allPets.length.toLocaleString("th-TH")}</b> ตัวมีพิกัด</span>
+          <span><b>{households.length.toLocaleString("th-TH")}</b> จุดที่กำลังแสดง</span>
+          {missingCoordinates ? <span className="is-warning"><b>{missingCoordinates.toLocaleString("th-TH")}</b> ตัวขาดพิกัด</span> : null}
         </div>
 
-        {!wheelZoom ? (
-          <button type="button" className="real-map-wheel-hint" onClick={() => setWheelZoom(true)}>
-            คลิกเพื่อเปิดการซูมด้วยล้อเมาส์
-          </button>
-        ) : null}
+        <div className="real-map-usage-hint">ลากเพื่อเลื่อน · ดับเบิลคลิกหรือกด <kbd>Ctrl</kbd> + ล้อเมาส์เพื่อซูม</div>
 
-        <div className="real-map-note">แนวเขตหมู่เป็นการวางทับจาก SVG ต้นแบบ และควรแทนด้วย GeoJSON ทางการเมื่อได้รับข้อมูล</div>
-        <MapTooltip tooltip={tooltip} metric={metric} />
+        {mapMessage ? <div className="real-map-message">{mapMessage}</div> : null}
+
+        <div className={`real-map-boundary-state real-map-boundary-state--${boundaryState}`}>
+          {boundaryState === "ready" ? "ขอบเขตตำบลจาก OpenStreetMap" : boundaryState === "loading" ? "กำลังโหลดขอบเขตตำบล" : "ใช้กรอบพื้นที่สำรอง"}
+        </div>
       </div>
+
+      <VillageStrip
+        rows={rows}
+        selectedVillage={selectedVillage}
+        hoveredVillage={hoveredVillage}
+        onSelect={onVillageSelect}
+        onHover={onVillageHover}
+      />
     </section>
   );
 }
