@@ -1977,3 +1977,168 @@
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+
+/* =========================================================
+   Dashboard map V4: georeferenced SVG village overlay
+   ========================================================= */
+
+.leaflet-village-svg {
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.leaflet-village-svg .village-zone {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.leaflet-village-svg .village-zone path {
+  pointer-events: visiblePainted;
+}
+
+.leaflet-village-svg .village-zone:focus {
+  outline: none;
+}
+
+.map-village-tooltip-shell {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.map-village-tooltip-shell::before {
+  display: none;
+}
+
+.map-village-tooltip {
+  min-width: 220px;
+  padding: 11px 12px;
+  border: 1px solid rgba(202, 220, 213, 0.98);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #24483c;
+  box-shadow: 0 12px 30px rgba(25, 61, 49, 0.18);
+  font-family: "Prompt", "Noto Sans Thai", Tahoma, sans-serif;
+}
+
+.map-village-tooltip > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.map-village-tooltip strong {
+  color: #0a684b;
+  font-size: 15px;
+}
+
+.map-village-tooltip span {
+  color: #6b8078;
+  font-size: 11px;
+}
+
+.map-village-tooltip > b {
+  display: block;
+  margin-top: 6px;
+  color: #163f32;
+  font-size: 12px;
+}
+
+.map-village-tooltip > small {
+  display: block;
+  margin-top: 3px;
+  color: #70847c;
+  font-size: 11px;
+}
+
+.real-map-opacity {
+  min-width: 132px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+}
+
+.real-map-opacity span {
+  flex: 0 0 auto !important;
+  color: #61776e;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.real-map-opacity input {
+  width: 76px;
+  accent-color: #08724f;
+  cursor: pointer;
+}
+
+.real-map-opacity input:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.map-cluster-marker {
+  width: 40px;
+  height: 40px;
+  border-width: 3px;
+  box-shadow: 0 6px 15px rgba(24, 58, 47, 0.24);
+}
+
+.map-cluster-marker strong {
+  font-size: 14px;
+}
+
+.map-cluster-marker small {
+  display: none;
+}
+
+.map-cluster-marker.is-selected,
+.map-cluster-marker.is-hovered {
+  transform: scale(1.1);
+  box-shadow:
+    0 0 0 6px rgba(8, 114, 79, 0.15),
+    0 8px 20px rgba(24, 58, 47, 0.28);
+}
+
+.real-map-toolbar {
+  max-width: calc(100% - 24px);
+}
+
+.real-map-toolbar > span {
+  min-width: 8px;
+}
+
+.real-map-boundary-state {
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(6px);
+}
+
+@media (max-width: 1180px) {
+  .real-map-opacity {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .real-map-toolbar {
+    right: auto;
+    max-width: calc(100% - 24px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .real-map-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .real-map-toolbar button {
+    flex: 0 0 auto;
+  }
+}
