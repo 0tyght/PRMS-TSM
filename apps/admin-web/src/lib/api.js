@@ -5,18 +5,31 @@ export const IS_GITHUB_DEMO = import.meta.env.VITE_GITHUB_DEMO === "true";
 
 export function createApi(token) {
   async function request(path, options = {}) {
-    const apiBase = await getApiBase();
+    async function fetchOnce(apiBase) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try { return await fetch(`${apiBase}${path.replace(/^\/api/, "")}`, {
+        ...options,
+        signal: controller.signal,
+        headers: { "Content-Type":"application/json", ...(token ? { Authorization:`Bearer ${token}` } : {}), ...options.headers },
+      }); } finally { clearTimeout(timeout); }
+    }
+    let apiBase = await getApiBase();
     if (!apiBase && IS_GITHUB_DEMO) return demoRequest(path, options);
-    const url = `${apiBase}${path.replace(/^\/api/, "")}`;
     let response;
     try {
-      response = await fetch(url, {
-        ...options,
-        headers: { "Content-Type":"application/json", ...(token ? { Authorization:`Bearer ${token}` } : {}), ...options.headers },
-      });
-    } catch (error) {
-      if (IS_GITHUB_DEMO) return demoRequest(path, options);
-      throw error;
+      response = await fetchOnce(apiBase);
+      if (response.status >= 500) throw new Error(`API ${response.status}`);
+    } catch (firstError) {
+      try {
+        apiBase = await getApiBase(true);
+        if (!apiBase) throw firstError;
+        response = await fetchOnce(apiBase);
+        if (response.status >= 500) throw new Error(`API ${response.status}`);
+      } catch (retryError) {
+        if (IS_GITHUB_DEMO) return demoRequest(path, options);
+        throw retryError;
+      }
     }
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.message || "ไม่สามารถเชื่อมต่อระบบได้");

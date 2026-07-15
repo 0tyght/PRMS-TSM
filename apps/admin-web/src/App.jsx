@@ -107,6 +107,12 @@ export default function App() {
   const [live, setLive] = useState(false);
   const [token, setToken] = useState(() => sessionStorage.getItem("prms_access_token"));
   const title = useMemo(() => menu.find(m => m[0] === page)?.[2], [page]);
+  const navigate = nextPage => {
+    setPage(nextPage);
+    window.scrollTo({ top:0, behavior:"auto" });
+  };
+
+  useEffect(() => { window.scrollTo({ top:0, behavior:"auto" }); }, [page]);
 
   useEffect(() => {
     if (!token) return;
@@ -119,7 +125,7 @@ export default function App() {
   if (!token) return <Login onLogin={setToken} />;
   const logout = () => { sessionStorage.removeItem("prms_access_token"); setToken(null); };
 
-  return <div className="app-shell"><Header onMenu={() => setMobileMenu(true)} onLogout={logout} /><Sidebar page={page} setPage={setPage} open={mobileMenu} close={() => setMobileMenu(false)} pending={stats.pending} />
-    <main className="content" aria-label={title}>{page === "dashboard" ? <Dashboard stats={stats} requests={requests} villages={villages} mapItems={mapItems} live={live} onNavigate={setPage} /> : page === "registrations" ? <RegistrationsPage token={token} onChanged={()=>setLive(false)} /> : page === "pets" ? <PetsPage token={token} /> : page === "services" ? <PetsPage token={token} serviceMode /> : page === "cases" ? <CasesPage token={token} /> : page === "reports" ? <ReportsPage token={token} /> : page === "map" ? <><section className="page-title"><p className="eyebrow">ข้อมูลเชิงพื้นที่</p><h1>แผนที่สัตว์ขึ้นทะเบียน</h1><p>ภาพรวมตำแหน่งสัตว์และจำนวนรายหมู่บ้าน</p></section><DashboardMap items={mapItems} villages={villages}/></> : <SettingsPage />}</main>
+  return <div className="app-shell"><Header onMenu={() => setMobileMenu(true)} onLogout={logout} /><Sidebar page={page} setPage={navigate} open={mobileMenu} close={() => setMobileMenu(false)} pending={stats.pending} />
+    <main key={page} className="content page-enter" aria-label={title}>{page === "dashboard" ? <Dashboard stats={stats} requests={requests} villages={villages} mapItems={mapItems} live={live} onNavigate={navigate} /> : page === "registrations" ? <RegistrationsPage token={token} onChanged={()=>setLive(false)} /> : page === "pets" ? <PetsPage token={token} /> : page === "services" ? <PetsPage token={token} serviceMode /> : page === "cases" ? <CasesPage token={token} /> : page === "reports" ? <ReportsPage token={token} /> : page === "map" ? <><section className="page-title"><p className="eyebrow">ข้อมูลเชิงพื้นที่</p><h1>แผนที่สัตว์ขึ้นทะเบียน</h1><p>ภาพรวมตำแหน่งสัตว์และจำนวนรายหมู่บ้าน</p></section><DashboardMap items={mapItems} villages={villages}/></> : <SettingsPage />}</main>
   </div>;
 }

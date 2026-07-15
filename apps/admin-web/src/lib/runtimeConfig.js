@@ -14,8 +14,9 @@ function normalize(value) {
   } catch { return ""; }
 }
 
-export async function getApiBase() {
+export async function getApiBase(force = false) {
   if (["localhost", "127.0.0.1"].includes(location.hostname)) return "/api";
+  if (force) pending = undefined;
   if (!pending) pending = (async () => {
     for (const configUrl of CONFIG_URLS) {
       try {
