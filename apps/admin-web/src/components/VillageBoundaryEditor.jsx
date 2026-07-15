@@ -5,8 +5,8 @@ import villageTemplateText from "../assets/maps/tha-pho-villages-template.geojso
 import riverTemplateText from "../assets/maps/tha-pho-river-reference.geojson?raw";
 import "../boundary-editor.css";
 
-export const VILLAGE_DRAFT_KEY = "prms-thapho-villages-draft-v1";
-export const RIVER_DRAFT_KEY = "prms-thapho-river-draft-v1";
+export const VILLAGE_DRAFT_KEY = "prms-thapho-villages-draft-v2-contiguous";
+export const RIVER_DRAFT_KEY = "prms-thapho-river-draft-v2";
 
 const DEFAULT_CENTER = [16.746, 100.205];
 const SHARED_VERTEX_EPSILON = 0.000045;
@@ -433,7 +433,7 @@ export default function VillageBoundaryEditor({ open, onClose, onSaved }) {
     setVillages(parseTemplate(villageTemplateText));
     setRiver(parseTemplate(riverTemplateText));
     setSelectedVertex(null);
-    setMessage("คืนค่าเป็นต้นแบบจาก SVG เดิมแล้ว");
+    setMessage("คืนค่าเป็นต้นแบบขอบเขตต่อเนื่องแล้ว — ถนนและแม่น้ำเป็นเส้นแบ่ง ไม่ใช่ช่องว่าง");
   };
 
   const handleImport = async (event) => {
@@ -459,7 +459,7 @@ export default function VillageBoundaryEditor({ open, onClose, onSaved }) {
           <div>
             <small>เครื่องมือจัดทำ GeoJSON</small>
             <h2>ปรับแนวเขตหมู่บ้านบนแผนที่จริง</h2>
-            <p>ลากจุดขอบเขตให้ตรงถนน คลอง และแม่น้ำ จุดร่วมของสองหมู่จะเคลื่อนพร้อมกัน</p>
+            <p>ลากเส้นร่วมให้ตรงกึ่งกลางถนน คลอง และแม่น้ำ โดยไม่มีพื้นที่ว่างระหว่างหมู่ จุดร่วมจะเคลื่อนพร้อมกัน</p>
           </div>
           <button type="button" className="boundary-editor-close" onClick={onClose} aria-label="ปิด">×</button>
         </header>
@@ -479,7 +479,7 @@ export default function VillageBoundaryEditor({ open, onClose, onSaved }) {
           <aside className="boundary-editor-sidebar">
             <section><h3>วิธีใช้งาน</h3><ol><li>เลือก “แนวแม่น้ำอ้างอิง” แล้วลากจุดสีน้ำเงินให้ตามกลางแม่น้ำจริงก่อน</li><li>กลับมาเลือก “ขอบเขตหมู่” แล้วลากจุดสีขาวให้ตรงเส้นแบ่งจริง</li><li>จุดจางกลางเส้นใช้เพิ่ม Vertex และคลิกขวาที่จุดหลักเพื่อลบ</li><li>กด “ดูดจุดเข้าแม่น้ำ” สำหรับขอบที่ใช้แม่น้ำเป็นเส้นแบ่ง</li></ol></section>
             <section><h3>จุดที่เลือก</h3>{selectedVertex?.coordinate ? <div className="boundary-coordinate-card"><span>Latitude</span><b>{selectedVertex.coordinate[1].toFixed(7)}</b><span>Longitude</span><b>{selectedVertex.coordinate[0].toFixed(7)}</b></div> : <p>คลิกจุดบนแผนที่เพื่อดูพิกัด</p>}</section>
-            <section className="boundary-editor-note"><h3>สถานะ</h3><p>{message}</p><small>ร่างนี้ยังไม่ใช่ขอบเขตราชการ จนกว่าเจ้าหน้าที่ท้องถิ่นจะตรวจรับรอง</small></section>
+            <section className="boundary-editor-note"><h3>สถานะ</h3><p>{message}</p><small>ต้นแบบนี้ไม่มีช่องว่างระหว่างหมู่ แต่ยังต้องปรับแนวแม่น้ำ/ถนนและให้เจ้าหน้าที่ท้องถิ่นตรวจรับรอง</small></section>
           </aside>
         </div>
 

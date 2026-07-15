@@ -269,11 +269,11 @@ export default function DashboardMap({
         const active = Number(selectedVillage) === villageNo;
         const hovered = Number(hoveredVillage) === villageNo;
         return {
-          color: active ? "#064a37" : hovered ? "#08724f" : "#ffffff",
-          weight: active ? 3.5 : hovered ? 3 : 1.7,
+          color: active ? "#064a37" : hovered ? "#08724f" : "#365f54",
+          weight: active ? 3.2 : hovered ? 2.4 : 1.05,
           opacity: 0.95,
           fillColor: getFill(row, metric, maximum),
-          fillOpacity: active ? 0.62 : hovered ? 0.5 : 0.34,
+          fillOpacity: active ? 0.58 : hovered ? 0.46 : 0.30,
         };
       },
       onEachFeature(feature, featureLayer) {
@@ -360,7 +360,7 @@ export default function DashboardMap({
     <>
       <section className="real-map-card" ref={shellRef}>
         <header className="real-map-card__head">
-          <div><small>ข้อมูลเชิงพื้นที่</small><h2>ตำแหน่งสัตว์และขอบเขตหมู่ท่าโพธ์</h2><p>ใช้ GeoJSON แยกหมู่ 1–11 สามารถแก้ Vertex ให้ตรงแนวถนน คลอง และแม่น้ำบน Leaflet ได้</p></div>
+          <div><small>ข้อมูลเชิงพื้นที่</small><h2>ตำแหน่งสัตว์และขอบเขตหมู่ท่าโพธ์</h2><p>ขอบเขตหมู่เชื่อมต่อกันเต็มพื้นที่ ถนน คลอง และแม่น้ำใช้เป็นเส้นแบ่งร่วม ไม่เว้นเป็นช่องว่าง</p></div>
           <div className="real-map-card__head-tools">
             <label><span>ชั้นข้อมูล</span><select value={metric} onChange={(event) => onMetricChange?.(event.target.value)}>{Object.values(DASHBOARD_METRICS).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             <div className="real-map-basemap">{Object.entries(BASE_LAYERS).map(([id, item]) => <button type="button" key={id} className={baseMap === id ? "is-active" : ""} onClick={() => setBaseMap(id)}>{item.label}</button>)}</div>
@@ -379,7 +379,7 @@ export default function DashboardMap({
           </div>
           <div className="real-map-data-status"><span><b>{allPets.length.toLocaleString("th-TH")}</b> ตัวมีพิกัด</span><span><b>{households.length.toLocaleString("th-TH")}</b> จุดที่กำลังแสดง</span>{missingCoordinates ? <span className="is-warning"><b>{missingCoordinates.toLocaleString("th-TH")}</b> ตัวขาดพิกัด</span> : null}</div>
           <div className="real-map-usage-hint">ลากเพื่อเลื่อน · ดับเบิลคลิกเพื่อซูม · กด “ปรับแนวเขต” เพื่อแก้เส้นบนแผนที่จริง</div>
-          <div className="real-map-boundary-state real-map-boundary-state--ready">ขอบเขตเป็นฉบับร่าง GeoJSON และแก้ไขได้บน Leaflet</div>
+          <div className="real-map-boundary-state real-map-boundary-state--ready">GeoJSON แบบต่อเนื่อง: ไม่มีช่องว่างตามแนวถนนหรือแม่น้ำ และแก้เส้นร่วมได้บน Leaflet</div>
         </div>
 
         <VillageStrip rows={rows} selectedVillage={selectedVillage} hoveredVillage={hoveredVillage} onSelect={onVillageSelect} onHover={onVillageHover} />
