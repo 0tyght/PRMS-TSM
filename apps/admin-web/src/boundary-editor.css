@@ -1,0 +1,328 @@
+.boundary-editor-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(10, 28, 23, 0.62);
+  backdrop-filter: blur(5px);
+}
+
+.boundary-editor-panel {
+  width: min(1540px, 100%);
+  height: min(920px, calc(100vh - 36px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid #d8e4df;
+  border-radius: 18px;
+  background: #f6f9f8;
+  box-shadow: 0 28px 90px rgba(4, 25, 18, 0.28);
+  color: #17372d;
+  font-family: "Prompt", "Noto Sans Thai", Tahoma, sans-serif;
+}
+
+.boundary-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid #dce7e3;
+  background: #fff;
+}
+
+.boundary-editor-header small {
+  color: #08724f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.boundary-editor-header h2 {
+  margin: 2px 0 2px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.boundary-editor-header p {
+  margin: 0;
+  color: #667a72;
+  font-size: 13px;
+}
+
+.boundary-editor-close {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #d9e4e0;
+  border-radius: 11px;
+  background: #fff;
+  color: #49655b;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.boundary-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  border-bottom: 1px solid #dce7e3;
+  background: #fbfdfc;
+}
+
+.boundary-editor-toolbar > label:not(.boundary-editor-check) {
+  min-width: 132px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  border: 1px solid #d5e2dd;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.boundary-editor-toolbar label > span {
+  color: #647970;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.boundary-editor-toolbar select {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #173f32;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.boundary-editor-toolbar button,
+.boundary-editor-footer button {
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid #d3e1dc;
+  border-radius: 10px;
+  background: #fff;
+  color: #31564a;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.boundary-editor-toolbar button:hover:not(:disabled),
+.boundary-editor-footer button:hover:not(:disabled) {
+  border-color: #7db49f;
+  color: #08724f;
+}
+
+.boundary-editor-toolbar button:disabled,
+.boundary-editor-footer button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.boundary-editor-segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid #d4e2dd;
+  border-radius: 10px;
+  background: #eef5f2;
+}
+
+.boundary-editor-segmented button {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+}
+
+.boundary-editor-segmented button.is-active {
+  background: #fff;
+  color: #08724f;
+  box-shadow: 0 2px 8px rgba(20, 68, 52, 0.1);
+}
+
+.boundary-editor-check {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #d5e2dd;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.boundary-editor-check input {
+  accent-color: #08724f;
+}
+
+.boundary-editor-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+
+.boundary-editor-map {
+  min-height: 500px;
+  background: #dfe9e5;
+}
+
+.boundary-editor-sidebar {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  border-left: 1px solid #dce7e3;
+  background: #fff;
+}
+
+.boundary-editor-sidebar section {
+  padding: 14px;
+  border: 1px solid #dce7e3;
+  border-radius: 12px;
+  background: #fbfdfc;
+}
+
+.boundary-editor-sidebar section + section {
+  margin-top: 10px;
+}
+
+.boundary-editor-sidebar h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.boundary-editor-sidebar p,
+.boundary-editor-sidebar li,
+.boundary-editor-sidebar small {
+  color: #657970;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.boundary-editor-sidebar ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.boundary-coordinate-card {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 6px 10px;
+}
+
+.boundary-coordinate-card span {
+  color: #73857e;
+  font-size: 11px;
+}
+
+.boundary-coordinate-card b {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.boundary-editor-note {
+  border-color: #ecd9a9 !important;
+  background: #fffaf0 !important;
+}
+
+.boundary-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid #dce7e3;
+  background: #fff;
+}
+
+.boundary-editor-footer > div {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.boundary-editor-footer button.is-primary {
+  border-color: #08724f;
+  background: #08724f;
+  color: #fff;
+}
+
+.boundary-handle-shell {
+  background: transparent;
+  border: 0;
+}
+
+.boundary-handle {
+  width: 16px;
+  height: 16px;
+  display: block;
+  border: 3px solid #084e9f;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 7px rgba(0, 34, 73, 0.45);
+}
+
+.boundary-handle--vertex.is-selected {
+  width: 19px;
+  height: 19px;
+  margin: -2px;
+  border-color: #e54836;
+  box-shadow: 0 0 0 4px rgba(229, 72, 54, 0.25);
+}
+
+.boundary-handle--river {
+  border-color: #086ad8;
+  background: #77c7ff;
+}
+
+.boundary-handle--river.is-selected {
+  border-color: #fff;
+  background: #0754b8;
+  box-shadow: 0 0 0 4px rgba(7, 84, 184, 0.35);
+}
+
+.boundary-handle--midpoint {
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(8, 78, 159, 0.72);
+  background: rgba(255, 255, 255, 0.82);
+  opacity: 0.76;
+}
+
+.boundary-editor-tooltip {
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: #163f33 !important;
+  color: #fff !important;
+  font-family: "Prompt", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.18);
+}
+
+.boundary-editor-tooltip::before {
+  border-top-color: #163f33 !important;
+}
+
+.real-map-edit-button {
+  border-color: #98c4b4 !important;
+  background: #f2faf7 !important;
+  color: #08724f !important;
+}
+
+@media (max-width: 1000px) {
+  .boundary-editor-modal { padding: 0; }
+  .boundary-editor-panel {
+    width: 100%;
+    height: 100vh;
+    border-radius: 0;
+  }
+  .boundary-editor-workspace { grid-template-columns: 1fr; }
+  .boundary-editor-sidebar { display: none; }
+  .boundary-editor-footer { overflow-x: auto; }
+}
