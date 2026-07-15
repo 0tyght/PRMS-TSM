@@ -13,14 +13,77 @@ import CasesPage from "./pages/CasesPage.jsx";
 import ReportsPage from "./pages/ReportsPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 
-const PAGE_COMPONENTS={dashboard:DashboardPage,registrations:RegistrationsPage,pets:PetsPage,services:ServicesPage,map:MapPage,cases:CasesPage,reports:ReportsPage,settings:SettingsPage};
+const PAGE_COMPONENTS = {
+  dashboard: DashboardPage,
+  registrations: RegistrationsPage,
+  pets: PetsPage,
+  services: ServicesPage,
+  map: MapPage,
+  cases: CasesPage,
+  reports: ReportsPage,
+  settings: SettingsPage,
+};
 
-export default function App(){
-  const[token,setToken]=useState(()=>sessionStorage.getItem("prms_access_token"));
-  const{page,navigate}=useHashPage();
-  const title=useMemo(()=>ADMIN_MENU.find(item=>item.id===page)?.label||"ภาพรวม",[page]);
-  if(!token)return <LoginPage onLogin={setToken}/>;
-  const Page=PAGE_COMPONENTS[page]||DashboardPage;
-  const logout=()=>{sessionStorage.removeItem("prms_access_token");setToken(null)};
-  return <AdminLayout page={page} navigate={navigate} title={title} onLogout={logout}><PageErrorBoundary key={page} onRecover={()=>navigate("dashboard")}><Page token={token} navigate={navigate}/></PageErrorBoundary></AdminLayout>;
+export default function App() {
+  const [token, setToken] = useState(() => {
+    try {
+      return sessionStorage.getItem("prms_access_token");
+    } catch {
+      return null;
+    }
+  });
+
+  const { page, navigate } = useHashPage();
+
+  const title = useMemo(
+    () =>
+      ADMIN_MENU.find((item) => item.id === page)?.label ||
+      "ภาพรวม",
+    [page],
+  );
+
+  if (!token) {
+    return <LoginPage onLogin={setToken} />;
+  }
+
+  const Page = PAGE_COMPONENTS[page] || DashboardPage;
+
+  function logout() {
+    try {
+      sessionStorage.removeItem("prms_access_token");
+    } catch {
+      // ดำเนินการออกจากระบบต่อ
+    }
+
+    setToken(null);
+  }
+
+  function recoverPage() {
+    if (page === "dashboard") {
+      window.location.reload();
+      return;
+    }
+
+    navigate("dashboard");
+  }
+
+  return (
+    <AdminLayout
+      page={page}
+      navigate={navigate}
+      title={title}
+      onLogout={logout}
+    >
+      <PageErrorBoundary
+        resetKey={page}
+        onRecover={recoverPage}
+      >
+        <Page
+          key={page}
+          token={token}
+          navigate={navigate}
+        />
+      </PageErrorBoundary>
+    </AdminLayout>
+  );
 }
