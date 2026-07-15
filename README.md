@@ -28,6 +28,8 @@ API: `http://localhost:4100/api/health`
 
 เว็บไซต์สาธิต Admin Web: `https://0tyght.github.io/PRMS-TSM/`
 
+เปิดช่องทางทดสอบสาธารณะแบบเดียวกับ postsales-iot ด้วย `powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1` หน้า GitHub Pages จะเชื่อม API ผ่าน Cloudflare Quick Tunnel และกลับไปใช้ข้อมูลสาธิตอัตโนมัติเมื่อ Tunnel ออฟไลน์
+
 ข้อมูลระบบจริงต้องผ่าน API และฐานข้อมูลกลางเท่านั้น ห้ามใช้ `localStorage` เป็นแหล่งข้อมูลหลัก
 
 ## ลำดับความสำคัญ

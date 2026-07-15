@@ -24,6 +24,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: mkdir -p apps/admin-web/public && cp runtime-config.json apps/admin-web/public/runtime-config.json
       - run: npm run build --workspace @prms/admin-web
         env:
           VITE_GITHUB_DEMO: "true"

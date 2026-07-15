@@ -1,4 +1,6 @@
 node_modules/
+.runtime/
+.tools/
 dist/
 .env
 *.log

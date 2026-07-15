@@ -82,14 +82,10 @@ function Login({ onLogin }) {
         onLogin("github-pages-demo");
         return;
       }
-      const useDevelopmentAccess = devMode && password.length === 0;
-      const response = await fetch(useDevelopmentAccess ? "/api/auth/dev-login" : "/api/auth/login", {
-        method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ email, password }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
-      sessionStorage.setItem("prms_access_token", body.data.token);
-      onLogin(body.data.token);
+      const usePasswordlessAccess = passwordOptional && password.length === 0;
+      const data = await createApi(null).post(usePasswordlessAccess ? "/api/auth/dev-login" : "/api/auth/login", { email, password });
+      sessionStorage.setItem("prms_access_token", data.token);
+      onLogin(data.token);
     } catch (err) { setError(err.message || "ไม่สามารถเข้าสู่ระบบได้"); }
     finally { setBusy(false); }
   }

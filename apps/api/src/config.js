@@ -7,6 +7,7 @@ export const config = Object.freeze({
   origins: [
     process.env.ADMIN_WEB_ORIGIN || "http://localhost:5173",
     process.env.CITIZEN_WEB_ORIGIN || "http://localhost:5174",
+    process.env.PUBLIC_WEB_ORIGIN || "https://0tyght.github.io",
   ],
   db: {
     host: process.env.DB_HOST || "127.0.0.1",
