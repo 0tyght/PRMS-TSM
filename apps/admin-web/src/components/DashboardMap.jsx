@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import villagesGeoJsonText from "../assets/maps/tha-pho-villages.geojson?raw";
-import riverGeoJsonText from "../assets/maps/tha-pho-river.geojson?raw";
 import {
   DASHBOARD_METRICS,
   formatMetricValue,
@@ -12,7 +11,6 @@ import {
 const THA_PHO_CENTER = [16.755, 100.207];
 const DEFAULT_ZOOM = 12;
 const VILLAGES_GEOJSON = JSON.parse(villagesGeoJsonText);
-const RIVER_GEOJSON = JSON.parse(riverGeoJsonText);
 
 const BASE_LAYERS = {
   streets: {
@@ -197,14 +195,12 @@ export default function DashboardMap({
   const mapRef = useRef(null);
   const baseLayerRef = useRef(null);
   const villageLayerRef = useRef(null);
-  const riverLayerRef = useRef(null);
   const markerLayerRef = useRef(null);
   const villageLayersRef = useRef(new Map());
 
   const [baseMap, setBaseMap] = useState("streets");
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [showVillages, setShowVillages] = useState(true);
-  const [showRiver, setShowRiver] = useState(true);
   const [showPoints, setShowPoints] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -311,35 +307,6 @@ export default function DashboardMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return undefined;
-
-    if (riverLayerRef.current) {
-      map.removeLayer(riverLayerRef.current);
-      riverLayerRef.current = null;
-    }
-
-    const layer = L.geoJSON(RIVER_GEOJSON, {
-      style: {
-        color: "#2b8dbd",
-        weight: 1.6,
-        opacity: 0.9,
-        fillColor: "#69bfe2",
-        fillOpacity: 0.34,
-      },
-      interactive: false,
-    });
-
-    if (showRiver) layer.addTo(map);
-    riverLayerRef.current = layer;
-
-    return () => {
-      if (map.hasLayer(layer)) map.removeLayer(layer);
-      if (riverLayerRef.current === layer) riverLayerRef.current = null;
-    };
-  }, [showRiver]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return undefined;
     if (markerLayerRef.current) map.removeLayer(markerLayerRef.current);
     const layer = L.layerGroup();
     if (showPoints) {
@@ -391,7 +358,7 @@ export default function DashboardMap({
   return (
     <section className="real-map-card" ref={shellRef}>
         <header className="real-map-card__head">
-          <div><small>ข้อมูลเชิงพื้นที่</small><h2>ตำแหน่งสัตว์และขอบเขตหมู่ท่าโพธ์</h2><p>ใช้ขอบเขตหมู่ 1–11 ที่จัดทำจาก QGIS และแสดงแนวแม่น้ำเป็นชั้นข้อมูลแยกบนแผนที่จริง</p></div>
+          <div><small>ข้อมูลเชิงพื้นที่</small><h2>ตำแหน่งสัตว์และขอบเขตหมู่ท่าโพธ์</h2><p>ใช้ขอบเขตหมู่ 1–11 ที่จัดทำจาก QGIS บนแผนที่จริง</p></div>
           <div className="real-map-card__head-tools">
             <label><span>ชั้นข้อมูล</span><select value={metric} onChange={(event) => onMetricChange?.(event.target.value)}>{Object.values(DASHBOARD_METRICS).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             <div className="real-map-basemap">{Object.entries(BASE_LAYERS).map(([id, item]) => <button type="button" key={id} className={baseMap === id ? "is-active" : ""} onClick={() => setBaseMap(id)}>{item.label}</button>)}</div>
@@ -403,7 +370,6 @@ export default function DashboardMap({
           <div className="real-map-toolbar">
             <button type="button" onClick={fitAllVillages}>ดูทั้งตำบล</button>
             <button type="button" className={showVillages ? "is-active" : ""} onClick={() => setShowVillages((value) => !value)}>แนวเขตหมู่</button>
-            <button type="button" className={showRiver ? "is-active" : ""} onClick={() => setShowRiver((value) => !value)}>แม่น้ำน่าน</button>
             <button type="button" className={showPoints ? "is-active" : ""} onClick={() => setShowPoints((value) => !value)}>จุดสัตว์</button>
             <span />
             <button type="button" onClick={toggleFullscreen}>{fullscreen ? "ออกเต็มจอ" : "เต็มจอ"}</button>
