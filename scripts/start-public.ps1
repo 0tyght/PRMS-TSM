@@ -1,199 +1,319 @@
-param(
+﻿param(
     [switch]$SkipGitPush
 )
 
 $ErrorActionPreference = "Stop"
-Set-StrictMode -Version Latest
 
-$root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$runtimeDir = Join-Path $root ".runtime"
-$configPath = Join-Path $root "runtime-config.json"
-$apiHealthUrl = "http://127.0.0.1:4100/api/health"
-$portalUrl = "https://0tyght.github.io/PRMS-TSM/"
-
-function Get-ApiHealth {
-    try {
-        return Invoke-RestMethod `
-            -Uri $apiHealthUrl `
-            -Method Get `
-            -TimeoutSec 3
-    }
-    catch {
-        return $null
-    }
-}
-
-function Test-ApiReady {
+function Test-HealthReady {
     param(
-        $Health
+        [object]$Health
     )
 
     return (
         $null -ne $Health -and
-        $Health.status -eq "ok" -and
-        $Health.database -eq "ready"
+        [string]$Health.status -eq "ok" -and
+        [string]$Health.database -eq "ready"
     )
 }
 
-function Get-PublicApiHealth {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$BaseUrl
-    )
-
+function Get-LocalHealth {
     try {
         return Invoke-RestMethod `
-            -Uri "$BaseUrl/api/health" `
-            -Method Get `
-            -TimeoutSec 10
+            -Uri "http://127.0.0.1:4100/api/health" `
+            -TimeoutSec 3 `
+            -Headers @{
+                "Cache-Control" = "no-cache"
+            }
     }
     catch {
         return $null
     }
 }
 
-function Get-CloudflaredPath {
-    $candidates = @(
-        (Join-Path $root ".tools\cloudflared.exe"),
-        "C:\xampp\htdocs\postsales-iot\.tools\cloudflared.exe",
-        "C:\cloudflared\cloudflared.exe"
+function Get-PublicHealth {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TunnelUrl
     )
 
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
-            return $candidate
+    $baseUrl = $TunnelUrl.TrimEnd("/")
+    $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+
+    $healthUrl = "{0}/api/health?ts={1}" -f `
+        $baseUrl,
+        $timestamp
+
+    # ลองใช้ DNS ปกติของ Windows ก่อน
+    # ไม่มีการแก้ไข DNS หรือ Network Adapter
+    try {
+        return Invoke-RestMethod `
+            -Uri $healthUrl `
+            -TimeoutSec 15 `
+            -Headers @{
+                "Cache-Control" = "no-cache"
+                "Pragma" = "no-cache"
+                "User-Agent" = "PRMS-TSM-Health-Check"
+            }
+    }
+    catch {
+        $normalResolverError = $_.Exception.Message
+    }
+
+    # หาก DNS ของเครื่องยังหา Quick Tunnel ไม่เจอ
+    # ให้ถาม Public DNS เฉพาะชื่อโดเมนนี้เท่านั้น
+    $tunnelHost = ([Uri]$baseUrl).DnsSafeHost
+    $addresses = @()
+    $publicDnsErrors = @()
+
+    foreach ($dnsServer in @("1.1.1.1", "8.8.8.8")) {
+        try {
+            $resolvedAddresses = @(
+                Resolve-DnsName `
+                    -Name $tunnelHost `
+                    -Server $dnsServer `
+                    -Type A `
+                    -DnsOnly `
+                    -ErrorAction Stop |
+                Where-Object {
+                    $null -ne $_.IPAddress
+                } |
+                Select-Object `
+                    -ExpandProperty IPAddress `
+                    -Unique
+            )
+
+            if ($resolvedAddresses.Count -gt 0) {
+                $addresses = $resolvedAddresses
+                break
+            }
+        }
+        catch {
+            $publicDnsErrors += (
+                "{0}: {1}" -f `
+                    $dnsServer,
+                    $_.Exception.Message
+            )
         }
     }
 
-    $command = Get-Command "cloudflared.exe" -ErrorAction SilentlyContinue
+    if ($addresses.Count -eq 0) {
+        $dnsErrorText = $publicDnsErrors -join " | "
 
-    if ($command) {
-        return $command.Source
+        throw (
+            "Tunnel DNS resolution failed. " +
+            "Windows resolver: {0}. Public DNS: {1}" -f `
+                $normalResolverError,
+                $dnsErrorText
+        )
     }
 
-    throw @"
-cloudflared.exe was not found.
+    $lastCurlError = ""
 
-Place cloudflared.exe at:
-$root\.tools\cloudflared.exe
-"@
+    foreach ($address in $addresses) {
+        $resolveValue = "{0}:443:{1}" -f `
+            $tunnelHost,
+            $address
+
+        $curlOutput = & curl.exe `
+            --silent `
+            --show-error `
+            --fail `
+            --max-time 20 `
+            --resolve $resolveValue `
+            --header "Cache-Control: no-cache" `
+            --header "Pragma: no-cache" `
+            $healthUrl 2>&1
+
+        $curlExitCode = $LASTEXITCODE
+
+        $responseText = (
+            $curlOutput -join [Environment]::NewLine
+        )
+
+        if ($curlExitCode -ne 0) {
+            $lastCurlError = (
+                "{0} returned curl exit code {1}: {2}" -f `
+                    $address,
+                    $curlExitCode,
+                    $responseText
+            )
+
+            continue
+        }
+
+        try {
+            return (
+                $responseText |
+                ConvertFrom-Json
+            )
+        }
+        catch {
+            $lastCurlError = (
+                "{0} returned invalid JSON: {1}" -f `
+                    $address,
+                    $responseText
+            )
+        }
+    }
+
+    throw (
+        "Tunnel health check failed: {0}" -f `
+            $lastCurlError
+    )
 }
 
-function Stop-PreviousTunnel {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$PidPath
+$root = (
+    Resolve-Path (
+        Join-Path $PSScriptRoot ".."
     )
+).Path
 
-    if (-not (Test-Path $PidPath)) {
-        return
-    }
+$runtimeDir = Join-Path $root ".runtime"
 
-    $pidText = Get-Content $PidPath -Raw -ErrorAction SilentlyContinue
-    $oldPid = 0
+$configPath = Join-Path `
+    $root `
+    "runtime-config.json"
 
-    if (
-        [string]::IsNullOrWhiteSpace($pidText) -or
-        -not [int]::TryParse($pidText.Trim(), [ref]$oldPid)
-    ) {
-        Remove-Item $PidPath -Force -ErrorAction SilentlyContinue
-        return
-    }
+$cloudflaredPath = Join-Path `
+    $root `
+    ".tools\cloudflared.exe"
 
-    $oldProcess = Get-CimInstance `
-        -ClassName Win32_Process `
-        -Filter "ProcessId=$oldPid" `
-        -ErrorAction SilentlyContinue
+if (-not (Test-Path $cloudflaredPath)) {
+    $cloudflaredPath = (
+        "C:\xampp\htdocs\postsales-iot\" +
+        ".tools\cloudflared.exe"
+    )
+}
 
-    if (
-        $oldProcess -and
-        $oldProcess.CommandLine -like "*127.0.0.1:4100*"
-    ) {
-        Write-Host "Stopping previous Cloudflare Tunnel..." -ForegroundColor Yellow
-        Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
-    }
-
-    Remove-Item $PidPath -Force -ErrorAction SilentlyContinue
+if (-not (Test-Path $cloudflaredPath)) {
+    throw "cloudflared.exe was not found."
 }
 
 New-Item `
     -ItemType Directory `
     -Force `
     -Path $runtimeDir |
-    Out-Null
+Out-Null
 
-Write-Host "Checking API and MySQL..." -ForegroundColor Cyan
+Write-Host `
+    "Checking API and MySQL..." `
+    -ForegroundColor Cyan
 
-$health = Get-ApiHealth
+$localHealth = Get-LocalHealth
 
-if (-not (Test-ApiReady -Health $health)) {
-    if (
-        $health -and
-        $health.status -eq "ok" -and
-        $health.database -ne "ready"
-    ) {
-        throw @"
-The API is running, but MySQL is unavailable.
-
-Please start MySQL in XAMPP and run this script again.
-"@
-    }
-
-    $nodeCommand = Get-Command "node.exe" -ErrorAction SilentlyContinue
-
-    if (-not $nodeCommand) {
-        throw "node.exe was not found. Please install Node.js or add it to PATH."
-    }
-
-    Write-Host "Starting API on port 4100..." -ForegroundColor Yellow
-
-    Start-Process `
-        -FilePath $nodeCommand.Source `
-        -ArgumentList "apps/api/src/server.js" `
-        -WorkingDirectory $root `
-        -WindowStyle Hidden |
+if (-not (Test-HealthReady $localHealth)) {
+    if ($null -eq $localHealth) {
+        Start-Process `
+            -FilePath "node.exe" `
+            -ArgumentList @(
+                "apps/api/src/server.js"
+            ) `
+            -WorkingDirectory $root `
+            -WindowStyle Hidden |
         Out-Null
+    }
 
-    $apiDeadline = (Get-Date).AddSeconds(25)
+    $localDeadline = (Get-Date).AddSeconds(30)
 
     do {
         Start-Sleep -Milliseconds 500
-        $health = Get-ApiHealth
+        $localHealth = Get-LocalHealth
     }
     while (
-        -not (Test-ApiReady -Health $health) -and
-        (Get-Date) -lt $apiDeadline
+        -not (Test-HealthReady $localHealth) -and
+        (Get-Date) -lt $localDeadline
     )
 }
 
-if (-not (Test-ApiReady -Health $health)) {
-    if ($health -and $health.database -ne "ready") {
-        throw @"
-MySQL is unavailable.
-
-Please start MySQL in XAMPP and verify the .env database settings.
-"@
+if (-not (Test-HealthReady $localHealth)) {
+    $localStatus = if ($null -ne $localHealth) {
+        [string]$localHealth.status
+    }
+    else {
+        "unavailable"
     }
 
-    throw "The API is not ready on port 4100."
+    $databaseStatus = if ($null -ne $localHealth) {
+        [string]$localHealth.database
+    }
+    else {
+        "unavailable"
+    }
+
+    throw (
+        "Local API or MySQL is not ready. " +
+        "status={0}, database={1}" -f `
+            $localStatus,
+            $databaseStatus
+    )
 }
 
-Write-Host "API ready." -ForegroundColor Green
-Write-Host "MySQL ready." -ForegroundColor Green
+Write-Host `
+    "API ready." `
+    -ForegroundColor Green
 
-$cloudflared = Get-CloudflaredPath
-$pidPath = Join-Path $runtimeDir "cloudflared.pid"
+Write-Host `
+    "MySQL ready." `
+    -ForegroundColor Green
 
-Stop-PreviousTunnel -PidPath $pidPath
+$pidPath = Join-Path `
+    $runtimeDir `
+    "cloudflared.pid"
 
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$outLog = Join-Path $runtimeDir "tunnel-$stamp.out.log"
-$errLog = Join-Path $runtimeDir "tunnel-$stamp.err.log"
+if (Test-Path $pidPath) {
+    $oldPidText = Get-Content `
+        $pidPath `
+        -ErrorAction SilentlyContinue
 
-Write-Host "Starting Cloudflare Quick Tunnel..." -ForegroundColor Cyan
+    $oldPid = 0
 
-$tunnel = Start-Process `
-    -FilePath $cloudflared `
+    if (
+        [int]::TryParse(
+            [string]$oldPidText,
+            [ref]$oldPid
+        )
+    ) {
+        $oldProcess = Get-CimInstance `
+            Win32_Process `
+            -Filter (
+                "ProcessId={0}" -f $oldPid
+            ) `
+            -ErrorAction SilentlyContinue
+
+        if (
+            $null -ne $oldProcess -and
+            [string]$oldProcess.CommandLine -like `
+                "*127.0.0.1:4100*"
+        ) {
+            Write-Host `
+                "Stopping previous Cloudflare Tunnel..." `
+                -ForegroundColor Yellow
+
+            Stop-Process `
+                -Id $oldPid `
+                -Force `
+                -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+$stamp = Get-Date `
+    -Format "yyyyMMdd-HHmmss"
+
+$outLog = Join-Path `
+    $runtimeDir `
+    ("tunnel-{0}.out.log" -f $stamp)
+
+$errLog = Join-Path `
+    $runtimeDir `
+    ("tunnel-{0}.err.log" -f $stamp)
+
+Write-Host `
+    "Starting Cloudflare Quick Tunnel..." `
+    -ForegroundColor Cyan
+
+$tunnelProcess = Start-Process `
+    -FilePath $cloudflaredPath `
     -ArgumentList @(
         "tunnel",
         "--url",
@@ -208,107 +328,181 @@ $tunnel = Start-Process `
 
 [IO.File]::WriteAllText(
     $pidPath,
-    [string]$tunnel.Id,
-    (New-Object Text.UTF8Encoding($false))
+    [string]$tunnelProcess.Id
 )
 
 $tunnelUrl = $null
-$tunnelDeadline = (Get-Date).AddSeconds(60)
+$urlDeadline = (Get-Date).AddSeconds(60)
 
 while (
-    -not $tunnelUrl -and
-    (Get-Date) -lt $tunnelDeadline -and
-    -not $tunnel.HasExited
+    $null -eq $tunnelUrl -and
+    (Get-Date) -lt $urlDeadline -and
+    -not $tunnelProcess.HasExited
 ) {
     Start-Sleep -Seconds 1
 
-    $logParts = @()
+    $logLines = @()
 
     if (Test-Path $outLog) {
-        $logParts += Get-Content $outLog -ErrorAction SilentlyContinue
+        $logLines += Get-Content `
+            $outLog `
+            -ErrorAction SilentlyContinue
     }
 
     if (Test-Path $errLog) {
-        $logParts += Get-Content $errLog -ErrorAction SilentlyContinue
+        $logLines += Get-Content `
+            $errLog `
+            -ErrorAction SilentlyContinue
     }
 
-    $logText = $logParts -join "`n"
+    $combinedLog = (
+        $logLines -join [Environment]::NewLine
+    )
 
-    $match = [regex]::Match(
-        $logText,
+    $urlMatch = [regex]::Match(
+        $combinedLog,
         "https://[a-z0-9-]+\.trycloudflare\.com"
     )
 
-    if ($match.Success) {
-        $tunnelUrl = $match.Value
+    if ($urlMatch.Success) {
+        $tunnelUrl = $urlMatch.Value
     }
 }
 
-if (-not $tunnelUrl) {
-    throw @"
-Cloudflare did not return a Tunnel URL.
+if ($null -eq $tunnelUrl) {
+    $tunnelLogTail = ""
 
-Check the latest log file inside:
-$runtimeDir
-"@
+    if (Test-Path $errLog) {
+        $tunnelLogTail = (
+            Get-Content `
+                $errLog `
+                -Tail 40 |
+            Out-String
+        )
+    }
+
+    throw (
+        "Cloudflare did not return a Tunnel URL. " +
+        "Log: {0}" -f $tunnelLogTail
+    )
 }
 
-Write-Host "Tunnel URL: $tunnelUrl" -ForegroundColor Green
-Write-Host "Checking public API..." -ForegroundColor Cyan
+Write-Host `
+    ("Tunnel URL: {0}" -f $tunnelUrl) `
+    -ForegroundColor Green
+
+Write-Host `
+    "Checking public API..." `
+    -ForegroundColor Cyan
 
 $publicHealth = $null
-$publicDeadline = (Get-Date).AddSeconds(60)
+$lastPublicError = ""
+$attempt = 0
+$publicDeadline = (Get-Date).AddSeconds(150)
 
 do {
-    $publicHealth = Get-PublicApiHealth -BaseUrl $tunnelUrl
+    $attempt += 1
 
-    if (-not (Test-ApiReady -Health $publicHealth)) {
-        Start-Sleep -Seconds 2
+    if ($tunnelProcess.HasExited) {
+        throw (
+            "Cloudflare Tunnel stopped unexpectedly. " +
+            "Exit code: {0}" -f `
+                $tunnelProcess.ExitCode
+        )
     }
+
+    try {
+        $publicHealth = Get-PublicHealth `
+            -TunnelUrl $tunnelUrl
+
+        if (Test-HealthReady $publicHealth) {
+            Write-Host `
+                (
+                    "Public API and MySQL ready " +
+                    "after {0} attempt(s)." -f `
+                        $attempt
+                ) `
+                -ForegroundColor Green
+
+            break
+        }
+
+        $lastPublicError = (
+            "status={0}, database={1}" -f `
+                [string]$publicHealth.status,
+                [string]$publicHealth.database
+        )
+    }
+    catch {
+        $publicHealth = $null
+        $lastPublicError = $_.Exception.Message
+    }
+
+    Write-Host `
+        (
+            "Public health attempt {0} failed: {1}" -f `
+                $attempt,
+                $lastPublicError
+        ) `
+        -ForegroundColor Yellow
+
+    Start-Sleep -Seconds 3
 }
 while (
-    -not (Test-ApiReady -Health $publicHealth) -and
+    -not (Test-HealthReady $publicHealth) -and
     (Get-Date) -lt $publicDeadline
 )
 
-if (-not (Test-ApiReady -Health $publicHealth)) {
-    throw @"
-The Cloudflare Tunnel is online, but the public API or MySQL health check failed.
-"@
+if (-not (Test-HealthReady $publicHealth)) {
+    $tunnelLogTail = ""
+
+    if (Test-Path $errLog) {
+        $tunnelLogTail = (
+            Get-Content `
+                $errLog `
+                -Tail 40 |
+            Out-String
+        )
+    }
+
+    throw (
+        "Cloudflare Tunnel health check failed. " +
+        "URL={0}; Error={1}; Log={2}" -f `
+            $tunnelUrl,
+            $lastPublicError,
+            $tunnelLogTail
+    )
 }
 
-$config = [ordered]@{
-    apiBaseUrl = "$tunnelUrl/api"
-    portalUrl  = $portalUrl
-    updatedAt  = (Get-Date).ToUniversalTime().ToString("o")
-} | ConvertTo-Json
+$configJson = [ordered]@{
+    apiBaseUrl = "{0}/api" -f $tunnelUrl
+    portalUrl = "https://0tyght.github.io/PRMS-TSM/"
+    updatedAt = (
+        Get-Date
+    ).ToUniversalTime().ToString("o")
+} |
+ConvertTo-Json
 
 [IO.File]::WriteAllText(
     $configPath,
-    $config + [Environment]::NewLine,
-    (New-Object Text.UTF8Encoding($false))
+    $configJson + [Environment]::NewLine,
+    (
+        New-Object Text.UTF8Encoding($false)
+    )
 )
 
-Write-Host "runtime-config.json updated." -ForegroundColor Green
-
 if (-not $SkipGitPush) {
-    Write-Host "Uploading the new Tunnel URL to GitHub..." -ForegroundColor Cyan
-
     & git -C $root add runtime-config.json
 
     if ($LASTEXITCODE -ne 0) {
         throw "git add failed."
     }
 
-    & git -C $root diff --cached --quiet
+    & git -C $root diff --cached --quiet -- runtime-config.json
     $diffExitCode = $LASTEXITCODE
 
-    if ($diffExitCode -gt 1) {
-        throw "git diff failed."
-    }
-
     if ($diffExitCode -eq 1) {
-        & git -C $root commit -m "chore: update temporary API tunnel"
+        & git -C $root commit -m "อัปเดต URL API ชั่วคราว" -- runtime-config.json
 
         if ($LASTEXITCODE -ne 0) {
             throw "git commit failed."
@@ -317,26 +511,15 @@ if (-not $SkipGitPush) {
         & git -C $root push origin main
 
         if ($LASTEXITCODE -ne 0) {
-            throw @"
-git push failed.
-
-Run:
-git pull origin main --rebase
-git push origin main
-"@
+            throw "git push failed."
         }
-
-        Write-Host "New Tunnel URL pushed to GitHub." -ForegroundColor Green
     }
-    else {
-        Write-Host "runtime-config.json has not changed." -ForegroundColor Yellow
+    elseif ($diffExitCode -ne 0) {
+        throw "git diff failed."
     }
 }
 
 Write-Host ""
-Write-Host "========================================" -ForegroundColor Green
-Write-Host "PRMS-TSM is ready" -ForegroundColor Green
-Write-Host "Admin: $portalUrl" -ForegroundColor Green
-Write-Host "API:   $tunnelUrl/api" -ForegroundColor Green
-Write-Host "DB:    ready" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Green
+Write-Host "PRMS-TSM is ready." -ForegroundColor Green
+Write-Host "Admin: https://0tyght.github.io/PRMS-TSM/" -ForegroundColor Green
+Write-Host ("API: {0}/api" -f $tunnelUrl) -ForegroundColor Green
