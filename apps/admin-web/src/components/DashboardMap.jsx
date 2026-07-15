@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import VillageBoundaryEditor, { readVillageDraft } from "./VillageBoundaryEditor.jsx";
+import villagesGeoJsonText from "../assets/maps/tha-pho-villages.geojson?raw";
+import riverGeoJsonText from "../assets/maps/tha-pho-river.geojson?raw";
 import {
   DASHBOARD_METRICS,
   formatMetricValue,
   getMetricValue,
 } from "../lib/dashboardVillageData.js";
 
-const THA_PHO_CENTER = [16.746, 100.205];
+const THA_PHO_CENTER = [16.755, 100.207];
 const DEFAULT_ZOOM = 12;
+const VILLAGES_GEOJSON = JSON.parse(villagesGeoJsonText);
+const RIVER_GEOJSON = JSON.parse(riverGeoJsonText);
 
 const BASE_LAYERS = {
   streets: {
@@ -194,16 +197,16 @@ export default function DashboardMap({
   const mapRef = useRef(null);
   const baseLayerRef = useRef(null);
   const villageLayerRef = useRef(null);
+  const riverLayerRef = useRef(null);
   const markerLayerRef = useRef(null);
   const villageLayersRef = useRef(new Map());
 
   const [baseMap, setBaseMap] = useState("streets");
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [showVillages, setShowVillages] = useState(true);
+  const [showRiver, setShowRiver] = useState(true);
   const [showPoints, setShowPoints] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [villagesGeoJson, setVillagesGeoJson] = useState(() => readVillageDraft());
 
   const allPets = useMemo(() => normalizePets(rows), [rows]);
   const visiblePets = useMemo(() => selectedVillage
@@ -262,7 +265,7 @@ export default function DashboardMap({
     const maximum = Math.max(1, ...rows.map((row) => getMetricValue(row, metric)));
     const rowsByVillage = new Map(rows.map((row) => [Number(row.id), row]));
 
-    const layer = L.geoJSON(villagesGeoJson, {
+    const layer = L.geoJSON(VILLAGES_GEOJSON, {
       style(feature) {
         const villageNo = Number(feature.properties?.villageNo);
         const row = rowsByVillage.get(villageNo) || { id: villageNo, totalPets: 0, dogs: 0, cats: 0 };
@@ -295,7 +298,7 @@ export default function DashboardMap({
       map.fitBounds(layer.getBounds(), { padding: [24, 24], maxZoom: 14 });
       map._prmsBoundaryFitted = true;
     }
-  }, [hoveredVillage, metric, onVillageHover, onVillageSelect, rows, selectedVillage, showVillages, villagesGeoJson]);
+  }, [hoveredVillage, metric, onVillageHover, onVillageSelect, rows, selectedVillage, showVillages]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -304,6 +307,35 @@ export default function DashboardMap({
     if (showVillages && !map.hasLayer(layer)) layer.addTo(map);
     if (!showVillages && map.hasLayer(layer)) map.removeLayer(layer);
   }, [showVillages]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return undefined;
+
+    if (riverLayerRef.current) {
+      map.removeLayer(riverLayerRef.current);
+      riverLayerRef.current = null;
+    }
+
+    const layer = L.geoJSON(RIVER_GEOJSON, {
+      style: {
+        color: "#2b8dbd",
+        weight: 1.6,
+        opacity: 0.9,
+        fillColor: "#69bfe2",
+        fillOpacity: 0.34,
+      },
+      interactive: false,
+    });
+
+    if (showRiver) layer.addTo(map);
+    riverLayerRef.current = layer;
+
+    return () => {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+      if (riverLayerRef.current === layer) riverLayerRef.current = null;
+    };
+  }, [showRiver]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -340,7 +372,7 @@ export default function DashboardMap({
     const layer = villageLayersRef.current.get(Number(selectedVillage));
     const bounds = layer?.getBounds?.();
     if (bounds?.isValid?.()) mapRef.current?.fitBounds(bounds, { padding: [42, 42], maxZoom: 16, animate: true });
-  }, [fitAllVillages, selectedVillage, villagesGeoJson]);
+  }, [fitAllVillages, selectedVillage]);
 
   useEffect(() => {
     const handle = () => {
@@ -357,10 +389,9 @@ export default function DashboardMap({
   };
 
   return (
-    <>
-      <section className="real-map-card" ref={shellRef}>
+    <section className="real-map-card" ref={shellRef}>
         <header className="real-map-card__head">
-          <div><small>ข้อมูลเชิงพื้นที่</small><h2>ตำแหน่งสัตว์และขอบเขตหมู่ท่าโพธ์</h2><p>ขอบเขตหมู่เชื่อมต่อกันเต็มพื้นที่ ถนน คลอง และแม่น้ำใช้เป็นเส้นแบ่งร่วม ไม่เว้นเป็นช่องว่าง</p></div>
+          <div><small>ข้อมูลเชิงพื้นที่</small><h2>ตำแหน่งสัตว์และขอบเขตหมู่ท่าโพธ์</h2><p>ใช้ขอบเขตหมู่ 1–11 ที่จัดทำจาก QGIS และแสดงแนวแม่น้ำเป็นชั้นข้อมูลแยกบนแผนที่จริง</p></div>
           <div className="real-map-card__head-tools">
             <label><span>ชั้นข้อมูล</span><select value={metric} onChange={(event) => onMetricChange?.(event.target.value)}>{Object.values(DASHBOARD_METRICS).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             <div className="real-map-basemap">{Object.entries(BASE_LAYERS).map(([id, item]) => <button type="button" key={id} className={baseMap === id ? "is-active" : ""} onClick={() => setBaseMap(id)}>{item.label}</button>)}</div>
@@ -372,20 +403,17 @@ export default function DashboardMap({
           <div className="real-map-toolbar">
             <button type="button" onClick={fitAllVillages}>ดูทั้งตำบล</button>
             <button type="button" className={showVillages ? "is-active" : ""} onClick={() => setShowVillages((value) => !value)}>แนวเขตหมู่</button>
+            <button type="button" className={showRiver ? "is-active" : ""} onClick={() => setShowRiver((value) => !value)}>แม่น้ำน่าน</button>
             <button type="button" className={showPoints ? "is-active" : ""} onClick={() => setShowPoints((value) => !value)}>จุดสัตว์</button>
-            <button type="button" className="real-map-edit-button" onClick={() => setEditorOpen(true)}>ปรับแนวเขต</button>
             <span />
             <button type="button" onClick={toggleFullscreen}>{fullscreen ? "ออกเต็มจอ" : "เต็มจอ"}</button>
           </div>
           <div className="real-map-data-status"><span><b>{allPets.length.toLocaleString("th-TH")}</b> ตัวมีพิกัด</span><span><b>{households.length.toLocaleString("th-TH")}</b> จุดที่กำลังแสดง</span>{missingCoordinates ? <span className="is-warning"><b>{missingCoordinates.toLocaleString("th-TH")}</b> ตัวขาดพิกัด</span> : null}</div>
-          <div className="real-map-usage-hint">ลากเพื่อเลื่อน · ดับเบิลคลิกเพื่อซูม · กด “ปรับแนวเขต” เพื่อแก้เส้นบนแผนที่จริง</div>
-          <div className="real-map-boundary-state real-map-boundary-state--ready">GeoJSON แบบต่อเนื่อง: ไม่มีช่องว่างตามแนวถนนหรือแม่น้ำ และแก้เส้นร่วมได้บน Leaflet</div>
+          <div className="real-map-usage-hint">ลากเพื่อเลื่อน · ดับเบิลคลิกเพื่อซูม · คลิกพื้นที่หมู่เพื่อกรองข้อมูลและซูมเข้าพื้นที่</div>
+          <div className="real-map-boundary-state real-map-boundary-state--ready">ขอบเขตจาก QGIS · 11 หมู่ · Geometry ผ่านการตรวจสอบและไม่มีพื้นที่ซ้อนกัน</div>
         </div>
 
         <VillageStrip rows={rows} selectedVillage={selectedVillage} hoveredVillage={hoveredVillage} onSelect={onVillageSelect} onHover={onVillageHover} />
-      </section>
-
-      <VillageBoundaryEditor open={editorOpen} onClose={() => setEditorOpen(false)} onSaved={(next) => { setVillagesGeoJson(next); setEditorOpen(false); }} />
-    </>
+    </section>
   );
 }
