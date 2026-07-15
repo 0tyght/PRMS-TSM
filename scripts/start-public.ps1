@@ -6,7 +6,7 @@ $runtimeDir = Join-Path $root ".runtime"
 $configPath = Join-Path $root "runtime-config.json"
 $cloudflared = Join-Path $root ".tools\cloudflared.exe"
 if (-not (Test-Path $cloudflared)) { $cloudflared = "C:\xampp\htdocs\postsales-iot\.tools\cloudflared.exe" }
-if (-not (Test-Path $cloudflared)) { throw "ไม่พบ cloudflared.exe" }
+if (-not (Test-Path $cloudflared)) { throw "cloudflared.exe was not found" }
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
 try { $health = Invoke-RestMethod "http://127.0.0.1:4100/api/health" -TimeoutSec 3 } catch { $health = $null }
@@ -18,7 +18,7 @@ if (-not $health -or $health.status -ne "ok") {
     try { $health = Invoke-RestMethod "http://127.0.0.1:4100/api/health" -TimeoutSec 2 } catch {}
   } while ($health.status -ne "ok" -and (Get-Date) -lt $deadline)
 }
-if ($health.status -ne "ok") { throw "API ไม่พร้อมใช้งานที่พอร์ต 4100" }
+if ($health.status -ne "ok") { throw "API is not ready on port 4100" }
 
 $pidPath = Join-Path $runtimeDir "cloudflared.pid"
 if (Test-Path $pidPath) {
@@ -40,14 +40,14 @@ while (-not $url -and (Get-Date) -lt $deadline -and -not $tunnel.HasExited) {
   $match = [regex]::Match($text, "https://[a-z0-9-]+\.trycloudflare\.com")
   if ($match.Success) { $url = $match.Value }
 }
-if (-not $url) { throw "Cloudflare ไม่ส่ง Tunnel URL กลับมา กรุณาลองใหม่" }
+if (-not $url) { throw "Cloudflare did not return a Tunnel URL" }
 
 $publicHealth = $null
 $deadline = (Get-Date).AddSeconds(60)
 do {
   try { $publicHealth = Invoke-RestMethod "$url/api/health" -TimeoutSec 10 } catch { Start-Sleep -Seconds 2 }
 } while ($publicHealth.status -ne "ok" -and (Get-Date) -lt $deadline)
-if ($publicHealth.status -ne "ok") { throw "Tunnel เปิดแล้วแต่ API ยังเข้าถึงไม่ได้" }
+if ($publicHealth.status -ne "ok") { throw "Tunnel is online but the public API health check failed" }
 
 $config = [ordered]@{
   apiBaseUrl = "$url/api"
