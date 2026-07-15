@@ -31,6 +31,7 @@ export function createApi(token) {
         throw retryError;
       }
     }
+    if (IS_GITHUB_DEMO && [401, 403].includes(response.status)) return demoRequest(path, options);
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.message || "ไม่สามารถเชื่อมต่อระบบได้");
     return body.data;
