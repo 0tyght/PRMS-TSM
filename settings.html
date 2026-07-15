@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ตั้งค่าระบบ | ระบบจัดการข้อมูลสุนัขและแมว ตำบลท่าโพธิ์</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="app app--wide">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">🐾</div>
+      <div><div class="brand-title" id="brandTitle">ระบบจัดการข้อมูลสุนัขและแมว</div><div class="brand-sub" id="brandSub">ตำบลท่าโพธิ์ อำเภอเมือง จังหวัดพิษณุโลก</div></div>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" id="notifBell" title="การแจ้งเตือน">🔔<span class="badge">3</span></button>
+      <div class="user"><div class="avatar" id="userAvatar">จ</div><div><div class="user-name" id="userName">เจ้าหน้าที่ตำบลท่าโพธิ์</div><div class="user-role" id="userRole">ผู้ดูแลระบบ</div></div></div>
+    </div>
+  </header>
+
+  <nav class="sidebar">
+    <ul class="nav-list">
+      <li><a class="nav-item" data-page="dashboard" href="index.html"><span class="nav-icon">📊</span><span class="nav-text">Dashboard</span></a></li>
+      <li><a class="nav-item" data-page="map" href="map.html"><span class="nav-icon">🗺️</span><span class="nav-text">แผนที่หมู่บ้าน</span></a></li>
+      <li><a class="nav-item" data-page="pets" href="pets.html"><span class="nav-icon">🐾</span><span class="nav-text">ข้อมูลสัตว์เลี้ยง</span></a></li>
+      <li><a class="nav-item" data-page="register" href="register.html"><span class="nav-icon">➕</span><span class="nav-text">ขึ้นทะเบียนสัตว์</span></a></li>
+      <li><a class="nav-item" data-page="vaccine" href="vaccine.html"><span class="nav-icon">💉</span><span class="nav-text">วัคซีน</span></a></li>
+      <li><a class="nav-item" data-page="neuter" href="neuter.html"><span class="nav-icon">✂️</span><span class="nav-text">การทำหมัน</span></a></li>
+      <li><a class="nav-item" data-page="reports" href="reports.html"><span class="nav-icon">📄</span><span class="nav-text">รายงาน</span></a></li>
+      <li><a class="nav-item" data-page="cases" href="cases.html"><span class="nav-icon">📢</span><span class="nav-text">แจ้งเคส / ร้องเรียน</span></a></li>
+      <li><a class="nav-item" data-page="news" href="news.html"><span class="nav-icon">🗞️</span><span class="nav-text">ข่าวสาร / ประกาศ</span></a></li>
+      <li><a class="nav-item" data-page="settings" href="settings.html"><span class="nav-icon">⚙️</span><span class="nav-text">ตั้งค่าระบบ</span></a></li>
+    </ul>
+    <div class="sidebar-footer">ดูแลสัตว์เลี้ยงด้วยความรัก 🐶🐱<br>สร้างชุมชนน่าอยู่ ปลอดโรคพิษสุนัขบ้า</div>
+  </nav>
+
+  <main class="content">
+    <div class="pagehead"><div><h1>ตั้งค่าระบบ</h1><p>แก้ไขข้อมูลหน่วยงานและผู้ดูแลระบบ</p></div></div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="section-h">ข้อมูลหน่วยงาน</div>
+        <form id="settingsForm">
+          <div class="form-grid">
+            <div class="form-field full"><label>ชื่อระบบ / หน่วยงาน</label><input id="sOrgName" required /></div>
+            <div class="form-field"><label>ตำบล</label><input id="sSubdistrict" required /></div>
+            <div class="form-field"><label>อำเภอ</label><input id="sDistrict" required /></div>
+            <div class="form-field"><label>จังหวัด</label><input id="sProvince" required /></div>
+            <div class="form-field"><label>ชื่อเจ้าหน้าที่</label><input id="sAdminName" required /></div>
+            <div class="form-field"><label>ตำแหน่ง</label><input id="sAdminRole" required /></div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top:16px;">💾 บันทึกการตั้งค่า</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="section-h">การจัดการข้อมูล</div>
+        <p style="font-size:13px;color:var(--ink-soft);">ข้อมูลทั้งหมดถูกบันทึกไว้ในเบราว์เซอร์เครื่องนี้ (localStorage) คุณสามารถรีเซ็ตข้อมูลตัวอย่างกลับสู่ค่าเริ่มต้นได้หากต้องการ</p>
+        <button class="btn btn-danger" id="resetBtn">🗑️ รีเซ็ตข้อมูลทั้งหมดกลับค่าเริ่มต้น</button>
+
+        <div class="section-h" style="margin-top:22px;">สถิติข้อมูลปัจจุบัน</div>
+        <div id="dataStats" class="grid-2"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/geo.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+function fillForm(){
+  const s = STORE.settings();
+  document.getElementById('sOrgName').value = s.orgName;
+  document.getElementById('sSubdistrict').value = s.subdistrict;
+  document.getElementById('sDistrict').value = s.district;
+  document.getElementById('sProvince').value = s.province;
+  document.getElementById('sAdminName').value = s.adminName;
+  document.getElementById('sAdminRole').value = s.adminRole;
+}
+function renderStats(){
+  document.getElementById('dataStats').innerHTML = `
+    <div class="stat-card"><div class="ico">🐾</div><div class="num">${fmt(STORE.pets().length)}</div><div class="lbl">สัตว์เลี้ยงในระบบ</div></div>
+    <div class="stat-card"><div class="ico">📢</div><div class="num">${fmt(STORE.cases().length)}</div><div class="lbl">เคส/ร้องเรียน</div></div>
+    <div class="stat-card"><div class="ico">🗞️</div><div class="num">${fmt(STORE.news().length)}</div><div class="lbl">ประกาศข่าวสาร</div></div>
+    <div class="stat-card"><div class="ico">🏘️</div><div class="num">11</div><div class="lbl">หมู่บ้าน</div></div>
+  `;
+}
+
+document.getElementById('settingsForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  STORE.updateSettings({
+    orgName: document.getElementById('sOrgName').value.trim(),
+    subdistrict: document.getElementById('sSubdistrict').value.trim(),
+    district: document.getElementById('sDistrict').value.trim(),
+    province: document.getElementById('sProvince').value.trim(),
+    adminName: document.getElementById('sAdminName').value.trim(),
+    adminRole: document.getElementById('sAdminRole').value.trim(),
+  });
+  initLayout('settings');
+  showToast('บันทึกการตั้งค่าเรียบร้อยแล้ว');
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  if(confirm('ยืนยันการรีเซ็ตข้อมูลทั้งหมดกลับสู่ค่าเริ่มต้น? การกระทำนี้ไม่สามารถย้อนกลับได้')){
+    STORE.resetAll();
+    fillForm();
+    renderStats();
+    initLayout('settings');
+    showToast('รีเซ็ตข้อมูลกลับสู่ค่าเริ่มต้นแล้ว');
+  }
+});
+
+initLayout('settings');
+fillForm();
+renderStats();
+</script>
+</body>
+</html>

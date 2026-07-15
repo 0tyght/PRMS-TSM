@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>แจ้งเคส / ร้องเรียน | ระบบจัดการข้อมูลสุนัขและแมว ตำบลท่าโพธิ์</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="app app--wide">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">🐾</div>
+      <div><div class="brand-title" id="brandTitle">ระบบจัดการข้อมูลสุนัขและแมว</div><div class="brand-sub" id="brandSub">ตำบลท่าโพธิ์ อำเภอเมือง จังหวัดพิษณุโลก</div></div>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" id="notifBell" title="การแจ้งเตือน">🔔<span class="badge">3</span></button>
+      <div class="user"><div class="avatar" id="userAvatar">จ</div><div><div class="user-name" id="userName">เจ้าหน้าที่ตำบลท่าโพธิ์</div><div class="user-role" id="userRole">ผู้ดูแลระบบ</div></div></div>
+    </div>
+  </header>
+
+  <nav class="sidebar">
+    <ul class="nav-list">
+      <li><a class="nav-item" data-page="dashboard" href="index.html"><span class="nav-icon">📊</span><span class="nav-text">Dashboard</span></a></li>
+      <li><a class="nav-item" data-page="map" href="map.html"><span class="nav-icon">🗺️</span><span class="nav-text">แผนที่หมู่บ้าน</span></a></li>
+      <li><a class="nav-item" data-page="pets" href="pets.html"><span class="nav-icon">🐾</span><span class="nav-text">ข้อมูลสัตว์เลี้ยง</span></a></li>
+      <li><a class="nav-item" data-page="register" href="register.html"><span class="nav-icon">➕</span><span class="nav-text">ขึ้นทะเบียนสัตว์</span></a></li>
+      <li><a class="nav-item" data-page="vaccine" href="vaccine.html"><span class="nav-icon">💉</span><span class="nav-text">วัคซีน</span></a></li>
+      <li><a class="nav-item" data-page="neuter" href="neuter.html"><span class="nav-icon">✂️</span><span class="nav-text">การทำหมัน</span></a></li>
+      <li><a class="nav-item" data-page="reports" href="reports.html"><span class="nav-icon">📄</span><span class="nav-text">รายงาน</span></a></li>
+      <li><a class="nav-item" data-page="cases" href="cases.html"><span class="nav-icon">📢</span><span class="nav-text">แจ้งเคส / ร้องเรียน</span></a></li>
+      <li><a class="nav-item" data-page="news" href="news.html"><span class="nav-icon">🗞️</span><span class="nav-text">ข่าวสาร / ประกาศ</span></a></li>
+      <li><a class="nav-item" data-page="settings" href="settings.html"><span class="nav-icon">⚙️</span><span class="nav-text">ตั้งค่าระบบ</span></a></li>
+    </ul>
+    <div class="sidebar-footer">ดูแลสัตว์เลี้ยงด้วยความรัก 🐶🐱<br>สร้างชุมชนน่าอยู่ ปลอดโรคพิษสุนัขบ้า</div>
+  </nav>
+
+  <main class="content">
+    <div class="pagehead">
+      <div><h1>แจ้งเคส / ร้องเรียน</h1><p>รับแจ้งปัญหาและติดตามสถานะการดำเนินการ</p></div>
+      <button class="btn btn-primary" id="addBtn">➕ แจ้งเคสใหม่</button>
+    </div>
+
+    <div class="toolbar">
+      <select id="fVillage"><option value="all">ทุกหมู่บ้าน</option></select>
+      <select id="fStatus">
+        <option value="all">ทุกสถานะ</option>
+        <option value="รอดำเนินการ">รอดำเนินการ</option>
+        <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+        <option value="เสร็จสิ้น">เสร็จสิ้น</option>
+      </select>
+    </div>
+
+    <div id="caseList"></div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h3>แจ้งเคส / ร้องเรียนใหม่</h3>
+    <form id="caseForm">
+      <div class="form-grid">
+        <div class="form-field full"><label>หัวข้อ</label><input id="cTitle" required placeholder="เช่น พบสุนัขจรจัดจำนวนมาก" /></div>
+        <div class="form-field"><label>หมู่บ้าน</label><select id="cVillage"></select></div>
+        <div class="form-field"><label>สถานะเริ่มต้น</label>
+          <select id="cStatus"><option value="รอดำเนินการ">รอดำเนินการ</option><option value="กำลังดำเนินการ">กำลังดำเนินการ</option><option value="เสร็จสิ้น">เสร็จสิ้น</option></select>
+        </div>
+        <div class="form-field full"><label>รายละเอียด</label><textarea id="cDetail" required placeholder="อธิบายรายละเอียดของเคส..."></textarea></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="cancelBtn">ยกเลิก</button>
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="assets/geo.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+document.getElementById('fVillage').innerHTML += villageOptionsHtml().replace(/selected/g,'');
+document.getElementById('cVillage').innerHTML = villageOptionsHtml();
+
+const state = {village:'all', status:'all'};
+
+function render(){
+  let list = STORE.cases();
+  if(state.village!=='all') list = list.filter(c=>c.villageId===Number(state.village));
+  if(state.status!=='all') list = list.filter(c=>c.status===state.status);
+  document.getElementById('caseList').innerHTML = list.length ? list.map(c=>{
+    const v = GEO.villageById[c.villageId];
+    return `<div class="card" style="margin-top:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+        <div>
+          <div style="font-family:'Prompt',sans-serif;font-weight:600;font-size:14.5px;">${c.title}</div>
+          <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${v?v.name:''} · ${c.date} · รหัส ${c.id}</div>
+        </div>
+        <span class="status-pill ${caseStatusClass(c.status)}">${c.status}</span>
+      </div>
+      <p style="font-size:13px;color:var(--ink-soft);margin:10px 0;">${c.detail}</p>
+      <div class="btn-row">
+        <select onchange="updateStatus('${c.id}', this.value)" class="btn btn-sm" style="cursor:pointer;">
+          <option value="รอดำเนินการ" ${c.status==='รอดำเนินการ'?'selected':''}>รอดำเนินการ</option>
+          <option value="กำลังดำเนินการ" ${c.status==='กำลังดำเนินการ'?'selected':''}>กำลังดำเนินการ</option>
+          <option value="เสร็จสิ้น" ${c.status==='เสร็จสิ้น'?'selected':''}>เสร็จสิ้น</option>
+        </select>
+        <button class="btn btn-sm btn-danger" onclick="removeCase('${c.id}')">ลบ</button>
+      </div>
+    </div>`;
+  }).join('') : '<div class="empty-state">ยังไม่มีเคสที่ตรงกับเงื่อนไข</div>';
+}
+
+function updateStatus(id, status){ STORE.updateCase(id, {status}); render(); showToast('อัปเดตสถานะเรียบร้อยแล้ว'); }
+function removeCase(id){ if(confirm('ยืนยันการลบเคสนี้?')){ STORE.deleteCase(id); render(); showToast('ลบเคสเรียบร้อยแล้ว'); } }
+
+document.getElementById('fVillage').addEventListener('change', e=>{ state.village=e.target.value; render(); });
+document.getElementById('fStatus').addEventListener('change', e=>{ state.status=e.target.value; render(); });
+
+const backdrop = document.getElementById('modalBackdrop');
+document.getElementById('addBtn').addEventListener('click', ()=>{ document.getElementById('caseForm').reset(); backdrop.classList.add('show'); });
+document.getElementById('cancelBtn').addEventListener('click', ()=>backdrop.classList.remove('show'));
+backdrop.addEventListener('click', e=>{ if(e.target===backdrop) backdrop.classList.remove('show'); });
+
+document.getElementById('caseForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  STORE.addCase({
+    title: document.getElementById('cTitle').value.trim(),
+    villageId: Number(document.getElementById('cVillage').value),
+    status: document.getElementById('cStatus').value,
+    detail: document.getElementById('cDetail').value.trim(),
+  });
+  backdrop.classList.remove('show');
+  render();
+  showToast('แจ้งเคสใหม่เรียบร้อยแล้ว');
+});
+
+initLayout('cases');
+render();
+</script>
+</body>
+</html>

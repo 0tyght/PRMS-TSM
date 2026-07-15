@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ขึ้นทะเบียนสัตว์ | ระบบจัดการข้อมูลสุนัขและแมว ตำบลท่าโพธิ์</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="app app--wide">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">🐾</div>
+      <div><div class="brand-title" id="brandTitle">ระบบจัดการข้อมูลสุนัขและแมว</div><div class="brand-sub" id="brandSub">ตำบลท่าโพธิ์ อำเภอเมือง จังหวัดพิษณุโลก</div></div>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" id="notifBell" title="การแจ้งเตือน">🔔<span class="badge">3</span></button>
+      <div class="user"><div class="avatar" id="userAvatar">จ</div><div><div class="user-name" id="userName">เจ้าหน้าที่ตำบลท่าโพธิ์</div><div class="user-role" id="userRole">ผู้ดูแลระบบ</div></div></div>
+    </div>
+  </header>
+
+  <nav class="sidebar">
+    <ul class="nav-list">
+      <li><a class="nav-item" data-page="dashboard" href="index.html"><span class="nav-icon">📊</span><span class="nav-text">Dashboard</span></a></li>
+      <li><a class="nav-item" data-page="map" href="map.html"><span class="nav-icon">🗺️</span><span class="nav-text">แผนที่หมู่บ้าน</span></a></li>
+      <li><a class="nav-item" data-page="pets" href="pets.html"><span class="nav-icon">🐾</span><span class="nav-text">ข้อมูลสัตว์เลี้ยง</span></a></li>
+      <li><a class="nav-item" data-page="register" href="register.html"><span class="nav-icon">➕</span><span class="nav-text">ขึ้นทะเบียนสัตว์</span></a></li>
+      <li><a class="nav-item" data-page="vaccine" href="vaccine.html"><span class="nav-icon">💉</span><span class="nav-text">วัคซีน</span></a></li>
+      <li><a class="nav-item" data-page="neuter" href="neuter.html"><span class="nav-icon">✂️</span><span class="nav-text">การทำหมัน</span></a></li>
+      <li><a class="nav-item" data-page="reports" href="reports.html"><span class="nav-icon">📄</span><span class="nav-text">รายงาน</span></a></li>
+      <li><a class="nav-item" data-page="cases" href="cases.html"><span class="nav-icon">📢</span><span class="nav-text">แจ้งเคส / ร้องเรียน</span></a></li>
+      <li><a class="nav-item" data-page="news" href="news.html"><span class="nav-icon">🗞️</span><span class="nav-text">ข่าวสาร / ประกาศ</span></a></li>
+      <li><a class="nav-item" data-page="settings" href="settings.html"><span class="nav-icon">⚙️</span><span class="nav-text">ตั้งค่าระบบ</span></a></li>
+    </ul>
+    <div class="sidebar-footer">ดูแลสัตว์เลี้ยงด้วยความรัก 🐶🐱<br>สร้างชุมชนน่าอยู่ ปลอดโรคพิษสุนัขบ้า</div>
+  </nav>
+
+  <main class="content">
+    <div class="pagehead">
+      <div><h1>ขึ้นทะเบียนสัตว์เลี้ยง</h1><p>กรอกข้อมูลสุนัข/แมวและเจ้าของ เพื่อขึ้นทะเบียนเข้าสู่ระบบ</p></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="section-h">แบบฟอร์มขึ้นทะเบียน</div>
+        <form id="regForm">
+          <div class="form-grid">
+            <div class="form-field"><label>ชื่อสัตว์เลี้ยง *</label><input id="rPetName" required placeholder="เช่น ตูบ, เหมียว" /></div>
+            <div class="form-field"><label>ชนิดสัตว์ *</label><select id="rSpecies"><option value="dog">สุนัข</option><option value="cat">แมว</option></select></div>
+            <div class="form-field"><label>เพศ</label><select id="rGender"><option value="ผู้">ผู้</option><option value="เมีย">เมีย</option></select></div>
+            <div class="form-field"><label>ชื่อเจ้าของ *</label><input id="rOwner" required placeholder="ชื่อ-นามสกุล" /></div>
+            <div class="form-field"><label>หมู่บ้าน *</label><select id="rVillage"></select></div>
+            <div class="form-field"><label>บ้านเลขที่ *</label><input id="rHouseNo" type="number" min="1" required /></div>
+            <div class="form-field checkbox"><input type="checkbox" id="rVaccinated" /><label>ฉีดวัคซีนแล้ว</label></div>
+            <div class="form-field checkbox"><input type="checkbox" id="rNeutered" /><label>ทำหมันแล้ว</label></div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top:16px;width:100%;">✅ บันทึกขึ้นทะเบียน</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="section-h">ทะเบียนล่าสุด</div>
+        <div id="recentList"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/geo.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+document.getElementById('rVillage').innerHTML = villageOptionsHtml();
+
+function renderRecent(){
+  const list = STORE.pets().slice(0,6);
+  document.getElementById('recentList').innerHTML = list.length ? list.map(p=>{
+    const v = GEO.villageById[p.villageId];
+    return `<div class="activity-item">
+      <div class="activity-ico">${speciesEmoji(p.species)}</div>
+      <div><div class="activity-title">${p.petName} · เจ้าของ ${p.owner}</div><div class="activity-sub">บ้านเลขที่ ${p.houseNo} ${v?v.name:''}</div></div>
+      <div class="activity-time">${p.registeredDate}</div>
+    </div>`;
+  }).join('') : '<div class="empty-state">ยังไม่มีการขึ้นทะเบียน</div>';
+}
+
+document.getElementById('regForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  STORE.addPet({
+    petName: document.getElementById('rPetName').value.trim(),
+    species: document.getElementById('rSpecies').value,
+    gender: document.getElementById('rGender').value,
+    owner: document.getElementById('rOwner').value.trim(),
+    villageId: Number(document.getElementById('rVillage').value),
+    houseNo: Number(document.getElementById('rHouseNo').value),
+    vaccinated: document.getElementById('rVaccinated').checked,
+    neutered: document.getElementById('rNeutered').checked,
+    alive: true,
+    status: 'normal',
+  });
+  document.getElementById('regForm').reset();
+  renderRecent();
+  showToast('ขึ้นทะเบียนสัตว์เลี้ยงเรียบร้อยแล้ว 🎉');
+});
+
+initLayout('register');
+renderRecent();
+</script>
+</body>
+</html>

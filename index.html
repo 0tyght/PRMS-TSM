@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard | ระบบจัดการข้อมูลสุนัขและแมว ตำบลท่าโพธิ์</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">🐾</div>
+      <div>
+        <div class="brand-title" id="brandTitle">ระบบจัดการข้อมูลสุนัขและแมว</div>
+        <div class="brand-sub" id="brandSub">ตำบลท่าโพธิ์ อำเภอเมือง จังหวัดพิษณุโลก</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" id="notifBell" title="การแจ้งเตือน">🔔<span class="badge">3</span></button>
+      <div class="user">
+        <div class="avatar" id="userAvatar">จ</div>
+        <div>
+          <div class="user-name" id="userName">เจ้าหน้าที่ตำบลท่าโพธิ์</div>
+          <div class="user-role" id="userRole">ผู้ดูแลระบบ</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="sidebar">
+    <ul class="nav-list">
+      <li><a class="nav-item" data-page="dashboard" href="index.html"><span class="nav-icon">📊</span><span class="nav-text">Dashboard</span></a></li>
+      <li><a class="nav-item" data-page="map" href="map.html"><span class="nav-icon">🗺️</span><span class="nav-text">แผนที่หมู่บ้าน</span></a></li>
+      <li><a class="nav-item" data-page="pets" href="pets.html"><span class="nav-icon">🐾</span><span class="nav-text">ข้อมูลสัตว์เลี้ยง</span></a></li>
+      <li><a class="nav-item" data-page="register" href="register.html"><span class="nav-icon">➕</span><span class="nav-text">ขึ้นทะเบียนสัตว์</span></a></li>
+      <li><a class="nav-item" data-page="vaccine" href="vaccine.html"><span class="nav-icon">💉</span><span class="nav-text">วัคซีน</span></a></li>
+      <li><a class="nav-item" data-page="neuter" href="neuter.html"><span class="nav-icon">✂️</span><span class="nav-text">การทำหมัน</span></a></li>
+      <li><a class="nav-item" data-page="reports" href="reports.html"><span class="nav-icon">📄</span><span class="nav-text">รายงาน</span></a></li>
+      <li><a class="nav-item" data-page="cases" href="cases.html"><span class="nav-icon">📢</span><span class="nav-text">แจ้งเคส / ร้องเรียน</span></a></li>
+      <li><a class="nav-item" data-page="news" href="news.html"><span class="nav-icon">🗞️</span><span class="nav-text">ข่าวสาร / ประกาศ</span></a></li>
+      <li><a class="nav-item" data-page="settings" href="settings.html"><span class="nav-icon">⚙️</span><span class="nav-text">ตั้งค่าระบบ</span></a></li>
+    </ul>
+    <div class="sidebar-footer">ดูแลสัตว์เลี้ยงด้วยความรัก 🐶🐱<br>สร้างชุมชนน่าอยู่ ปลอดโรคพิษสุนัขบ้า</div>
+  </nav>
+
+  <main class="content">
+    <div class="pagehead">
+      <div>
+        <h1>Dashboard ภาพรวม</h1>
+        <p>สรุปข้อมูลสุนัขและแมวทั้ง 11 หมู่บ้าน ตำบลท่าโพธิ์</p>
+      </div>
+      <button class="refresh-btn" id="refreshBtn"><span class="spin-ico">⟳</span> รีเฟรชข้อมูล</button>
+    </div>
+
+    <div class="grid-4" id="statCards"></div>
+
+    <div class="grid-2" style="margin-top:16px;">
+      <div class="card">
+        <div class="section-h">สถานะสัตว์ทั้งหมด</div>
+        <div class="donut-wrap" id="donutWrap"></div>
+      </div>
+      <div class="card">
+        <div class="section-h">จำนวนสัตว์แยกตามหมู่บ้าน</div>
+        <div id="villageBars"></div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-top:16px;">
+      <div class="card">
+        <div class="section-h">กิจกรรม / เคสล่าสุด</div>
+        <div id="activityList"></div>
+      </div>
+      <div class="card">
+        <div class="section-h">ทางลัด</div>
+        <div class="quick-links">
+          <a class="quick-link" href="map.html"><div class="qi">🗺️</div><div class="qt">แผนที่หมู่บ้าน</div></a>
+          <a class="quick-link" href="register.html"><div class="qi">➕</div><div class="qt">ขึ้นทะเบียนสัตว์</div></a>
+          <a class="quick-link" href="vaccine.html"><div class="qi">💉</div><div class="qt">วัคซีน</div></a>
+          <a class="quick-link" href="neuter.html"><div class="qi">✂️</div><div class="qt">ทำหมัน</div></a>
+          <a class="quick-link" href="pets.html"><div class="qi">🐾</div><div class="qt">ข้อมูลสัตว์เลี้ยง</div></a>
+          <a class="quick-link" href="cases.html"><div class="qi">📢</div><div class="qt">แจ้งเคส</div></a>
+          <a class="quick-link" href="news.html"><div class="qi">🗞️</div><div class="qt">ข่าวสาร</div></a>
+          <a class="quick-link" href="reports.html"><div class="qi">📄</div><div class="qt">รายงาน</div></a>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/geo.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+function donutSVG(parts){
+  const total = parts.reduce((s,p)=>s+p.value,0) || 1;
+  let acc = 0;
+  const stops = parts.map(p=>{
+    const start = acc/total*100; acc += p.value;
+    const end = acc/total*100;
+    return `${p.color} ${start}% ${end}%`;
+  }).join(', ');
+  return `background: conic-gradient(${stops});`;
+}
+
+function renderDashboard(){
+  const t = STORE.overview();
+
+  document.getElementById('statCards').innerHTML = `
+    <div class="stat-card"><div class="ico">🐶</div><div class="num">${fmt(t.dogs)}</div><div class="lbl">สุนัขทั้งหมด (ตัว)</div></div>
+    <div class="stat-card"><div class="ico">🐱</div><div class="num">${fmt(t.cats)}</div><div class="lbl">แมวทั้งหมด (ตัว)</div></div>
+    <div class="stat-card"><div class="ico">💉</div><div class="num">${fmt(t.vaccinated)}</div><div class="lbl">ฉีดวัคซีนแล้ว</div><div class="delta">${t.total? Math.round(t.vaccinated/t.total*100):0}% ของทั้งหมด</div></div>
+    <div class="stat-card"><div class="ico">✂️</div><div class="num">${fmt(t.neutered)}</div><div class="lbl">ทำหมันแล้ว</div><div class="delta">${t.total? Math.round(t.neutered/t.total*100):0}% ของทั้งหมด</div></div>
+  `;
+
+  const donutStyle = donutSVG([
+    {value:t.normal, color:'#1FA97A'},
+    {value:t.risk, color:'#F0A020'},
+    {value:t.sick, color:'#E8555F'},
+    {value:t.watch, color:'#3B82C4'},
+  ]);
+  document.getElementById('donutWrap').innerHTML = `
+    <div class="donut" style="${donutStyle}"><div class="donut-hole"><b>${fmt(t.total)}</b><span>ตัวทั้งหมด</span></div></div>
+    <div class="donut-legend">
+      <div class="legend-row"><span class="lname"><span class="legend-dot" style="background:#1FA97A"></span>ปกติ</span><span class="lval">${fmt(t.normal)}</span></div>
+      <div class="legend-row"><span class="lname"><span class="legend-dot" style="background:#F0A020"></span>เสี่ยงโรค</span><span class="lval">${fmt(t.risk)}</span></div>
+      <div class="legend-row"><span class="lname"><span class="legend-dot" style="background:#E8555F"></span>ป่วย</span><span class="lval">${fmt(t.sick)}</span></div>
+      <div class="legend-row"><span class="lname"><span class="legend-dot" style="background:#3B82C4"></span>เฝ้าระวัง</span><span class="lval">${fmt(t.watch)}</span></div>
+    </div>`;
+
+  const vStats = GEO.VILLAGES.map(v => ({...v, s: STORE.villageStats(v.id)}));
+  const maxTotal = Math.max(...vStats.map(v=>v.s.total), 1);
+  document.getElementById('villageBars').innerHTML = vStats.map(v => `
+    <div class="village-bar-row">
+      <div class="vname">${v.name}</div>
+      <div class="vbar"><div style="width:${(v.s.total/maxTotal*100).toFixed(0)}%"></div></div>
+      <div class="vval">${fmt(v.s.total)}</div>
+    </div>`).join('');
+
+  const cases = STORE.cases().slice(0,3);
+  const news = STORE.news().slice(0,2);
+  const items = [
+    ...cases.map(c=>({ico:'📢', title:c.title, sub:(GEO.villageById[c.villageId]?.name||'')+' · '+c.status, time:c.date})),
+    ...news.map(n=>({ico:'🗞️', title:n.title, sub:'ประกาศ', time:n.date})),
+  ].sort((a,b)=> b.time.localeCompare(a.time)).slice(0,5);
+  document.getElementById('activityList').innerHTML = items.length ? items.map(i=>`
+    <div class="activity-item">
+      <div class="activity-ico">${i.ico}</div>
+      <div><div class="activity-title">${i.title}</div><div class="activity-sub">${i.sub}</div></div>
+      <div class="activity-time">${i.time}</div>
+    </div>`).join('') : '<div class="empty-state">ยังไม่มีกิจกรรม</div>';
+}
+
+document.getElementById('refreshBtn').addEventListener('click', (e)=>{
+  e.currentTarget.classList.add('spin');
+  setTimeout(()=>e.currentTarget.classList.remove('spin'), 650);
+  renderDashboard();
+  showToast('รีเฟรชข้อมูลเรียบร้อยแล้ว');
+});
+
+initLayout('dashboard');
+renderDashboard();
+</script>
+</body>
+</html>
