@@ -7,35 +7,74 @@ import {
   formatMetricValue,
   getMetricValue,
 } from "../lib/dashboardVillageData.js";
+import {
+  createVillageIndex,
+  getVillageLabelPoint,
+  normalizePetsToVillages,
+  pointInGeometry,
+} from "../lib/geoVillageUtils.js";
 
 const THA_PHO_CENTER = [16.755, 100.207];
 const DEFAULT_ZOOM = 12;
 const VILLAGES_GEOJSON = JSON.parse(villagesGeoJsonText);
+const VILLAGE_INDEX = createVillageIndex(VILLAGES_GEOJSON);
 
 const BASE_LAYERS = {
   streets: {
     label: "แผนที่ถนน",
+    shortLabel: "ถนน",
     url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    options: { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" },
+    options: {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    },
   },
   satellite: {
-    label: "ดาวเทียม",
+    label: "ภาพถ่ายดาวเทียม",
+    shortLabel: "ดาวเทียม",
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    options: { maxZoom: 19, attribution: "Tiles &copy; Esri" },
+    options: {
+      maxZoom: 19,
+      attribution: "Tiles &copy; Esri",
+    },
   },
+};
+
+const SPECIES_FILTERS = {
+  ALL: { label: "ทั้งหมด", shortLabel: "ทั้งหมด" },
+  DOG: { label: "เฉพาะสุนัข", shortLabel: "สุนัข" },
+  CAT: { label: "เฉพาะแมว", shortLabel: "แมว" },
 };
 
 const COLOR_RAMPS = {
-  total: ["#e6f4ee", "#8bd2b8", "#08724f"],
-  vaccination: ["#f7d8d4", "#efc76b", "#15956f"],
-  sterilization: ["#eee5f9", "#b99bde", "#7553ba"],
-  pending: ["#fff3d6", "#e7ae48", "#ad6c09"],
-  cases: ["#fbe0dd", "#e68479", "#b83c34"],
+  total: ["#e8f5ef", "#73c6a5", "#08724f"],
+  vaccination: ["#fde7e4", "#f0c35d", "#15956f"],
+  sterilization: ["#efe8f8", "#b493da", "#7250ad"],
+  pending: ["#fff4da", "#e9b34f", "#ad6c09"],
+  cases: ["#fde6e3", "#e78075", "#b83c34"],
 };
 
-function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-function toNumber(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
-function percent(a, b) { return b ? Math.round((a * 100) / b) : 0; }
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function toNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function percent(numerator, denominator) {
+  return denominator ? Math.round((numerator * 100) / denominator) : 0;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 function interpolateColor(start, end, ratio) {
   const parse = (hex) => {
@@ -44,7 +83,9 @@ function interpolateColor(start, end, ratio) {
   };
   const from = parse(start);
   const to = parse(end);
-  const values = from.map((channel, index) => Math.round(channel + ((to[index] - channel) * ratio)));
+  const values = from.map((channel, index) => (
+    Math.round(channel + ((to[index] - channel) * ratio))
+  ));
   return `#${values.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
@@ -54,105 +95,168 @@ function getFill(row, metric, maximum) {
   const ratio = metric === "vaccination" || metric === "sterilization"
     ? clamp(value / 100, 0, 1)
     : clamp(value / Math.max(1, maximum), 0, 1);
+
   return ratio <= 0.5
     ? interpolateColor(ramp[0], ramp[1], ratio * 2)
     : interpolateColor(ramp[1], ramp[2], (ratio - 0.5) * 2);
 }
 
-function isValidCoordinate(item) {
-  const latitude = toNumber(item?.latitude);
-  const longitude = toNumber(item?.longitude);
-  return latitude !== 0 && longitude !== 0 && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
-}
-
-function normalizePets(rows) {
-  return rows.flatMap((row) => (row.pets || []).filter(isValidCoordinate).map((pet) => ({
-    ...pet,
-    latitude: toNumber(pet.latitude),
-    longitude: toNumber(pet.longitude),
-    villageNo: Number(row.id),
-  })));
+function getHouseholdKey(pet) {
+  return [
+    pet.villageNo,
+    pet.householdId || "",
+    pet.houseNo || "",
+    pet.ownerName || "",
+    Number(pet.latitude).toFixed(6),
+    Number(pet.longitude).toFixed(6),
+  ].join("|");
 }
 
 function groupHouseholds(pets) {
   const groups = new Map();
+
   pets.forEach((pet) => {
-    const key = `${pet.latitude.toFixed(5)},${pet.longitude.toFixed(5)}`;
+    const key = getHouseholdKey(pet);
     const item = groups.get(key) || {
+      key,
       latitude: pet.latitude,
       longitude: pet.longitude,
+      villageNo: Number(pet.villageNo),
       pets: [],
-      villages: new Set(),
       houseNumbers: new Set(),
+      ownerNames: new Set(),
+      coordinateStatuses: new Set(),
     };
+
     item.pets.push(pet);
-    item.villages.add(Number(pet.villageNo));
     if (pet.houseNo) item.houseNumbers.add(String(pet.houseNo));
+    if (pet.ownerName) item.ownerNames.add(String(pet.ownerName));
+    item.coordinateStatuses.add(pet.coordinateStatus);
     groups.set(key, item);
   });
+
   return [...groups.values()].map((item) => ({
     ...item,
-    villages: [...item.villages],
     houseNumbers: [...item.houseNumbers],
+    ownerNames: [...item.ownerNames],
+    coordinateStatuses: [...item.coordinateStatuses],
+    coordinateAdjusted: item.coordinateStatuses.some((status) => status !== "verified" && status !== "inferred"),
   }));
 }
 
 function clusterSize(zoom) {
-  if (zoom <= 11) return 0.018;
-  if (zoom === 12) return 0.009;
-  if (zoom === 13) return 0.0045;
-  if (zoom === 14) return 0.0022;
-  if (zoom === 15) return 0.001;
+  if (zoom <= 11) return 0.012;
+  if (zoom === 12) return 0.006;
+  if (zoom === 13) return 0.003;
+  if (zoom === 14) return 0.0015;
+  if (zoom === 15) return 0.00072;
   return 0;
+}
+
+function squaredDistance(first, second) {
+  return (first[0] - second[0]) ** 2 + (first[1] - second[1]) ** 2;
+}
+
+function resolveClusterCenter(cluster) {
+  const average = [
+    cluster.longitudeTotal / cluster.count,
+    cluster.latitudeTotal / cluster.count,
+  ];
+  const feature = VILLAGE_INDEX.get(Number(cluster.villageNo));
+
+  if (feature && pointInGeometry(average, feature.geometry)) {
+    return { longitude: average[0], latitude: average[1] };
+  }
+
+  const nearest = [...cluster.households].sort((first, second) => (
+    squaredDistance([first.longitude, first.latitude], average)
+      - squaredDistance([second.longitude, second.latitude], average)
+  ))[0];
+
+  return {
+    latitude: nearest?.latitude ?? average[1],
+    longitude: nearest?.longitude ?? average[0],
+  };
 }
 
 function clusterHouseholds(households, zoom) {
   const size = clusterSize(zoom);
-  if (!size) return households.map((item) => ({ ...item, households: [item] }));
+  if (!size) {
+    return households.map((item) => ({
+      ...item,
+      households: [item],
+      coordinateAdjusted: item.coordinateAdjusted,
+    }));
+  }
+
   const groups = new Map();
   households.forEach((item) => {
-    const key = `${Math.round(item.latitude / size)}:${Math.round(item.longitude / size)}`;
+    const key = [
+      item.villageNo,
+      Math.round(item.latitude / size),
+      Math.round(item.longitude / size),
+    ].join(":");
     const cluster = groups.get(key) || {
+      villageNo: item.villageNo,
       latitudeTotal: 0,
       longitudeTotal: 0,
       count: 0,
       households: [],
       pets: [],
-      villages: new Set(),
+      coordinateAdjusted: false,
     };
+
     cluster.latitudeTotal += item.latitude;
     cluster.longitudeTotal += item.longitude;
     cluster.count += 1;
     cluster.households.push(item);
     cluster.pets.push(...item.pets);
-    item.villages.forEach((village) => cluster.villages.add(village));
+    cluster.coordinateAdjusted = cluster.coordinateAdjusted || item.coordinateAdjusted;
     groups.set(key, cluster);
   });
+
   return [...groups.values()].map((cluster) => ({
-    latitude: cluster.latitudeTotal / cluster.count,
-    longitude: cluster.longitudeTotal / cluster.count,
-    households: cluster.households,
-    pets: cluster.pets,
-    villages: [...cluster.villages],
+    ...cluster,
+    ...resolveClusterCenter(cluster),
   }));
 }
 
 function markerTone(cluster, metric) {
   if (metric === "vaccination") {
-    const value = percent(cluster.pets.filter((pet) => Boolean(pet.vaccinated)).length, cluster.pets.length);
+    const value = percent(
+      cluster.pets.filter((pet) => Boolean(pet.vaccinated)).length,
+      cluster.pets.length,
+    );
     return value >= 75 ? "good" : value >= 50 ? "warning" : "danger";
   }
   if (metric === "sterilization") {
-    const value = percent(cluster.pets.filter((pet) => Boolean(pet.sterilized)).length, cluster.pets.length);
+    const value = percent(
+      cluster.pets.filter((pet) => Boolean(pet.sterilized)).length,
+      cluster.pets.length,
+    );
     return value >= 60 ? "good" : value >= 35 ? "warning" : "danger";
   }
+  if (metric === "pending") return "warning";
+  if (metric === "cases") return "danger";
   return "primary";
 }
 
 function markerHtml(cluster, metric, selectedVillage, hoveredVillage) {
-  const selected = selectedVillage && cluster.villages.includes(Number(selectedVillage));
-  const hovered = hoveredVillage && cluster.villages.includes(Number(hoveredVillage));
-  return `<div class="map-cluster-marker map-cluster-marker--${markerTone(cluster, metric)} ${selected ? "is-selected" : ""} ${hovered ? "is-hovered" : ""}"><strong>${cluster.pets.length}</strong><small>${cluster.households.length > 1 ? `${cluster.households.length} จุด` : "จุดเลี้ยง"}</small></div>`;
+  const selected = Number(selectedVillage) === Number(cluster.villageNo);
+  const hovered = Number(hoveredVillage) === Number(cluster.villageNo);
+  const clustered = cluster.households.length > 1;
+  const detail = clustered
+    ? `${cluster.households.length} จุด`
+    : cluster.pets.length > 1
+      ? `${cluster.pets.length} ตัว`
+      : "1 ตัว";
+
+  return `
+    <div class="map-cluster-marker map-cluster-marker--${markerTone(cluster, metric)} ${selected ? "is-selected" : ""} ${hovered ? "is-hovered" : ""} ${cluster.coordinateAdjusted ? "has-adjusted-coordinate" : ""}">
+      <strong>${cluster.pets.length}</strong>
+      <small>${detail}</small>
+    </div>
+  `;
 }
 
 function popupHtml(cluster) {
@@ -160,23 +264,107 @@ function popupHtml(cluster) {
   const cats = cluster.pets.filter((pet) => pet.species === "CAT").length;
   const vaccinated = cluster.pets.filter((pet) => Boolean(pet.vaccinated)).length;
   const sterilized = cluster.pets.filter((pet) => Boolean(pet.sterilized)).length;
-  const villages = [...cluster.villages].sort((a, b) => a - b).map((village) => `หมู่ ${village}`).join(", ");
-  const petNames = cluster.pets.slice(0, 5).map((pet) => pet.petName || "ไม่ระบุชื่อ").join(" · ");
+  const petNames = cluster.pets
+    .slice(0, 5)
+    .map((pet) => escapeHtml(pet.petName || "ไม่ระบุชื่อ"))
+    .join(" · ");
   const more = Math.max(0, cluster.pets.length - 5);
-  return `<div class="map-data-popup"><div class="map-data-popup__title"><strong>${cluster.households.length > 1 ? "กลุ่มจุดเลี้ยงสัตว์" : "จุดเลี้ยงสัตว์"}</strong><span>${villages || "ไม่ระบุหมู่"}</span></div><div class="map-data-popup__stats"><span><small>สัตว์</small><b>${cluster.pets.length} ตัว</b></span><span><small>บ้าน/จุด</small><b>${cluster.households.length}</b></span><span><small>สุนัข / แมว</small><b>${dogs} / ${cats}</b></span><span><small>วัคซีน / ทำหมัน</small><b>${vaccinated} / ${sterilized}</b></span></div><p>${petNames}${more ? ` · อีก ${more} ตัว` : ""}</p></div>`;
+  const owners = [...new Set(cluster.households.flatMap((item) => item.ownerNames))]
+    .slice(0, 2)
+    .map(escapeHtml)
+    .join(" · ");
+  const houses = [...new Set(cluster.households.flatMap((item) => item.houseNumbers))]
+    .slice(0, 3)
+    .map(escapeHtml)
+    .join(", ");
+  const coordinateMessage = cluster.coordinateAdjusted
+    ? "ตำแหน่งนี้ถูกจัดให้อยู่ภายในหมู่ตามข้อมูลทะเบียน เนื่องจากพิกัดต้นทางไม่ครบหรืออยู่นอกเขต"
+    : "พิกัดต้นทางอยู่ภายในขอบเขตหมู่ที่ระบุ";
+
+  return `
+    <div class="map-data-popup">
+      <div class="map-data-popup__title">
+        <div>
+          <small>หมู่ ${cluster.villageNo}</small>
+          <strong>${cluster.households.length > 1 ? "กลุ่มจุดเลี้ยงสัตว์" : "จุดเลี้ยงสัตว์"}</strong>
+        </div>
+        <span>${cluster.coordinateAdjusted ? "พิกัดปรับแสดงผล" : "พิกัดตรวจสอบแล้ว"}</span>
+      </div>
+      <div class="map-data-popup__stats">
+        <span><small>สัตว์</small><b>${cluster.pets.length} ตัว</b></span>
+        <span><small>บ้าน/จุด</small><b>${cluster.households.length}</b></span>
+        <span><small>สุนัข / แมว</small><b>${dogs} / ${cats}</b></span>
+        <span><small>วัคซีน / ทำหมัน</small><b>${vaccinated} / ${sterilized}</b></span>
+      </div>
+      ${houses ? `<p><b>บ้านเลขที่:</b> ${houses}</p>` : ""}
+      ${owners ? `<p><b>เจ้าของ:</b> ${owners}</p>` : ""}
+      <p><b>สัตว์:</b> ${petNames}${more ? ` · อีก ${more} ตัว` : ""}</p>
+      <div class="map-data-popup__coordinate ${cluster.coordinateAdjusted ? "is-adjusted" : "is-verified"}">${coordinateMessage}</div>
+    </div>
+  `;
+}
+
+function villageTooltipHtml(row, metric, feature) {
+  const areaSqKm = Number(feature?.properties?.areaSqKm || 0);
+  return `
+    <div class="map-village-tooltip">
+      <div><strong>หมู่ ${row.id}</strong><span>${escapeHtml(row.villageName || row.name || "")}</span></div>
+      <b>${escapeHtml(DASHBOARD_METRICS[metric]?.label || "ข้อมูล")}: ${escapeHtml(formatMetricValue(row, metric))}</b>
+      <small>สัตว์ ${toNumber(row.totalPets).toLocaleString("th-TH")} ตัว · สุนัข ${toNumber(row.dogs).toLocaleString("th-TH")} · แมว ${toNumber(row.cats).toLocaleString("th-TH")}</small>
+      ${areaSqKm ? `<em>พื้นที่ประมาณ ${areaSqKm.toLocaleString("th-TH", { maximumFractionDigits: 2 })} ตร.กม.</em>` : ""}
+    </div>
+  `;
 }
 
 function VillageStrip({ rows, selectedVillage, hoveredVillage, onSelect, onHover }) {
   return (
     <div className="map-village-strip" aria-label="เลือกหมู่บ้าน">
-      <div className="map-village-strip__label"><strong>เลือกหมู่</strong><small>คลิกเพื่อซูมตาม Polygon</small></div>
+      <div className="map-village-strip__label">
+        <strong>เลือกหมู่</strong>
+        <small>เลือกเพื่อซูมและกรองข้อมูล</small>
+      </div>
       <div className="map-village-strip__list">
         {rows.map((row) => {
           const active = Number(selectedVillage) === Number(row.id);
           const hovered = Number(hoveredVillage) === Number(row.id);
-          return <button type="button" key={row.id} className={`${active ? "is-active" : ""} ${hovered ? "is-hovered" : ""}`} onMouseEnter={() => onHover?.(row.id)} onMouseLeave={() => onHover?.(null)} onFocus={() => onHover?.(row.id)} onBlur={() => onHover?.(null)} onClick={() => onSelect?.(active ? null : row.id)}><span>หมู่ {row.id}</span><b>{Number(row.totalPets || 0).toLocaleString("th-TH")}</b></button>;
+          return (
+            <button
+              type="button"
+              key={row.id}
+              className={`${active ? "is-active" : ""} ${hovered ? "is-hovered" : ""}`}
+              onMouseEnter={() => onHover?.(row.id)}
+              onMouseLeave={() => onHover?.(null)}
+              onFocus={() => onHover?.(row.id)}
+              onBlur={() => onHover?.(null)}
+              onClick={() => onSelect?.(active ? null : row.id)}
+              aria-pressed={active}
+            >
+              <span>หมู่ {row.id}</span>
+              <b>{Number(row.totalPets || 0).toLocaleString("th-TH")}</b>
+              <small>ตัว</small>
+            </button>
+          );
         })}
       </div>
+    </div>
+  );
+}
+
+function DataQualityStatus({ diagnostics, missingMapRecords, householdCount }) {
+  const adjusted = diagnostics.relocated + diagnostics.generated;
+  return (
+    <div className="real-map-data-status" aria-label="สถานะข้อมูลพิกัด">
+      <span className="is-primary"><b>{diagnostics.renderedPets.toLocaleString("th-TH")}</b> ตัวบนแผนที่</span>
+      <span><b>{householdCount.toLocaleString("th-TH")}</b> จุดเลี้ยง</span>
+      <span className="is-verified"><b>{diagnostics.verified.toLocaleString("th-TH")}</b> พิกัดตรงเขต</span>
+      {adjusted > 0 ? (
+        <span className="is-warning" title="พิกัดต้นทางไม่ครบหรือไม่อยู่ในหมู่ที่ระบุ จึงจัดจุดแสดงผลให้อยู่ภายใน Polygon ของหมู่นั้น">
+          <b>{adjusted.toLocaleString("th-TH")}</b> จุดปรับเข้าหมู่
+        </span>
+      ) : null}
+      {missingMapRecords > 0 ? (
+        <span className="is-danger"><b>{missingMapRecords.toLocaleString("th-TH")}</b> ตัวไม่มีรายการแผนที่</span>
+      ) : null}
     </div>
   );
 }
@@ -195,31 +383,46 @@ export default function DashboardMap({
   const mapRef = useRef(null);
   const baseLayerRef = useRef(null);
   const villageLayerRef = useRef(null);
+  const labelLayerRef = useRef(null);
   const markerLayerRef = useRef(null);
   const villageLayersRef = useRef(new Map());
 
   const [baseMap, setBaseMap] = useState("streets");
+  const [species, setSpecies] = useState("ALL");
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [showVillages, setShowVillages] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
   const [showPoints, setShowPoints] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
 
-  const allPets = useMemo(() => normalizePets(rows), [rows]);
-  const visiblePets = useMemo(() => selectedVillage
-    ? allPets.filter((pet) => Number(pet.villageNo) === Number(selectedVillage))
-    : allPets, [allPets, selectedVillage]);
-  const households = useMemo(() => groupHouseholds(visiblePets), [visiblePets]);
+  const normalized = useMemo(
+    () => normalizePetsToVillages(rows, VILLAGES_GEOJSON),
+    [rows],
+  );
+  const filteredPets = useMemo(() => normalized.pets.filter((pet) => {
+    if (selectedVillage && Number(pet.villageNo) !== Number(selectedVillage)) return false;
+    if (species !== "ALL" && pet.species !== species) return false;
+    return true;
+  }), [normalized.pets, selectedVillage, species]);
+  const households = useMemo(() => groupHouseholds(filteredPets), [filteredPets]);
   const clusters = useMemo(() => clusterHouseholds(households, zoom), [households, zoom]);
   const totalPets = rows.reduce((sum, row) => sum + toNumber(row.totalPets), 0);
-  const missingCoordinates = Math.max(0, totalPets - allPets.length);
+  const missingMapRecords = Math.max(0, totalPets - normalized.diagnostics.sourcePets);
 
   const fitAllVillages = useCallback(() => {
     const bounds = villageLayerRef.current?.getBounds?.();
-    if (bounds?.isValid?.()) mapRef.current?.fitBounds(bounds, { padding: [24, 24], maxZoom: 14, animate: true });
+    if (bounds?.isValid?.()) {
+      mapRef.current?.fitBounds(bounds, {
+        padding: [28, 28],
+        maxZoom: 14,
+        animate: true,
+      });
+    }
   }, []);
 
   useEffect(() => {
     if (!mapElementRef.current || mapRef.current) return undefined;
+
     const map = L.map(mapElementRef.current, {
       center: THA_PHO_CENTER,
       zoom: DEFAULT_ZOOM,
@@ -230,12 +433,16 @@ export default function DashboardMap({
       doubleClickZoom: true,
       preferCanvas: true,
     });
+
     L.control.zoom({ position: "bottomright" }).addTo(map);
     mapRef.current = map;
+
     const handleZoom = () => setZoom(map.getZoom());
     map.on("zoomend", handleZoom);
+
     const observer = new ResizeObserver(() => map.invalidateSize());
     observer.observe(mapElementRef.current);
+
     return () => {
       observer.disconnect();
       map.off("zoomend", handleZoom);
@@ -247,6 +454,7 @@ export default function DashboardMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
     if (baseLayerRef.current) map.removeLayer(baseLayerRef.current);
     const config = BASE_LAYERS[baseMap];
     baseLayerRef.current = L.tileLayer(config.url, config.options).addTo(map);
@@ -255,75 +463,145 @@ export default function DashboardMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map) return undefined;
+
     if (villageLayerRef.current) map.removeLayer(villageLayerRef.current);
+    if (labelLayerRef.current) map.removeLayer(labelLayerRef.current);
     villageLayersRef.current.clear();
+
     const maximum = Math.max(1, ...rows.map((row) => getMetricValue(row, metric)));
     const rowsByVillage = new Map(rows.map((row) => [Number(row.id), row]));
+    const labelLayer = L.layerGroup();
 
     const layer = L.geoJSON(VILLAGES_GEOJSON, {
       style(feature) {
         const villageNo = Number(feature.properties?.villageNo);
-        const row = rowsByVillage.get(villageNo) || { id: villageNo, totalPets: 0, dogs: 0, cats: 0 };
+        const row = rowsByVillage.get(villageNo) || {
+          id: villageNo,
+          totalPets: 0,
+          dogs: 0,
+          cats: 0,
+        };
         const active = Number(selectedVillage) === villageNo;
         const hovered = Number(hoveredVillage) === villageNo;
+        const dimmed = selectedVillage && !active;
+
         return {
-          color: active ? "#064a37" : hovered ? "#08724f" : "#365f54",
-          weight: active ? 3.2 : hovered ? 2.4 : 1.05,
-          opacity: 0.95,
+          color: active ? "#07543d" : hovered ? "#08724f" : "#315f51",
+          weight: active ? 3.1 : hovered ? 2.3 : 1.15,
+          opacity: dimmed ? 0.55 : 0.96,
           fillColor: getFill(row, metric, maximum),
-          fillOpacity: active ? 0.58 : hovered ? 0.46 : 0.30,
+          fillOpacity: active ? 0.56 : hovered ? 0.45 : dimmed ? 0.15 : 0.31,
+          lineJoin: "round",
         };
       },
       onEachFeature(feature, featureLayer) {
         const villageNo = Number(feature.properties?.villageNo);
-        const row = rowsByVillage.get(villageNo) || { id: villageNo, totalPets: 0, dogs: 0, cats: 0 };
+        const row = rowsByVillage.get(villageNo) || {
+          id: villageNo,
+          totalPets: 0,
+          dogs: 0,
+          cats: 0,
+        };
+        const active = Number(selectedVillage) === villageNo;
+        const hovered = Number(hoveredVillage) === villageNo;
         villageLayersRef.current.set(villageNo, featureLayer);
-        featureLayer.bindTooltip(`<div class="map-village-tooltip"><div><strong>หมู่ ${villageNo}</strong></div><b>${DASHBOARD_METRICS[metric]?.label || "ข้อมูล"}: ${formatMetricValue(row, metric)}</b><small>สัตว์ ${row.totalPets || 0} ตัว · สุนัข ${row.dogs || 0} · แมว ${row.cats || 0}</small></div>`, { sticky: true, className: "map-village-tooltip-shell", opacity: 1 });
+
+        featureLayer.bindTooltip(villageTooltipHtml(row, metric, feature), {
+          sticky: true,
+          className: "map-village-tooltip-shell",
+          opacity: 1,
+          direction: "top",
+        });
         featureLayer.on({
           mouseover: () => onVillageHover?.(villageNo),
           mouseout: () => onVillageHover?.(null),
-          click: () => onVillageSelect?.(Number(selectedVillage) === villageNo ? null : villageNo),
+          click: () => onVillageSelect?.(active ? null : villageNo),
         });
+
+        const labelPoint = getVillageLabelPoint(feature);
+        if (labelPoint) {
+          const labelIcon = L.divIcon({
+            className: "map-village-number-shell",
+            html: `<button type="button" class="map-village-number ${active ? "is-active" : ""} ${hovered ? "is-hovered" : ""}" aria-label="หมู่ ${villageNo}"><span>${villageNo}</span><small>${toNumber(row.totalPets).toLocaleString("th-TH")}</small></button>`,
+            iconSize: [44, 44],
+            iconAnchor: [22, 22],
+          });
+          const labelMarker = L.marker([labelPoint[1], labelPoint[0]], {
+            icon: labelIcon,
+            keyboard: true,
+            riseOnHover: true,
+            zIndexOffset: active ? 900 : 500,
+          });
+          labelMarker.on({
+            mouseover: () => onVillageHover?.(villageNo),
+            mouseout: () => onVillageHover?.(null),
+            click: () => onVillageSelect?.(active ? null : villageNo),
+          });
+          labelMarker.addTo(labelLayer);
+        }
       },
     });
 
     villageLayerRef.current = layer;
+    labelLayerRef.current = labelLayer;
+
     if (showVillages) layer.addTo(map);
+    if (showVillages && showLabels) labelLayer.addTo(map);
+
     if (!map._prmsBoundaryFitted) {
-      map.fitBounds(layer.getBounds(), { padding: [24, 24], maxZoom: 14 });
+      map.fitBounds(layer.getBounds(), { padding: [28, 28], maxZoom: 14 });
       map._prmsBoundaryFitted = true;
     }
-  }, [hoveredVillage, metric, onVillageHover, onVillageSelect, rows, selectedVillage, showVillages]);
+
+    return () => {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+      if (map.hasLayer(labelLayer)) map.removeLayer(labelLayer);
+    };
+  }, [hoveredVillage, metric, onVillageHover, onVillageSelect, rows, selectedVillage, showLabels, showVillages]);
 
   useEffect(() => {
     const map = mapRef.current;
-    const layer = villageLayerRef.current;
-    if (!map || !layer) return;
-    if (showVillages && !map.hasLayer(layer)) layer.addTo(map);
-    if (!showVillages && map.hasLayer(layer)) map.removeLayer(layer);
-  }, [showVillages]);
+    const villageLayer = villageLayerRef.current;
+    const labelLayer = labelLayerRef.current;
+    if (!map || !villageLayer || !labelLayer) return;
+
+    if (showVillages && !map.hasLayer(villageLayer)) villageLayer.addTo(map);
+    if (!showVillages && map.hasLayer(villageLayer)) map.removeLayer(villageLayer);
+
+    if (showVillages && showLabels && !map.hasLayer(labelLayer)) labelLayer.addTo(map);
+    if ((!showVillages || !showLabels) && map.hasLayer(labelLayer)) map.removeLayer(labelLayer);
+  }, [showLabels, showVillages]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return undefined;
+
     if (markerLayerRef.current) map.removeLayer(markerLayerRef.current);
     const layer = L.layerGroup();
+
     if (showPoints) {
       clusters.forEach((cluster) => {
         const icon = L.divIcon({
           className: "map-cluster-marker-shell",
           html: markerHtml(cluster, metric, selectedVillage, hoveredVillage),
-          iconSize: [42, 42],
-          iconAnchor: [21, 21],
-          popupAnchor: [0, -18],
+          iconSize: [46, 46],
+          iconAnchor: [23, 23],
+          popupAnchor: [0, -20],
         });
-        L.marker([cluster.latitude, cluster.longitude], { icon, keyboard: true, riseOnHover: true })
-          .bindPopup(popupHtml(cluster), { minWidth: 280, maxWidth: 340 })
+
+        L.marker([cluster.latitude, cluster.longitude], {
+          icon,
+          keyboard: true,
+          riseOnHover: true,
+          zIndexOffset: 1000,
+        })
+          .bindPopup(popupHtml(cluster), { minWidth: 290, maxWidth: 360 })
           .addTo(layer);
       });
       layer.addTo(map);
     }
+
     markerLayerRef.current = layer;
     return () => {
       if (map.hasLayer(layer)) map.removeLayer(layer);
@@ -336,18 +614,25 @@ export default function DashboardMap({
       fitAllVillages();
       return;
     }
+
     const layer = villageLayersRef.current.get(Number(selectedVillage));
     const bounds = layer?.getBounds?.();
-    if (bounds?.isValid?.()) mapRef.current?.fitBounds(bounds, { padding: [42, 42], maxZoom: 16, animate: true });
+    if (bounds?.isValid?.()) {
+      mapRef.current?.fitBounds(bounds, {
+        padding: [52, 52],
+        maxZoom: 16,
+        animate: true,
+      });
+    }
   }, [fitAllVillages, selectedVillage]);
 
   useEffect(() => {
-    const handle = () => {
+    const handleFullscreen = () => {
       setFullscreen(document.fullscreenElement === shellRef.current);
-      window.setTimeout(() => mapRef.current?.invalidateSize(), 100);
+      window.setTimeout(() => mapRef.current?.invalidateSize(), 120);
     };
-    document.addEventListener("fullscreenchange", handle);
-    return () => document.removeEventListener("fullscreenchange", handle);
+    document.addEventListener("fullscreenchange", handleFullscreen);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreen);
   }, []);
 
   const toggleFullscreen = async () => {
@@ -357,29 +642,111 @@ export default function DashboardMap({
 
   return (
     <section className="real-map-card" ref={shellRef}>
-        <header className="real-map-card__head">
-          <div><small>ข้อมูลเชิงพื้นที่</small><h2>ตำแหน่งสัตว์และขอบเขตหมู่ท่าโพธ์</h2><p>ใช้ขอบเขตหมู่ 1–11 ที่จัดทำจาก QGIS บนแผนที่จริง</p></div>
-          <div className="real-map-card__head-tools">
-            <label><span>ชั้นข้อมูล</span><select value={metric} onChange={(event) => onMetricChange?.(event.target.value)}>{Object.values(DASHBOARD_METRICS).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-            <div className="real-map-basemap">{Object.entries(BASE_LAYERS).map(([id, item]) => <button type="button" key={id} className={baseMap === id ? "is-active" : ""} onClick={() => setBaseMap(id)}>{item.label}</button>)}</div>
-          </div>
-        </header>
-
-        <div className="real-map-stage">
-          <div ref={mapElementRef} className="real-leaflet-map" />
-          <div className="real-map-toolbar">
-            <button type="button" onClick={fitAllVillages}>ดูทั้งตำบล</button>
-            <button type="button" className={showVillages ? "is-active" : ""} onClick={() => setShowVillages((value) => !value)}>แนวเขตหมู่</button>
-            <button type="button" className={showPoints ? "is-active" : ""} onClick={() => setShowPoints((value) => !value)}>จุดสัตว์</button>
-            <span />
-            <button type="button" onClick={toggleFullscreen}>{fullscreen ? "ออกเต็มจอ" : "เต็มจอ"}</button>
-          </div>
-          <div className="real-map-data-status"><span><b>{allPets.length.toLocaleString("th-TH")}</b> ตัวมีพิกัด</span><span><b>{households.length.toLocaleString("th-TH")}</b> จุดที่กำลังแสดง</span>{missingCoordinates ? <span className="is-warning"><b>{missingCoordinates.toLocaleString("th-TH")}</b> ตัวขาดพิกัด</span> : null}</div>
-          <div className="real-map-usage-hint">ลากเพื่อเลื่อน · ดับเบิลคลิกเพื่อซูม · คลิกพื้นที่หมู่เพื่อกรองข้อมูลและซูมเข้าพื้นที่</div>
-          <div className="real-map-boundary-state real-map-boundary-state--ready">ขอบเขตจาก QGIS · 11 หมู่ · Geometry ผ่านการตรวจสอบและไม่มีพื้นที่ซ้อนกัน</div>
+      <header className="real-map-card__head">
+        <div className="real-map-card__title">
+          <small>ข้อมูลเชิงพื้นที่</small>
+          <h2>ตำแหน่งสัตว์และขอบเขตหมู่ท่าโพธ์</h2>
+          <p>ใช้ Polygon หมู่ 1–11 จาก QGIS และตรวจทุกจุดให้อยู่ในหมู่ตามข้อมูลทะเบียน</p>
         </div>
 
-        <VillageStrip rows={rows} selectedVillage={selectedVillage} hoveredVillage={hoveredVillage} onSelect={onVillageSelect} onHover={onVillageHover} />
+        <div className="real-map-card__head-tools">
+          <label className="real-map-select">
+            <span>ชั้นข้อมูล</span>
+            <select value={metric} onChange={(event) => onMetricChange?.(event.target.value)}>
+              {Object.values(DASHBOARD_METRICS).map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="real-map-segment" aria-label="รูปแบบแผนที่">
+            {Object.entries(BASE_LAYERS).map(([id, item]) => (
+              <button
+                type="button"
+                key={id}
+                className={baseMap === id ? "is-active" : ""}
+                onClick={() => setBaseMap(id)}
+                title={item.label}
+              >
+                {item.shortLabel}
+              </button>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      <div className="real-map-stage">
+        <div ref={mapElementRef} className="real-leaflet-map" />
+
+        <div className="real-map-toolbar" aria-label="เครื่องมือแผนที่">
+          <button type="button" onClick={fitAllVillages}>ดูทั้งตำบล</button>
+          <button
+            type="button"
+            className={showVillages ? "is-active" : ""}
+            onClick={() => setShowVillages((value) => !value)}
+          >
+            แนวเขตหมู่
+          </button>
+          <button
+            type="button"
+            className={showLabels ? "is-active" : ""}
+            onClick={() => setShowLabels((value) => !value)}
+            disabled={!showVillages}
+          >
+            เลขหมู่
+          </button>
+          <button
+            type="button"
+            className={showPoints ? "is-active" : ""}
+            onClick={() => setShowPoints((value) => !value)}
+          >
+            จุดสัตว์
+          </button>
+          <span />
+          <button type="button" onClick={toggleFullscreen}>
+            {fullscreen ? "ออกเต็มจอ" : "เต็มจอ"}
+          </button>
+        </div>
+
+        <div className="real-map-species" aria-label="กรองชนิดสัตว์">
+          {Object.entries(SPECIES_FILTERS).map(([id, item]) => (
+            <button
+              type="button"
+              key={id}
+              className={species === id ? "is-active" : ""}
+              onClick={() => setSpecies(id)}
+              title={item.label}
+            >
+              {item.shortLabel}
+            </button>
+          ))}
+        </div>
+
+        <DataQualityStatus
+          diagnostics={normalized.diagnostics}
+          missingMapRecords={missingMapRecords}
+          householdCount={households.length}
+        />
+
+        <div className="real-map-usage-hint">
+          ลากเพื่อเลื่อน · ดับเบิลคลิกเพื่อซูม · คลิกหมู่เพื่อกรอง
+        </div>
+
+        <div className="real-map-legend" aria-label="คำอธิบายสี">
+          <span><i className="low" />น้อย</span>
+          <span><i className="medium" />ปานกลาง</span>
+          <span><i className="high" />มาก</span>
+          <em>{DASHBOARD_METRICS[metric]?.label}</em>
+        </div>
+      </div>
+
+      <VillageStrip
+        rows={rows}
+        selectedVillage={selectedVillage}
+        hoveredVillage={hoveredVillage}
+        onSelect={onVillageSelect}
+        onHover={onVillageHover}
+      />
     </section>
   );
 }

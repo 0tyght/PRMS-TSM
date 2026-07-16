@@ -1,5 +1,3 @@
-import { THA_PHO_VILLAGES } from "./thaPhoVillageMapData.js";
-
 const ACTIVE_REGISTRATION_STATUSES = new Set([
   "SUBMITTED",
   "UNDER_REVIEW",
@@ -12,6 +10,13 @@ const ACTIVE_CASE_STATUSES = new Set([
   "IN_PROGRESS",
 ]);
 
+export const THA_PHO_VILLAGES = Object.freeze(
+  Array.from({ length: 11 }, (_, index) => Object.freeze({
+    id: index + 1,
+    name: `หมู่ที่ ${index + 1}`,
+  })),
+);
+
 export const DASHBOARD_METRICS = Object.freeze({
   total: Object.freeze({
     id: "total",
@@ -23,14 +28,14 @@ export const DASHBOARD_METRICS = Object.freeze({
   vaccination: Object.freeze({
     id: "vaccination",
     label: "ความครอบคลุมวัคซีน",
-    detail: "สัดส่วนสัตว์ที่มีประวัติวัคซีนภายใน 1 ปี",
+    detail: "สัตว์ที่มีประวัติวัคซีนภายใน 1 ปี",
     unit: "%",
     icon: "+",
   }),
   sterilization: Object.freeze({
     id: "sterilization",
     label: "ความครอบคลุมทำหมัน",
-    detail: "สัดส่วนสัตว์ที่มีประวัติการทำหมัน",
+    detail: "สัตว์ที่มีประวัติการทำหมัน",
     unit: "%",
     icon: "◇",
   }),
@@ -43,8 +48,8 @@ export const DASHBOARD_METRICS = Object.freeze({
   }),
   cases: Object.freeze({
     id: "cases",
-    label: "เหตุที่กำลังดำเนินการ",
-    detail: "เหตุแจ้งที่ยังไม่ปิดงาน",
+    label: "เหตุที่ยังไม่ปิด",
+    detail: "เหตุแจ้งที่ยังอยู่ระหว่างดำเนินการ",
     unit: "เหตุ",
     icon: "!",
   }),
@@ -55,14 +60,21 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeVillageNo(value) {
+  const villageNo = toNumber(value);
+  return Number.isInteger(villageNo) && villageNo >= 1 && villageNo <= 11
+    ? villageNo
+    : null;
+}
+
 function groupByVillage(rows = []) {
   const grouped = new Map();
 
   for (const row of Array.isArray(rows) ? rows : []) {
-    const villageNo = toNumber(row?.villageNo);
+    const villageNo = normalizeVillageNo(row?.villageNo);
     if (!villageNo) continue;
     const current = grouped.get(villageNo) || [];
-    current.push(row);
+    current.push({ ...row, villageNo });
     grouped.set(villageNo, current);
   }
 
@@ -77,29 +89,37 @@ export function getCoverage(numerator, denominator) {
 
 export function buildVillageRows({ villages = [], items = [], requests = [], cases = [] } = {}) {
   const reportByVillage = new Map(
-    (Array.isArray(villages) ? villages : []).map((row) => [toNumber(row?.villageNo), row]),
+    (Array.isArray(villages) ? villages : [])
+      .map((row) => [normalizeVillageNo(row?.villageNo), row])
+      .filter(([villageNo]) => villageNo),
   );
   const petsByVillage = groupByVillage(items);
   const requestsByVillage = groupByVillage(requests);
   const casesByVillage = groupByVillage(cases);
 
-  return THA_PHO_VILLAGES.map((shape) => {
-    const report = reportByVillage.get(shape.id) || {};
-    const pets = petsByVillage.get(shape.id) || [];
-    const villageRequests = requestsByVillage.get(shape.id) || [];
-    const villageCases = casesByVillage.get(shape.id) || [];
+  return THA_PHO_VILLAGES.map((village) => {
+    const report = reportByVillage.get(village.id) || {};
+    const pets = petsByVillage.get(village.id) || [];
+    const villageRequests = requestsByVillage.get(village.id) || [];
+    const villageCases = casesByVillage.get(village.id) || [];
 
-    const totalPets = toNumber(report.totalPets) || pets.length;
+    const reportedTotal = toNumber(report.totalPets);
+    const totalPets = reportedTotal || pets.length;
     const dogs = toNumber(report.dogs) || pets.filter((item) => item?.species === "DOG").length;
     const cats = toNumber(report.cats) || pets.filter((item) => item?.species === "CAT").length;
-    const vaccinated = toNumber(report.vaccinated) || pets.filter((item) => Boolean(item?.vaccinated)).length;
-    const sterilized = toNumber(report.sterilized) || pets.filter((item) => Boolean(item?.sterilized)).length;
-    const pending = villageRequests.filter((item) => ACTIVE_REGISTRATION_STATUSES.has(item?.status)).length;
-    const openCases = villageCases.filter((item) => ACTIVE_CASE_STATUSES.has(item?.status)).length;
+    const vaccinated = toNumber(report.vaccinated)
+      || pets.filter((item) => Boolean(item?.vaccinated)).length;
+    const sterilized = toNumber(report.sterilized)
+      || pets.filter((item) => Boolean(item?.sterilized)).length;
+    const pending = villageRequests
+      .filter((item) => ACTIVE_REGISTRATION_STATUSES.has(item?.status)).length;
+    const openCases = villageCases
+      .filter((item) => ACTIVE_CASE_STATUSES.has(item?.status)).length;
 
     return {
-      ...shape,
-      villageName: report.villageName || shape.name,
+      ...village,
+      villageNo: village.id,
+      villageName: report.villageName || village.name,
       totalPets,
       dogs,
       cats,
@@ -112,6 +132,8 @@ export function buildVillageRows({ villages = [], items = [], requests = [], cas
       pets,
       requests: villageRequests,
       cases: villageCases,
+      mapRecordCount: pets.length,
+      missingMapRecordCount: Math.max(0, totalPets - pets.length),
     };
   });
 }
@@ -142,7 +164,9 @@ export function getMetricMaximum(rows = [], metric = "total") {
 export function formatMetricValue(row, metric = "total") {
   const value = getMetricValue(row, metric);
   const unit = DASHBOARD_METRICS[metric]?.unit || "";
-  return unit === "%" ? `${value}%` : `${value.toLocaleString("th-TH")} ${unit}`;
+  return unit === "%"
+    ? `${value}%`
+    : `${value.toLocaleString("th-TH")} ${unit}`;
 }
 
 export function summarizeVillageRows(rows = []) {
@@ -155,6 +179,8 @@ export function summarizeVillageRows(rows = []) {
       sterilized: result.sterilized + toNumber(row.sterilized),
       pending: result.pending + toNumber(row.pending),
       openCases: result.openCases + toNumber(row.openCases),
+      mapRecordCount: result.mapRecordCount + toNumber(row.mapRecordCount),
+      missingMapRecordCount: result.missingMapRecordCount + toNumber(row.missingMapRecordCount),
       pets: result.pets.concat(row.pets || []),
     }),
     {
@@ -168,6 +194,8 @@ export function summarizeVillageRows(rows = []) {
       sterilized: 0,
       pending: 0,
       openCases: 0,
+      mapRecordCount: 0,
+      missingMapRecordCount: 0,
       pets: [],
     },
   );
