@@ -135,13 +135,17 @@ function groupHouseholds(pets) {
     groups.set(key, item);
   });
 
-  return [...groups.values()].map((item) => ({
-    ...item,
-    houseNumbers: [...item.houseNumbers],
-    ownerNames: [...item.ownerNames],
-    coordinateStatuses: [...item.coordinateStatuses],
-    coordinateAdjusted: item.coordinateStatuses.some((status) => status !== "verified" && status !== "inferred"),
-  }));
+  return [...groups.values()].map((item) => {
+    const coordinateStatuses = [...item.coordinateStatuses];
+
+    return {
+      ...item,
+      houseNumbers: [...item.houseNumbers],
+      ownerNames: [...item.ownerNames],
+      coordinateStatuses,
+      hasCoordinateMismatch: coordinateStatuses.includes("mismatch"),
+    };
+  });
 }
 
 function clusterSize(zoom) {
@@ -185,7 +189,7 @@ function clusterHouseholds(households, zoom) {
     return households.map((item) => ({
       ...item,
       households: [item],
-      coordinateAdjusted: item.coordinateAdjusted,
+      hasCoordinateMismatch: item.hasCoordinateMismatch,
     }));
   }
 
@@ -203,7 +207,7 @@ function clusterHouseholds(households, zoom) {
       count: 0,
       households: [],
       pets: [],
-      coordinateAdjusted: false,
+      hasCoordinateMismatch: false,
     };
 
     cluster.latitudeTotal += item.latitude;
@@ -211,7 +215,7 @@ function clusterHouseholds(households, zoom) {
     cluster.count += 1;
     cluster.households.push(item);
     cluster.pets.push(...item.pets);
-    cluster.coordinateAdjusted = cluster.coordinateAdjusted || item.coordinateAdjusted;
+    cluster.hasCoordinateMismatch = cluster.hasCoordinateMismatch || item.hasCoordinateMismatch;
     groups.set(key, cluster);
   });
 
@@ -252,7 +256,7 @@ function markerHtml(cluster, metric, selectedVillage, hoveredVillage) {
       : "1 ตัว";
 
   return `
-    <div class="map-cluster-marker map-cluster-marker--${markerTone(cluster, metric)} ${selected ? "is-selected" : ""} ${hovered ? "is-hovered" : ""} ${cluster.coordinateAdjusted ? "has-adjusted-coordinate" : ""}">
+    <div class="map-cluster-marker map-cluster-marker--${markerTone(cluster, metric)} ${selected ? "is-selected" : ""} ${hovered ? "is-hovered" : ""} ${cluster.hasCoordinateMismatch ? "has-coordinate-warning" : ""}">
       <strong>${cluster.pets.length}</strong>
       <small>${detail}</small>
     </div>
@@ -277,9 +281,15 @@ function popupHtml(cluster) {
     .slice(0, 3)
     .map(escapeHtml)
     .join(", ");
-  const coordinateMessage = cluster.coordinateAdjusted
-    ? "ตำแหน่งนี้ถูกจัดให้อยู่ภายในหมู่ตามข้อมูลทะเบียน เนื่องจากพิกัดต้นทางไม่ครบหรืออยู่นอกเขต"
-    : "พิกัดต้นทางอยู่ภายในขอบเขตหมู่ที่ระบุ";
+  const mismatchedPets = cluster.pets.filter((pet) => pet.coordinateStatus === "mismatch");
+  const coordinateMessage = mismatchedPets.length
+    ? `พบ ${mismatchedPets.length} รายการที่พิกัดจริงอยู่หมู่ ${cluster.villageNo} แต่ข้อมูลทะเบียนระบุหมู่อื่น โปรดตรวจสอบข้อมูลเจ้าของ/ครัวเรือน`
+    : "ตำแหน่งนี้ใช้พิกัดที่บันทึกจริงและอยู่ภายในขอบเขตหมู่";
+  const coordinateClass = mismatchedPets.length ? "is-warning" : "is-verified";
+  const coordinateLabel = mismatchedPets.length ? "ต้องตรวจสอบหมู่" : "พิกัดจริง";
+  const coordinateText = cluster.households.length === 1
+    ? `${Number(cluster.latitude).toFixed(6)}, ${Number(cluster.longitude).toFixed(6)}`
+    : `${cluster.households.length} จุดพิกัดจริง`;
 
   return `
     <div class="map-data-popup">
@@ -288,7 +298,7 @@ function popupHtml(cluster) {
           <small>หมู่ ${cluster.villageNo}</small>
           <strong>${cluster.households.length > 1 ? "กลุ่มจุดเลี้ยงสัตว์" : "จุดเลี้ยงสัตว์"}</strong>
         </div>
-        <span>${cluster.coordinateAdjusted ? "พิกัดปรับแสดงผล" : "พิกัดตรวจสอบแล้ว"}</span>
+        <span class="${mismatchedPets.length ? "is-warning" : ""}">${coordinateLabel}</span>
       </div>
       <div class="map-data-popup__stats">
         <span><small>สัตว์</small><b>${cluster.pets.length} ตัว</b></span>
@@ -299,7 +309,8 @@ function popupHtml(cluster) {
       ${houses ? `<p><b>บ้านเลขที่:</b> ${houses}</p>` : ""}
       ${owners ? `<p><b>เจ้าของ:</b> ${owners}</p>` : ""}
       <p><b>สัตว์:</b> ${petNames}${more ? ` · อีก ${more} ตัว` : ""}</p>
-      <div class="map-data-popup__coordinate ${cluster.coordinateAdjusted ? "is-adjusted" : "is-verified"}">${coordinateMessage}</div>
+      <p><b>พิกัด:</b> ${coordinateText}</p>
+      <div class="map-data-popup__coordinate ${coordinateClass}">${coordinateMessage}</div>
     </div>
   `;
 }
@@ -351,19 +362,25 @@ function VillageStrip({ rows, selectedVillage, hoveredVillage, onSelect, onHover
 }
 
 function DataQualityStatus({ diagnostics, missingMapRecords, householdCount }) {
-  const adjusted = diagnostics.relocated + diagnostics.generated;
+  const unavailable = diagnostics.missingCoordinates + diagnostics.outsideBoundary + missingMapRecords;
+
   return (
     <div className="real-map-data-status" aria-label="สถานะข้อมูลพิกัด">
       <span className="is-primary"><b>{diagnostics.renderedPets.toLocaleString("th-TH")}</b> ตัวบนแผนที่</span>
-      <span><b>{householdCount.toLocaleString("th-TH")}</b> จุดเลี้ยง</span>
-      <span className="is-verified"><b>{diagnostics.verified.toLocaleString("th-TH")}</b> พิกัดตรงเขต</span>
-      {adjusted > 0 ? (
-        <span className="is-warning" title="พิกัดต้นทางไม่ครบหรือไม่อยู่ในหมู่ที่ระบุ จึงจัดจุดแสดงผลให้อยู่ภายใน Polygon ของหมู่นั้น">
-          <b>{adjusted.toLocaleString("th-TH")}</b> จุดปรับเข้าหมู่
+      <span><b>{householdCount.toLocaleString("th-TH")}</b> จุดเลี้ยงจริง</span>
+      <span className="is-verified"><b>{diagnostics.verified.toLocaleString("th-TH")}</b> พิกัดตรงหมู่</span>
+      {diagnostics.villageMismatch > 0 ? (
+        <span className="is-warning" title="แสดงที่ตำแหน่งพิกัดจริง แต่หมู่จากพิกัดไม่ตรงกับหมู่ในทะเบียน">
+          <b>{diagnostics.villageMismatch.toLocaleString("th-TH")}</b> หมู่ไม่ตรงทะเบียน
         </span>
       ) : null}
-      {missingMapRecords > 0 ? (
-        <span className="is-danger"><b>{missingMapRecords.toLocaleString("th-TH")}</b> ตัวไม่มีรายการแผนที่</span>
+      {unavailable > 0 ? (
+        <span
+          className="is-danger"
+          title={`ไม่มีพิกัด ${diagnostics.missingCoordinates} · อยู่นอกเขตตำบล ${diagnostics.outsideBoundary} · ไม่มีรายการจาก API ${missingMapRecords}`}
+        >
+          <b>{unavailable.toLocaleString("th-TH")}</b> รายการไม่แสดง
+        </span>
       ) : null}
     </div>
   );
@@ -646,7 +663,7 @@ export default function DashboardMap({
         <div className="real-map-card__title">
           <small>ข้อมูลเชิงพื้นที่</small>
           <h2>ตำแหน่งสัตว์และขอบเขตหมู่ท่าโพธ์</h2>
-          <p>ใช้ Polygon หมู่ 1–11 จาก QGIS และตรวจทุกจุดให้อยู่ในหมู่ตามข้อมูลทะเบียน</p>
+          <p>แสดงเฉพาะพิกัดที่บันทึกจริง พร้อมตรวจสอบหมู่จาก Polygon QGIS โดยไม่สร้างหรือย้ายจุดอัตโนมัติ</p>
         </div>
 
         <div className="real-map-card__head-tools">

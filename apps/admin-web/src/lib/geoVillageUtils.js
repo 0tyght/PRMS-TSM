@@ -20,10 +20,12 @@ function pointOnSegment(point, start, end) {
   const [x2, y2] = end;
   const cross = (y - y1) * (x2 - x1) - (x - x1) * (y2 - y1);
   if (Math.abs(cross) > EPSILON) return false;
+
   const squaredLength = (x2 - x1) ** 2 + (y2 - y1) ** 2;
   if (squaredLength < EPSILON) {
     return Math.abs(x - x1) < EPSILON && Math.abs(y - y1) < EPSILON;
   }
+
   const dot = (x - x1) * (x2 - x1) + (y - y1) * (y2 - y1);
   if (dot < 0) return false;
   return dot <= squaredLength;
@@ -162,128 +164,105 @@ function buildInteriorPointPool(feature) {
   }
 
   if (!points.length && largestOuterRing.length) {
-    const fallback = largestOuterRing[Math.floor(largestOuterRing.length / 2)];
-    if (fallback) points.push(fallback);
+    const point = largestOuterRing[Math.floor(largestOuterRing.length / 2)];
+    if (point) points.push(point);
   }
 
   interiorPointCache.set(feature, points);
   return points;
 }
 
-function stableHash(value) {
-  const text = String(value ?? "");
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+function isValidCoordinate(latitude, longitude) {
+  return latitude !== null
+    && longitude !== null
+    && latitude !== 0
+    && longitude !== 0
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
 }
 
-function getStablePetKey(pet, villageNo, rowIndex, petIndex) {
-  return [
-    villageNo,
-    pet?.householdId,
-    pet?.houseNo,
-    pet?.ownerName,
-    pet?.id,
-    rowIndex,
-    petIndex,
-  ].filter((value) => value !== undefined && value !== null && value !== "").join("|");
+function normalizeVillageNo(value, villageIndex) {
+  const villageNo = Number(value);
+  return villageIndex.has(villageNo) ? villageNo : null;
 }
 
 function coordinateStatusLabel(status) {
   switch (status) {
-    case "verified": return "พิกัดตรงกับเขตหมู่";
-    case "relocated": return "ปรับจุดเข้าหมู่ตามทะเบียน";
-    case "generated": return "จัดจุดแสดงผลภายในหมู่";
-    case "inferred": return "ระบุหมู่จากตำแหน่ง";
-    default: return "ไม่สามารถแสดงพิกัด";
+    case "verified": return "พิกัดตรงกับหมู่ตามทะเบียน";
+    case "inferred": return "ระบุหมู่จากพิกัดจริง";
+    case "mismatch": return "พิกัดจริงไม่ตรงกับหมู่ในทะเบียน";
+    default: return "พิกัดไม่พร้อมแสดงผล";
   }
 }
 
+/**
+ * ตรวจพิกัดจริงจากฐานข้อมูลกับ Polygon หมู่บ้าน
+ * - ไม่สร้างพิกัดจำลอง
+ * - ไม่ย้ายพิกัดให้อยู่ในหมู่ตามทะเบียน
+ * - จุดที่ไม่มีพิกัดหรืออยู่นอกเขตทั้งหมดจะไม่ถูกแสดงบนแผนที่
+ * - หากพิกัดอยู่คนละหมู่กับทะเบียน จะใช้ตำแหน่งจริงบนแผนที่และติดสถานะ mismatch
+ */
 export function normalizePetsToVillages(rows = [], featureCollection) {
   const villageIndex = createVillageIndex(featureCollection);
   const diagnostics = {
     sourcePets: 0,
     renderedPets: 0,
     verified: 0,
-    relocated: 0,
-    generated: 0,
     inferred: 0,
+    villageMismatch: 0,
+    missingCoordinates: 0,
+    outsideBoundary: 0,
     skipped: 0,
   };
   const pets = [];
 
-  (Array.isArray(rows) ? rows : []).forEach((row, rowIndex) => {
-    const rowVillageNo = Number(row?.id || row?.villageNo);
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const rowVillageNo = normalizeVillageNo(row?.id ?? row?.villageNo, villageIndex);
     const rowPets = Array.isArray(row?.pets) ? row.pets : [];
 
-    rowPets.forEach((pet, petIndex) => {
+    rowPets.forEach((pet) => {
       diagnostics.sourcePets += 1;
 
       const latitude = toNumber(pet?.latitude);
       const longitude = toNumber(pet?.longitude);
-      const hasSourceCoordinate = latitude !== null
-        && longitude !== null
-        && latitude !== 0
-        && longitude !== 0
-        && latitude >= -90
-        && latitude <= 90
-        && longitude >= -180
-        && longitude <= 180;
-      const sourcePoint = hasSourceCoordinate ? [longitude, latitude] : null;
-      const sourceVillageNo = sourcePoint
-        ? findVillageForPoint(sourcePoint, featureCollection)
-        : null;
-      const declaredVillageNo = villageIndex.has(Number(pet?.villageNo))
-        ? Number(pet.villageNo)
-        : villageIndex.has(rowVillageNo)
-          ? rowVillageNo
-          : null;
-      const resolvedVillageNo = declaredVillageNo || sourceVillageNo;
-      const feature = villageIndex.get(resolvedVillageNo);
-
-      if (!feature) {
+      if (!isValidCoordinate(latitude, longitude)) {
+        diagnostics.missingCoordinates += 1;
         diagnostics.skipped += 1;
         return;
       }
 
-      let coordinate = sourcePoint;
+      const coordinate = [longitude, latitude];
+      const coordinateVillageNo = findVillageForPoint(coordinate, featureCollection);
+      if (!coordinateVillageNo) {
+        diagnostics.outsideBoundary += 1;
+        diagnostics.skipped += 1;
+        return;
+      }
+
+      const registeredVillageNo = normalizeVillageNo(pet?.villageNo, villageIndex) || rowVillageNo;
       let coordinateStatus = "verified";
 
-      if (!declaredVillageNo && sourceVillageNo) {
+      if (!registeredVillageNo) {
         coordinateStatus = "inferred";
-      } else if (!sourcePoint) {
-        coordinateStatus = "generated";
-      } else if (!pointInGeometry(sourcePoint, feature.geometry)) {
-        coordinateStatus = "relocated";
+      } else if (registeredVillageNo !== coordinateVillageNo) {
+        coordinateStatus = "mismatch";
       }
 
-      if (coordinateStatus === "generated" || coordinateStatus === "relocated") {
-        const pool = buildInteriorPointPool(feature);
-        const key = getStablePetKey(pet, resolvedVillageNo, rowIndex, petIndex);
-        coordinate = pool.length ? pool[stableHash(key) % pool.length] : null;
-      }
-
-      if (!coordinate || !pointInGeometry(coordinate, feature.geometry)) {
-        diagnostics.skipped += 1;
-        return;
-      }
-
-      diagnostics[coordinateStatus] += 1;
+      if (coordinateStatus === "mismatch") diagnostics.villageMismatch += 1;
+      else diagnostics[coordinateStatus] += 1;
       diagnostics.renderedPets += 1;
+
       pets.push({
         ...pet,
-        latitude: coordinate[1],
-        longitude: coordinate[0],
-        villageNo: resolvedVillageNo,
-        sourceVillageNo,
-        sourceLatitude: latitude,
-        sourceLongitude: longitude,
+        latitude,
+        longitude,
+        villageNo: coordinateVillageNo,
+        coordinateVillageNo,
+        registeredVillageNo,
         coordinateStatus,
         coordinateStatusLabel: coordinateStatusLabel(coordinateStatus),
-        coordinateAdjusted: coordinateStatus === "generated" || coordinateStatus === "relocated",
       });
     });
   });
@@ -299,12 +278,4 @@ export function getVillageLabelPoint(feature) {
 export function isPointInsideVillage(latitude, longitude, villageNo, featureCollection) {
   const feature = createVillageIndex(featureCollection).get(Number(villageNo));
   return Boolean(feature && pointInGeometry([Number(longitude), Number(latitude)], feature.geometry));
-}
-
-export function getStableInteriorPointForVillage(villageNo, key, featureCollection) {
-  const feature = createVillageIndex(featureCollection).get(Number(villageNo));
-  if (!feature) return null;
-  const pool = buildInteriorPointPool(feature);
-  if (!pool.length) return null;
-  return pool[stableHash(`${villageNo}|${key}`) % pool.length];
 }

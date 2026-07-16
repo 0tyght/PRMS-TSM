@@ -736,7 +736,7 @@
 .map-cluster-marker--danger { background: #c4514a; }
 .map-cluster-marker--primary { background: #0b7653; }
 
-.map-cluster-marker.has-adjusted-coordinate::after {
+.map-cluster-marker.has-coordinate-warning::after {
   content: "";
   position: absolute;
   width: 7px;
@@ -863,6 +863,11 @@
   white-space: nowrap;
 }
 
+.map-data-popup__title > span.is-warning {
+  background: #fff4df;
+  color: #98620f;
+}
+
 .map-data-popup__stats {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -917,7 +922,7 @@
   color: #237157;
 }
 
-.map-data-popup__coordinate.is-adjusted {
+.map-data-popup__coordinate.is-warning {
   background: #fff4df;
   color: #98620f;
 }

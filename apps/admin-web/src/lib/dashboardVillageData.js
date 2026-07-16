@@ -98,19 +98,27 @@ export function buildVillageRows({ villages = [], items = [], requests = [], cas
   const casesByVillage = groupByVillage(cases);
 
   return THA_PHO_VILLAGES.map((village) => {
+    const hasReport = reportByVillage.has(village.id);
     const report = reportByVillage.get(village.id) || {};
     const pets = petsByVillage.get(village.id) || [];
     const villageRequests = requestsByVillage.get(village.id) || [];
     const villageCases = casesByVillage.get(village.id) || [];
 
-    const reportedTotal = toNumber(report.totalPets);
-    const totalPets = reportedTotal || pets.length;
-    const dogs = toNumber(report.dogs) || pets.filter((item) => item?.species === "DOG").length;
-    const cats = toNumber(report.cats) || pets.filter((item) => item?.species === "CAT").length;
-    const vaccinated = toNumber(report.vaccinated)
-      || pets.filter((item) => Boolean(item?.vaccinated)).length;
-    const sterilized = toNumber(report.sterilized)
-      || pets.filter((item) => Boolean(item?.sterilized)).length;
+    const totalPets = hasReport
+      ? toNumber(report.totalPets)
+      : pets.length;
+    const dogs = hasReport
+      ? toNumber(report.dogs)
+      : pets.filter((item) => item?.species === "DOG").length;
+    const cats = hasReport
+      ? toNumber(report.cats)
+      : pets.filter((item) => item?.species === "CAT").length;
+    const vaccinated = hasReport
+      ? toNumber(report.vaccinated)
+      : pets.filter((item) => Boolean(item?.vaccinated)).length;
+    const sterilized = hasReport
+      ? toNumber(report.sterilized)
+      : pets.filter((item) => Boolean(item?.sterilized)).length;
     const pending = villageRequests
       .filter((item) => ACTIVE_REGISTRATION_STATUSES.has(item?.status)).length;
     const openCases = villageCases
