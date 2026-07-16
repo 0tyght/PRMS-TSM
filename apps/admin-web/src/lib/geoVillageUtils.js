@@ -1,17 +1,9 @@
 const EPSILON = 1e-12;
 
-function toNumber(value) {
+function toFiniteNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function coordinatesFromGeometry(geometry) {
-  if (!geometry) return [];
-  if (geometry.type === "Polygon") return geometry.coordinates || [];
-  if (geometry.type === "MultiPolygon") {
-    return (geometry.coordinates || []).flat();
-  }
-  return [];
 }
 
 function pointOnSegment(point, start, end) {
@@ -27,8 +19,7 @@ function pointOnSegment(point, start, end) {
   }
 
   const dot = (x - x1) * (x2 - x1) + (y - y1) * (y2 - y1);
-  if (dot < 0) return false;
-  return dot <= squaredLength;
+  return dot >= 0 && dot <= squaredLength;
 }
 
 function pointInRing(point, ring = []) {
@@ -75,7 +66,7 @@ export function createVillageIndex(featureCollection) {
   return new Map(
     features
       .map((feature) => [Number(feature?.properties?.villageNo), feature])
-      .filter(([villageNo]) => Number.isInteger(villageNo) && villageNo > 0),
+      .filter(([villageNo]) => Number.isInteger(villageNo) && villageNo >= 1 && villageNo <= 11),
   );
 }
 
@@ -85,104 +76,6 @@ export function findVillageForPoint(point, featureCollection) {
   return feature ? Number(feature.properties?.villageNo) : null;
 }
 
-function getBounds(feature) {
-  const points = coordinatesFromGeometry(feature?.geometry).flat();
-  if (!points.length) return null;
-
-  return points.reduce(
-    (bounds, point) => ({
-      minX: Math.min(bounds.minX, point[0]),
-      minY: Math.min(bounds.minY, point[1]),
-      maxX: Math.max(bounds.maxX, point[0]),
-      maxY: Math.max(bounds.maxY, point[1]),
-    }),
-    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-  );
-}
-
-function polygonCentroid(ring = []) {
-  if (ring.length < 3) return null;
-  let signedArea = 0;
-  let centroidX = 0;
-  let centroidY = 0;
-
-  for (let index = 0; index < ring.length - 1; index += 1) {
-    const [x0, y0] = ring[index];
-    const [x1, y1] = ring[index + 1];
-    const cross = x0 * y1 - x1 * y0;
-    signedArea += cross;
-    centroidX += (x0 + x1) * cross;
-    centroidY += (y0 + y1) * cross;
-  }
-
-  signedArea *= 0.5;
-  if (Math.abs(signedArea) < EPSILON) return null;
-  return [centroidX / (6 * signedArea), centroidY / (6 * signedArea)];
-}
-
-function halton(index, base) {
-  let result = 0;
-  let fraction = 1 / base;
-  let value = index;
-  while (value > 0) {
-    result += fraction * (value % base);
-    value = Math.floor(value / base);
-    fraction /= base;
-  }
-  return result;
-}
-
-const interiorPointCache = new WeakMap();
-
-function buildInteriorPointPool(feature) {
-  if (!feature) return [];
-  const cached = interiorPointCache.get(feature);
-  if (cached) return cached;
-
-  const bounds = getBounds(feature);
-  if (!bounds) return [];
-
-  const width = bounds.maxX - bounds.minX;
-  const height = bounds.maxY - bounds.minY;
-  const points = [];
-  const polygons = feature.geometry?.type === "Polygon"
-    ? [feature.geometry.coordinates]
-    : feature.geometry?.coordinates || [];
-  const largestOuterRing = polygons
-    .map((polygon) => polygon?.[0] || [])
-    .sort((first, second) => second.length - first.length)[0] || [];
-  const centroid = polygonCentroid(largestOuterRing);
-
-  if (centroid && pointInGeometry(centroid, feature.geometry)) points.push(centroid);
-
-  for (let index = 1; index <= 1400 && points.length < 280; index += 1) {
-    const point = [
-      bounds.minX + width * (0.035 + halton(index, 2) * 0.93),
-      bounds.minY + height * (0.035 + halton(index, 3) * 0.93),
-    ];
-    if (pointInGeometry(point, feature.geometry)) points.push(point);
-  }
-
-  if (!points.length && largestOuterRing.length) {
-    const point = largestOuterRing[Math.floor(largestOuterRing.length / 2)];
-    if (point) points.push(point);
-  }
-
-  interiorPointCache.set(feature, points);
-  return points;
-}
-
-function isValidCoordinate(latitude, longitude) {
-  return latitude !== null
-    && longitude !== null
-    && latitude !== 0
-    && longitude !== 0
-    && latitude >= -90
-    && latitude <= 90
-    && longitude >= -180
-    && longitude <= 180;
-}
-
 function normalizeVillageNo(value, villageIndex) {
   const villageNo = Number(value);
   return villageIndex.has(villageNo) ? villageNo : null;
@@ -190,19 +83,16 @@ function normalizeVillageNo(value, villageIndex) {
 
 function coordinateStatusLabel(status) {
   switch (status) {
-    case "verified": return "พิกัดตรงกับหมู่ตามทะเบียน";
+    case "verified": return "พิกัดอยู่ในหมู่ตามทะเบียน";
     case "inferred": return "ระบุหมู่จากพิกัดจริง";
-    case "mismatch": return "พิกัดจริงไม่ตรงกับหมู่ในทะเบียน";
-    default: return "พิกัดไม่พร้อมแสดงผล";
+    case "mismatch": return "พิกัดไม่ตรงหมู่ในทะเบียน";
+    default: return "ไม่พร้อมแสดงบนแผนที่";
   }
 }
 
 /**
- * ตรวจพิกัดจริงจากฐานข้อมูลกับ Polygon หมู่บ้าน
- * - ไม่สร้างพิกัดจำลอง
- * - ไม่ย้ายพิกัดให้อยู่ในหมู่ตามทะเบียน
- * - จุดที่ไม่มีพิกัดหรืออยู่นอกเขตทั้งหมดจะไม่ถูกแสดงบนแผนที่
- * - หากพิกัดอยู่คนละหมู่กับทะเบียน จะใช้ตำแหน่งจริงบนแผนที่และติดสถานะ mismatch
+ * ใช้เฉพาะ latitude/longitude ที่มีอยู่จริงในฐานข้อมูล
+ * ไม่สุ่ม ไม่สร้าง ไม่เลื่อน และไม่แก้พิกัดบนฝั่งหน้าเว็บ
  */
 export function normalizePetsToVillages(rows = [], featureCollection) {
   const villageIndex = createVillageIndex(featureCollection);
@@ -214,7 +104,6 @@ export function normalizePetsToVillages(rows = [], featureCollection) {
     villageMismatch: 0,
     missingCoordinates: 0,
     outsideBoundary: 0,
-    skipped: 0,
   };
   const pets = [];
 
@@ -225,30 +114,33 @@ export function normalizePetsToVillages(rows = [], featureCollection) {
     rowPets.forEach((pet) => {
       diagnostics.sourcePets += 1;
 
-      const latitude = toNumber(pet?.latitude);
-      const longitude = toNumber(pet?.longitude);
-      if (!isValidCoordinate(latitude, longitude)) {
+      const latitude = toFiniteNumber(pet?.latitude);
+      const longitude = toFiniteNumber(pet?.longitude);
+      const validRange = latitude !== null
+        && longitude !== null
+        && latitude !== 0
+        && longitude !== 0
+        && latitude >= -90
+        && latitude <= 90
+        && longitude >= -180
+        && longitude <= 180;
+
+      if (!validRange) {
         diagnostics.missingCoordinates += 1;
-        diagnostics.skipped += 1;
         return;
       }
 
-      const coordinate = [longitude, latitude];
-      const coordinateVillageNo = findVillageForPoint(coordinate, featureCollection);
+      const coordinateVillageNo = findVillageForPoint([longitude, latitude], featureCollection);
       if (!coordinateVillageNo) {
         diagnostics.outsideBoundary += 1;
-        diagnostics.skipped += 1;
         return;
       }
 
       const registeredVillageNo = normalizeVillageNo(pet?.villageNo, villageIndex) || rowVillageNo;
       let coordinateStatus = "verified";
 
-      if (!registeredVillageNo) {
-        coordinateStatus = "inferred";
-      } else if (registeredVillageNo !== coordinateVillageNo) {
-        coordinateStatus = "mismatch";
-      }
+      if (!registeredVillageNo) coordinateStatus = "inferred";
+      else if (registeredVillageNo !== coordinateVillageNo) coordinateStatus = "mismatch";
 
       if (coordinateStatus === "mismatch") diagnostics.villageMismatch += 1;
       else diagnostics[coordinateStatus] += 1;
@@ -270,12 +162,10 @@ export function normalizePetsToVillages(rows = [], featureCollection) {
   return { pets, diagnostics };
 }
 
-export function getVillageLabelPoint(feature) {
-  const points = buildInteriorPointPool(feature);
-  return points[0] || null;
-}
-
 export function isPointInsideVillage(latitude, longitude, villageNo, featureCollection) {
-  const feature = createVillageIndex(featureCollection).get(Number(villageNo));
-  return Boolean(feature && pointInGeometry([Number(longitude), Number(latitude)], feature.geometry));
+  const villageIndex = createVillageIndex(featureCollection);
+  const feature = villageIndex.get(Number(villageNo));
+  const lat = toFiniteNumber(latitude);
+  const lng = toFiniteNumber(longitude);
+  return Boolean(feature && lat !== null && lng !== null && pointInGeometry([lng, lat], feature.geometry));
 }

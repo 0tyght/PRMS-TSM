@@ -19,11 +19,11 @@ const initialStats = {
   openCases: 0,
 };
 
-const statusLabel = {
+const requestStatus = {
   SUBMITTED: ["รอตรวจ", "amber"],
   UNDER_REVIEW: ["กำลังตรวจ", "blue"],
-  NEED_MORE_INFO: ["ขอข้อมูล", "rose"],
-  APPROVED: ["อนุมัติ", "green"],
+  NEED_MORE_INFO: ["ขอข้อมูลเพิ่ม", "rose"],
+  APPROVED: ["อนุมัติแล้ว", "green"],
   REJECTED: ["ไม่อนุมัติ", "gray"],
 };
 
@@ -40,215 +40,258 @@ function formatTime(value) {
   }).format(value);
 }
 
-function CompactKpi({ metric, active, icon, label, value, suffix = "", detail, tone, onSelect }) {
+function Icon({ name }) {
+  const paths = {
+    pets: <><path d="M7.5 12.5c-2.4 0-4.5 1.7-4.5 4 0 2 1.6 3.5 3.7 3.5 1.2 0 2.1-.6 3.3-.6s2.1.6 3.3.6c2.1 0 3.7-1.5 3.7-3.5 0-2.3-2.1-4-4.5-4-1 0-1.8.3-2.5.8-.7-.5-1.5-.8-2.5-.8Z"/><circle cx="5" cy="8" r="2"/><circle cx="10" cy="5.5" r="2"/><circle cx="15" cy="8" r="2"/></>,
+    vaccine: <><path d="M7 3h10v4H7zM9 7v9a4 4 0 0 0 8 0V7M6 13h5M4 11l2 2-2 2M12 3V1M16 3V1"/></>,
+    sterilize: <><circle cx="10" cy="10" r="5"/><path d="m14 14 5 5M15 19h4v-4M10 5V1M8 3h4"/></>,
+    request: <><path d="M5 3h10l4 4v14H5zM15 3v5h5M8 12h8M8 16h6"/></>,
+    case: <><path d="M12 3 2.5 20h19zM12 9v5M12 17h.01"/></>,
+    refresh: <><path d="M20 6v5h-5M4 18v-5h5M6.1 8A7 7 0 0 1 18 6l2 5M17.9 16A7 7 0 0 1 6 18l-2-5"/></>,
+    pin: <><path d="M12 22s7-6.2 7-13a7 7 0 1 0-14 0c0 6.8 7 13 7 13Z"/><circle cx="12" cy="9" r="2.5"/></>,
+  };
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {paths[name] || paths.pets}
+    </svg>
+  );
+}
+
+function KpiCard({ metric, active, icon, label, value, suffix = "", detail, tone, onSelect }) {
   return (
     <button
       type="button"
-      className={`compact-kpi ${tone} ${active ? "is-active" : ""}`}
+      className={`production-kpi production-kpi--${tone} ${active ? "is-active" : ""}`}
       onClick={() => onSelect(metric)}
       aria-pressed={active}
-      title={`แสดง${label}บนแผนที่`}
     >
-      <i>{icon}</i>
-      <span>
+      <span className="production-kpi__icon"><Icon name={icon} /></span>
+      <span className="production-kpi__body">
         <small>{label}</small>
-        <strong>{Number(value || 0).toLocaleString("th-TH")}{suffix}</strong>
+        <strong>{toNumber(value).toLocaleString("th-TH")}{suffix}</strong>
         <em>{detail}</em>
       </span>
     </button>
   );
 }
 
-function ProgressLine({ label, value, tone, detail }) {
+function ProgressBar({ label, value, count, total, tone }) {
   const safeValue = Math.max(0, Math.min(100, toNumber(value)));
   return (
-    <div className="compact-progress">
+    <div className="production-progress">
       <div>
         <span>{label}</span>
         <b>{safeValue}%</b>
       </div>
       <i><b className={tone} style={{ width: `${safeValue}%` }} /></i>
-      {detail ? <small>{detail}</small> : null}
+      <small>{toNumber(count).toLocaleString("th-TH")} จาก {toNumber(total).toLocaleString("th-TH")} ตัว</small>
     </div>
   );
 }
 
-function buildGuidance(row) {
-  const items = [];
+function buildTasks(row) {
+  const tasks = [];
 
   if (row.pending > 0) {
-    items.push({
+    tasks.push({
       tone: "amber",
-      title: `คำขอรอตรวจ ${row.pending} คำขอ`,
+      title: `คำขอรอตรวจ ${row.pending.toLocaleString("th-TH")} คำขอ`,
       detail: "ตรวจข้อมูลเจ้าของและสัตว์ก่อนอนุมัติ",
-      target: "registrations",
+      route: "registrations",
     });
   }
   if (row.openCases > 0) {
-    items.push({
+    tasks.push({
       tone: "rose",
-      title: `เหตุยังไม่ปิด ${row.openCases} เหตุ`,
-      detail: "ติดตามผู้รับผิดชอบและกำหนดสถานะล่าสุด",
-      target: "cases",
+      title: `เหตุที่ยังไม่ปิด ${row.openCases.toLocaleString("th-TH")} เหตุ`,
+      detail: "ติดตามผู้รับผิดชอบและอัปเดตสถานะ",
+      route: "cases",
     });
   }
   if (row.totalPets > 0 && row.vaccinationCoverage < 70) {
-    items.push({
+    tasks.push({
       tone: "amber",
-      title: `วัคซีนครอบคลุม ${row.vaccinationCoverage}%`,
-      detail: `ยังไม่มีประวัติภายใน 1 ปี ${Math.max(0, row.totalPets - row.vaccinated)} ตัว`,
-      target: "services",
+      title: `ยังขาดประวัติวัคซีน ${Math.max(0, row.totalPets - row.vaccinated).toLocaleString("th-TH")} ตัว`,
+      detail: "จัดลำดับพื้นที่สำหรับติดตามวัคซีน",
+      route: "services",
     });
   }
   if (row.totalPets > 0 && row.sterilizationCoverage < 50) {
-    items.push({
+    tasks.push({
       tone: "violet",
-      title: `ทำหมันครอบคลุม ${row.sterilizationCoverage}%`,
-      detail: `ยังไม่มีประวัติการทำหมัน ${Math.max(0, row.totalPets - row.sterilized)} ตัว`,
-      target: "services",
+      title: `ยังไม่มีประวัติทำหมัน ${Math.max(0, row.totalPets - row.sterilized).toLocaleString("th-TH")} ตัว`,
+      detail: "ตรวจสอบข้อมูลและวางแผนบริการ",
+      route: "services",
     });
   }
 
-  if (!items.length) {
-    items.push({
-      tone: "green",
-      title: "ข้อมูลพื้นที่อยู่ในเกณฑ์ดี",
-      detail: "ไม่พบรายการเร่งด่วนจากข้อมูลปัจจุบัน",
-      target: "reports",
-    });
-  }
-
-  return items.slice(0, 4);
+  return tasks.slice(0, 4);
 }
 
-function OverviewSummary({ row, selected, onClear }) {
-  const vaccineDetail = `${row.vaccinated.toLocaleString("th-TH")} จาก ${row.totalPets.toLocaleString("th-TH")} ตัว`;
-  const sterilizationDetail = `${row.sterilized.toLocaleString("th-TH")} จาก ${row.totalPets.toLocaleString("th-TH")} ตัว`;
+function AreaPanel({ row, selected, onClear, navigate }) {
+  const tasks = buildTasks(row);
 
   return (
-    <section className="compact-side-summary">
-      <div className="compact-side-summary__head">
+    <aside className="production-area-panel">
+      <header className="production-area-panel__header">
         <div>
-          <small>{selected ? "พื้นที่ที่เลือก" : "ภาพรวมเทศบาล"}</small>
-          <h2>{selected ? row.name : "ทุกหมู่บ้าน"}</h2>
-          <p>{selected ? row.villageName : "ตำบลท่าโพธ์ · 11 หมู่บ้าน"}</p>
+          <small>{selected ? "พื้นที่ที่เลือก" : "ภาพรวมพื้นที่"}</small>
+          <h2>{selected ? `หมู่ ${row.id}` : "ตำบลท่าโพธ์"}</h2>
+          <p>{selected ? row.villageName : "รวมข้อมูล 11 หมู่บ้าน"}</p>
         </div>
-        {selected ? <button type="button" onClick={onClear}>ล้างพื้นที่</button> : null}
-      </div>
+        {selected ? <button type="button" onClick={onClear}>ล้างการเลือก</button> : null}
+      </header>
 
-      <div className="compact-side-summary__numbers">
-        <div><span>สัตว์ทั้งหมด</span><strong>{row.totalPets.toLocaleString("th-TH")}</strong><small>ตัว</small></div>
-        <div><span>สุนัข</span><strong>{row.dogs.toLocaleString("th-TH")}</strong><small>ตัว</small></div>
-        <div><span>แมว</span><strong>{row.cats.toLocaleString("th-TH")}</strong><small>ตัว</small></div>
-      </div>
+      <section className="production-area-summary" aria-label="จำนวนสัตว์ในพื้นที่">
+        <div className="is-primary">
+          <span>สัตว์ทั้งหมด</span>
+          <strong>{row.totalPets.toLocaleString("th-TH")}</strong>
+          <small>ตัว</small>
+        </div>
+        <div>
+          <span>สุนัข</span>
+          <strong>{row.dogs.toLocaleString("th-TH")}</strong>
+          <small>ตัว</small>
+        </div>
+        <div>
+          <span>แมว</span>
+          <strong>{row.cats.toLocaleString("th-TH")}</strong>
+          <small>ตัว</small>
+        </div>
+      </section>
 
-      <ProgressLine label="ความครอบคลุมวัคซีน" value={row.vaccinationCoverage} tone="green" detail={vaccineDetail} />
-      <ProgressLine label="ความครอบคลุมทำหมัน" value={row.sterilizationCoverage} tone="violet" detail={sterilizationDetail} />
+      <section className="production-coverage-card">
+        <h3>ความครอบคลุมบริการ</h3>
+        <ProgressBar
+          label="วัคซีนภายใน 1 ปี"
+          value={row.vaccinationCoverage}
+          count={row.vaccinated}
+          total={row.totalPets}
+          tone="green"
+        />
+        <ProgressBar
+          label="การทำหมัน"
+          value={row.sterilizationCoverage}
+          count={row.sterilized}
+          total={row.totalPets}
+          tone="violet"
+        />
+      </section>
+
+      <section className="production-task-card">
+        <div className="production-section-heading">
+          <div>
+            <h3>รายการที่ต้องดำเนินการ</h3>
+            <p>เรียงเฉพาะสิ่งที่ต้องติดตามจากข้อมูลปัจจุบัน</p>
+          </div>
+        </div>
+
+        {tasks.length ? (
+          <div className="production-task-list">
+            {tasks.map((task) => (
+              <button type="button" key={`${task.route}-${task.title}`} onClick={() => navigate(task.route)}>
+                <i className={task.tone}>!</i>
+                <span><b>{task.title}</b><small>{task.detail}</small></span>
+                <em>›</em>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="production-empty-state">
+            <strong>ไม่พบงานเร่งด่วน</strong>
+            <span>ข้อมูลพื้นที่นี้ไม่มีรายการค้างตามเงื่อนไขปัจจุบัน</span>
+          </div>
+        )}
+      </section>
+    </aside>
+  );
+}
+
+function VillageComparison({ rows, metric, selectedVillage, onSelect, onHover }) {
+  const metricInfo = DASHBOARD_METRICS[metric] || DASHBOARD_METRICS.total;
+  const maximum = metricInfo.unit === "%"
+    ? 100
+    : Math.max(1, ...rows.map((row) => getMetricValue(row, metric)));
+
+  return (
+    <section className="production-village-card">
+      <header className="production-section-heading">
+        <div>
+          <small>เปรียบเทียบพื้นที่</small>
+          <h2>ข้อมูลรายหมู่</h2>
+          <p>เลือกแถวเพื่อซูมแผนที่และดูรายละเอียดของหมู่นั้น</p>
+        </div>
+        <span>{metricInfo.label}</span>
+      </header>
+
+      <div className="production-village-grid">
+        {rows.map((row) => {
+          const value = getMetricValue(row, metric);
+          const width = Math.max(value > 0 ? 4 : 0, Math.round((value / maximum) * 100));
+          const active = Number(selectedVillage) === row.id;
+          return (
+            <button
+              type="button"
+              key={row.id}
+              className={active ? "is-active" : ""}
+              onClick={() => onSelect(active ? null : row.id)}
+              onMouseEnter={() => onHover(row.id)}
+              onMouseLeave={() => onHover(null)}
+              onFocus={() => onHover(row.id)}
+              onBlur={() => onHover(null)}
+            >
+              <span className="production-village-grid__number">{row.id}</span>
+              <span className="production-village-grid__text">
+                <b>หมู่ {row.id}</b>
+                <small>สุนัข {row.dogs.toLocaleString("th-TH")} · แมว {row.cats.toLocaleString("th-TH")}</small>
+                <i><b style={{ width: `${width}%` }} /></i>
+              </span>
+              <strong>{metricInfo.unit === "%" ? `${value}%` : value.toLocaleString("th-TH")}</strong>
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }
 
-function TaskPanel({ row, navigate }) {
-  const guidance = buildGuidance(row);
+function LatestRequests({ requests, navigate }) {
+  const items = requests.slice(0, 5);
 
   return (
-    <div className="compact-task-list">
-      {guidance.map((item) => (
-        <button type="button" key={`${item.title}-${item.target}`} onClick={() => navigate(item.target)}>
-          <i className={item.tone}>!</i>
-          <span><b>{item.title}</b><small>{item.detail}</small></span>
-          <em>›</em>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function RequestPanel({ requests, selectedVillage, onVillageHover, onVillageSelect, navigate }) {
-  const rows = requests.slice(0, 7);
-
-  if (!rows.length) {
-    return (
-      <div className="compact-empty">
-        <i>✓</i>
-        <strong>ไม่พบคำขอในพื้นที่ที่เลือก</strong>
-        <span>ลองเลือกทุกหมู่บ้าน หรือรีเฟรชข้อมูลอีกครั้ง</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="compact-request-list">
-      {rows.map((row) => {
-        const villageNo = Number(row.villageNo);
-        const status = statusLabel[row.status] || [row.status || "-", "gray"];
-        return (
-          <button
-            type="button"
-            key={row.id || row.referenceNo}
-            className={Number(selectedVillage) === villageNo ? "is-selected" : ""}
-            onMouseEnter={() => onVillageHover(villageNo)}
-            onMouseLeave={() => onVillageHover(null)}
-            onFocus={() => onVillageHover(villageNo)}
-            onBlur={() => onVillageHover(null)}
-            onClick={() => {
-              onVillageSelect(villageNo || null);
-              navigate("registrations");
-            }}
-          >
-            <i>{row.species === "DOG" ? "ส" : "ม"}</i>
-            <span>
-              <b>{row.petName || "ไม่ระบุชื่อ"}</b>
-              <small>{row.ownerName || row.referenceNo || "ไม่ระบุเจ้าของ"}</small>
-            </span>
-            <em>หมู่ {villageNo || "-"}</em>
-            <strong className={status[1]}>{status[0]}</strong>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function VillagePanel({ rows, metric, selectedVillage, onVillageHover, onVillageSelect }) {
-  const metricInfo = DASHBOARD_METRICS[metric] || DASHBOARD_METRICS.total;
-  const maximum = Math.max(1, ...rows.map((item) => getMetricValue(item, metric)));
-  const sortedRows = [...rows].sort((first, second) => {
-    if (metric === "vaccination" || metric === "sterilization") {
-      return getMetricValue(first, metric) - getMetricValue(second, metric);
-    }
-    return getMetricValue(second, metric) - getMetricValue(first, metric);
-  });
-
-  return (
-    <div className="compact-village-list">
-      <header>
-        <span>เรียงตาม {metricInfo.label}</span>
-        <small>{metricInfo.unit === "%" ? "น้อย → มาก" : "มาก → น้อย"}</small>
+    <section className="production-request-card">
+      <header className="production-section-heading">
+        <div>
+          <small>งานล่าสุด</small>
+          <h2>คำขอขึ้นทะเบียน</h2>
+          <p>แสดงรายการล่าสุดจากระบบ ไม่ใช่ข้อมูลจำลองบนหน้าเว็บ</p>
+        </div>
+        <button type="button" onClick={() => navigate("registrations")}>ดูทั้งหมด</button>
       </header>
-      {sortedRows.map((row) => {
-        const value = getMetricValue(row, metric);
-        const width = metricInfo.unit === "%"
-          ? value
-          : Math.max(3, Math.round((value / maximum) * 100));
-        return (
-          <button
-            type="button"
-            key={row.id}
-            className={Number(selectedVillage) === row.id ? "is-selected" : ""}
-            onMouseEnter={() => onVillageHover(row.id)}
-            onMouseLeave={() => onVillageHover(null)}
-            onFocus={() => onVillageHover(row.id)}
-            onBlur={() => onVillageHover(null)}
-            onClick={() => onVillageSelect(Number(selectedVillage) === row.id ? null : row.id)}
-          >
-            <span>หมู่ {row.id}</span>
-            <i><b style={{ width: `${width}%` }} /></i>
-            <strong>{metricInfo.unit === "%" ? `${value}%` : value.toLocaleString("th-TH")}</strong>
-          </button>
-        );
-      })}
-    </div>
+
+      {items.length ? (
+        <div className="production-request-list">
+          {items.map((item) => {
+            const status = requestStatus[item.status] || [item.status || "-", "gray"];
+            return (
+              <button type="button" key={item.id || item.referenceNo} onClick={() => navigate("registrations")}>
+                <span className="production-request-list__pet">{item.species === "DOG" ? "ส" : "ม"}</span>
+                <span>
+                  <b>{item.petName || "ไม่ระบุชื่อ"}</b>
+                  <small>{item.ownerName || item.referenceNo || "ไม่ระบุเจ้าของ"} · หมู่ {item.villageNo || "-"}</small>
+                </span>
+                <em className={status[1]}>{status[0]}</em>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="production-empty-state">
+          <strong>ยังไม่มีคำขอ</strong>
+          <span>เมื่อมีรายการใหม่ ระบบจะแสดงที่ส่วนนี้</span>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -262,11 +305,11 @@ export default function DashboardPage({ token, navigate }) {
   const [metric, setMetric] = useState("total");
   const [selectedVillage, setSelectedVillage] = useState(null);
   const [hoveredVillage, setHoveredVillage] = useState(null);
-  const [sideTab, setSideTab] = useState("tasks");
   const [loading, setLoading] = useState(true);
   const [apiStatus, setApiStatus] = useState({ successful: 0, total: 5 });
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [villageReportLoaded, setVillageReportLoaded] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -283,9 +326,7 @@ export default function DashboardPage({ token, navigate }) {
       const [dashboardResult, registrationResult, villageResult, mapResult, caseResult] = results;
 
       setStats(
-        dashboardResult.status === "fulfilled"
-          && dashboardResult.value
-          && typeof dashboardResult.value === "object"
+        dashboardResult.status === "fulfilled" && dashboardResult.value && typeof dashboardResult.value === "object"
           ? dashboardResult.value
           : initialStats,
       );
@@ -299,6 +340,7 @@ export default function DashboardPage({ token, navigate }) {
           ? villageResult.value
           : [],
       );
+      setVillageReportLoaded(villageResult.status === "fulfilled" && Array.isArray(villageResult.value));
       setMapItems(
         mapResult.status === "fulfilled" && Array.isArray(mapResult.value)
           ? mapResult.value
@@ -329,117 +371,121 @@ export default function DashboardPage({ token, navigate }) {
   const summary = useMemo(() => summarizeVillageRows(villageRows), [villageRows]);
   const selectedRow = villageRows.find((row) => row.id === Number(selectedVillage)) || null;
   const currentRow = selectedRow || summary;
-  const filteredRequests = selectedVillage
-    ? requests.filter((row) => Number(row.villageNo) === Number(selectedVillage))
-    : requests;
 
-  const total = summary.totalPets || toNumber(stats.total);
-  const dogs = summary.dogs || toNumber(stats.dogs);
-  const cats = summary.cats || toNumber(stats.cats);
-  const vaccinationCoverage = summary.vaccinationCoverage;
-  const sterilizationCoverage = summary.sterilizationCoverage;
-  const pending = summary.pending || toNumber(stats.pending);
-  const openCases = summary.openCases || toNumber(stats.openCases);
+  const total = villageReportLoaded ? summary.totalPets : toNumber(stats.total);
+  const dogs = villageReportLoaded ? summary.dogs : toNumber(stats.dogs);
+  const cats = villageReportLoaded ? summary.cats : toNumber(stats.cats);
+  const vaccinated = villageReportLoaded ? summary.vaccinated : toNumber(stats.vaccinations);
+  const sterilized = villageReportLoaded ? summary.sterilized : toNumber(stats.sterilizations);
+  const vaccinationCoverage = total ? Math.round((vaccinated * 100) / total) : 0;
+  const sterilizationCoverage = total ? Math.round((sterilized * 100) / total) : 0;
+  const pending = villageReportLoaded ? summary.pending : toNumber(stats.pending);
+  const openCases = villageReportLoaded ? summary.openCases : toNumber(stats.openCases);
   const live = apiStatus.successful === apiStatus.total;
   const buddhistYear = new Date().getFullYear() + 543;
 
   return (
-    <main className="dashboard-compact">
-      <header className="dashboard-compact__header">
-        <div className="dashboard-compact__heading">
-          <span>ระบบทะเบียนและติดตามสัตว์เลี้ยง · ข้อมูลปี {buddhistYear}</span>
-          <h1>ภาพรวมและแผนที่</h1>
-          <p>ดูสถานการณ์รายหมู่ ตรวจพื้นที่ที่ต้องติดตาม และเข้าถึงงานค้างได้จากหน้าเดียว</p>
+    <main className="production-dashboard">
+      <header className="production-dashboard__header">
+        <div>
+          <span>ระบบทะเบียนและติดตามสัตว์เลี้ยง · ปี {buddhistYear}</span>
+          <h1>ภาพรวมและแผนที่พื้นที่</h1>
+          <p>ข้อมูลสถิติจากฐานข้อมูล และหมุดจากพิกัดหลังคาเรือนที่บันทึกไว้จริง</p>
         </div>
 
-        <div className="dashboard-compact__tools">
+        <div className="production-dashboard__tools">
           <label>
-            <span>พื้นที่</span>
+            <span>เลือกพื้นที่</span>
             <select
               value={selectedVillage || ""}
               onChange={(event) => setSelectedVillage(event.target.value ? Number(event.target.value) : null)}
             >
               <option value="">ทุกหมู่บ้าน</option>
-              {villageRows.map((row) => (
-                <option key={row.id} value={row.id}>หมู่ {row.id}</option>
-              ))}
+              {villageRows.map((row) => <option key={row.id} value={row.id}>หมู่ {row.id}</option>)}
             </select>
           </label>
 
-          <div className={`dashboard-sync ${live ? "is-live" : "is-warning"}`}>
+          <div className={`production-sync ${live ? "is-live" : "is-warning"}`}>
             <i />
-            <span>{loading ? "กำลังโหลดข้อมูล" : live ? "ข้อมูลพร้อมใช้งาน" : `พร้อม ${apiStatus.successful}/${apiStatus.total} ส่วน`}</span>
-            {!loading ? <small>อัปเดต {formatTime(lastUpdatedAt)}</small> : null}
+            <span>{loading ? "กำลังโหลดข้อมูล" : live ? "เชื่อมต่อข้อมูลครบ" : `เชื่อมต่อได้ ${apiStatus.successful}/${apiStatus.total} ส่วน`}</span>
+            <small>อัปเดต {formatTime(lastUpdatedAt)}</small>
           </div>
 
           <button
             type="button"
-            className="dashboard-refresh"
+            className="production-refresh"
             onClick={() => setRefreshKey((value) => value + 1)}
             disabled={loading}
           >
-            <span aria-hidden="true">↻</span>
-            <b>{loading ? "กำลังรีเฟรช" : "รีเฟรช"}</b>
+            <Icon name="refresh" />
+            <span>{loading ? "กำลังรีเฟรช" : "รีเฟรช"}</span>
           </button>
         </div>
       </header>
 
-      <section className="compact-kpi-strip" aria-label="ตัวชี้วัดภาพรวม">
-        <CompactKpi
+      {!live && !loading ? (
+        <div className="production-api-warning">
+          <strong>ข้อมูลบางส่วนโหลดไม่สำเร็จ</strong>
+          <span>ระบบจะไม่สร้างข้อมูลขึ้นมาทดแทน กรุณาตรวจ API แล้วกดรีเฟรช</span>
+        </div>
+      ) : null}
+
+      <section className="production-kpi-grid" aria-label="ตัวชี้วัดภาพรวม">
+        <KpiCard
           metric="total"
           active={metric === "total"}
-          tone="green"
-          icon="●"
+          icon="pets"
           label="สัตว์ขึ้นทะเบียน"
           value={total}
           detail={`สุนัข ${dogs.toLocaleString("th-TH")} · แมว ${cats.toLocaleString("th-TH")}`}
+          tone="green"
           onSelect={setMetric}
         />
-        <CompactKpi
+        <KpiCard
           metric="vaccination"
           active={metric === "vaccination"}
-          tone="teal"
-          icon="+"
-          label="ความครอบคลุมวัคซีน"
+          icon="vaccine"
+          label="ครอบคลุมวัคซีน"
           value={vaccinationCoverage}
           suffix="%"
-          detail={`${summary.vaccinated.toLocaleString("th-TH")} ตัวมีประวัติภายใน 1 ปี`}
+          detail={`${vaccinated.toLocaleString("th-TH")} ตัวมีประวัติภายใน 1 ปี`}
+          tone="teal"
           onSelect={setMetric}
         />
-        <CompactKpi
+        <KpiCard
           metric="sterilization"
           active={metric === "sterilization"}
-          tone="violet"
-          icon="◇"
-          label="ความครอบคลุมทำหมัน"
+          icon="sterilize"
+          label="ครอบคลุมทำหมัน"
           value={sterilizationCoverage}
           suffix="%"
-          detail={`${summary.sterilized.toLocaleString("th-TH")} ตัวมีประวัติ`}
+          detail={`${sterilized.toLocaleString("th-TH")} ตัวมีประวัติ`}
+          tone="violet"
           onSelect={setMetric}
         />
-        <CompactKpi
+        <KpiCard
           metric="pending"
           active={metric === "pending"}
-          tone="amber"
-          icon="⌁"
+          icon="request"
           label="คำขอรอตรวจ"
           value={pending}
-          detail="เลือกเพื่อดูหมู่ที่มีคำขอค้าง"
+          detail="คำขอที่ยังต้องดำเนินการ"
+          tone="amber"
           onSelect={setMetric}
         />
-        <CompactKpi
+        <KpiCard
           metric="cases"
           active={metric === "cases"}
-          tone="rose"
-          icon="!"
+          icon="case"
           label="เหตุที่ยังไม่ปิด"
           value={openCases}
-          detail="เหตุแจ้งที่ยังต้องติดตาม"
+          detail="เหตุแจ้งที่ต้องติดตาม"
+          tone="rose"
           onSelect={setMetric}
         />
       </section>
 
-      <section className="dashboard-workspace">
+      <section className="production-dashboard__workspace">
         <DashboardMap
           rows={villageRows}
           metric={metric}
@@ -450,46 +496,23 @@ export default function DashboardPage({ token, navigate }) {
           onVillageHover={setHoveredVillage}
         />
 
-        <aside className="compact-side-panel">
-          <OverviewSummary
-            row={currentRow}
-            selected={Boolean(selectedRow)}
-            onClear={() => setSelectedVillage(null)}
-          />
+        <AreaPanel
+          row={currentRow}
+          selected={Boolean(selectedRow)}
+          onClear={() => setSelectedVillage(null)}
+          navigate={navigate}
+        />
+      </section>
 
-          <nav className="compact-side-tabs" aria-label="ข้อมูลประกอบแผนที่">
-            <button type="button" className={sideTab === "tasks" ? "is-active" : ""} onClick={() => setSideTab("tasks")}>ต้องดำเนินการ</button>
-            <button type="button" className={sideTab === "requests" ? "is-active" : ""} onClick={() => setSideTab("requests")}>คำขอล่าสุด</button>
-            <button type="button" className={sideTab === "villages" ? "is-active" : ""} onClick={() => setSideTab("villages")}>เปรียบเทียบ 11 หมู่</button>
-          </nav>
-
-          <div className="compact-side-content">
-            {sideTab === "tasks" ? <TaskPanel row={currentRow} navigate={navigate} /> : null}
-            {sideTab === "requests" ? (
-              <RequestPanel
-                requests={filteredRequests}
-                selectedVillage={selectedVillage}
-                onVillageHover={setHoveredVillage}
-                onVillageSelect={setSelectedVillage}
-                navigate={navigate}
-              />
-            ) : null}
-            {sideTab === "villages" ? (
-              <VillagePanel
-                rows={villageRows}
-                metric={metric}
-                selectedVillage={selectedVillage}
-                onVillageHover={setHoveredVillage}
-                onVillageSelect={setSelectedVillage}
-              />
-            ) : null}
-          </div>
-
-          <footer className="compact-side-actions">
-            <button type="button" onClick={() => navigate("pets")}>เปิดทะเบียนสัตว์</button>
-            <button type="button" className="primary" onClick={() => navigate("registrations")}>จัดการคำขอ</button>
-          </footer>
-        </aside>
+      <section className="production-dashboard__lower-grid">
+        <VillageComparison
+          rows={villageRows}
+          metric={metric}
+          selectedVillage={selectedVillage}
+          onSelect={setSelectedVillage}
+          onHover={setHoveredVillage}
+        />
+        <LatestRequests requests={requests} navigate={navigate} />
       </section>
     </main>
   );

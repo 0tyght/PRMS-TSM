@@ -1320,14 +1320,32 @@ export function createApp() {
               v.village_no AS villageNo,
               v.name_th AS villageName,
               COUNT(DISTINCT p.id) AS totalPets,
-              SUM(p.species = 'DOG') AS dogs,
-              SUM(p.species = 'CAT') AS cats,
-              COUNT(
-                DISTINCT CASE
-                  WHEN vr.id IS NOT NULL THEN p.id
-                END
-              ) AS vaccinated,
-              COUNT(DISTINCT sr.pet_id) AS sterilized
+              COUNT(DISTINCT CASE WHEN p.species = 'DOG' THEN p.id END) AS dogs,
+              COUNT(DISTINCT CASE WHEN p.species = 'CAT' THEN p.id END) AS cats,
+              COUNT(DISTINCT CASE WHEN vr.pet_id IS NOT NULL THEN p.id END) AS vaccinated,
+              COUNT(DISTINCT CASE WHEN sr.pet_id IS NOT NULL THEN p.id END) AS sterilized,
+              (
+                SELECT COUNT(*)
+                FROM registrations pending_registration
+                INNER JOIN owners pending_owner
+                  ON pending_owner.id = pending_registration.owner_id
+                 AND pending_owner.deleted_at IS NULL
+                INNER JOIN households pending_household
+                  ON pending_household.id = pending_owner.household_id
+                 AND pending_household.deleted_at IS NULL
+                WHERE pending_household.village_id = v.id
+                  AND pending_registration.status IN (
+                    'SUBMITTED',
+                    'UNDER_REVIEW',
+                    'NEED_MORE_INFO'
+                  )
+              ) AS pending,
+              (
+                SELECT COUNT(*)
+                FROM cases village_case
+                WHERE village_case.village_id = v.id
+                  AND village_case.status NOT IN ('RESOLVED', 'CLOSED')
+              ) AS openCases
             FROM villages v
             LEFT JOIN households h
               ON h.village_id = v.id
@@ -1344,10 +1362,16 @@ export function createApp() {
                WHERE approved_registration.pet_id = p.id
                  AND approved_registration.status = 'APPROVED'
              )
-            LEFT JOIN vaccination_records vr
+            LEFT JOIN (
+              SELECT DISTINCT pet_id
+              FROM vaccination_records
+              WHERE vaccinated_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+            ) vr
               ON vr.pet_id = p.id
-             AND vr.vaccinated_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
-            LEFT JOIN sterilization_records sr
+            LEFT JOIN (
+              SELECT DISTINCT pet_id
+              FROM sterilization_records
+            ) sr
               ON sr.pet_id = p.id
             GROUP BY
               v.id,

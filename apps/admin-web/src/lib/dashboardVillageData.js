@@ -18,41 +18,11 @@ export const THA_PHO_VILLAGES = Object.freeze(
 );
 
 export const DASHBOARD_METRICS = Object.freeze({
-  total: Object.freeze({
-    id: "total",
-    label: "จำนวนสัตว์",
-    detail: "สัตว์ขึ้นทะเบียนทั้งหมด",
-    unit: "ตัว",
-    icon: "●",
-  }),
-  vaccination: Object.freeze({
-    id: "vaccination",
-    label: "ความครอบคลุมวัคซีน",
-    detail: "สัตว์ที่มีประวัติวัคซีนภายใน 1 ปี",
-    unit: "%",
-    icon: "+",
-  }),
-  sterilization: Object.freeze({
-    id: "sterilization",
-    label: "ความครอบคลุมทำหมัน",
-    detail: "สัตว์ที่มีประวัติการทำหมัน",
-    unit: "%",
-    icon: "◇",
-  }),
-  pending: Object.freeze({
-    id: "pending",
-    label: "คำขอรอตรวจ",
-    detail: "คำขอที่ยังต้องดำเนินการ",
-    unit: "คำขอ",
-    icon: "⌁",
-  }),
-  cases: Object.freeze({
-    id: "cases",
-    label: "เหตุที่ยังไม่ปิด",
-    detail: "เหตุแจ้งที่ยังอยู่ระหว่างดำเนินการ",
-    unit: "เหตุ",
-    icon: "!",
-  }),
+  total: Object.freeze({ id: "total", label: "จำนวนสัตว์", unit: "ตัว" }),
+  vaccination: Object.freeze({ id: "vaccination", label: "ความครอบคลุมวัคซีน", unit: "%" }),
+  sterilization: Object.freeze({ id: "sterilization", label: "ความครอบคลุมทำหมัน", unit: "%" }),
+  pending: Object.freeze({ id: "pending", label: "คำขอรอตรวจ", unit: "คำขอ" }),
+  cases: Object.freeze({ id: "cases", label: "เหตุที่ยังไม่ปิด", unit: "เหตุ" }),
 });
 
 function toNumber(value) {
@@ -61,10 +31,14 @@ function toNumber(value) {
 }
 
 function normalizeVillageNo(value) {
-  const villageNo = toNumber(value);
+  const villageNo = Number(value);
   return Number.isInteger(villageNo) && villageNo >= 1 && villageNo <= 11
     ? villageNo
     : null;
+}
+
+function hasField(object, field) {
+  return Boolean(object && Object.prototype.hasOwnProperty.call(object, field));
 }
 
 function groupByVillage(rows = []) {
@@ -87,6 +61,10 @@ export function getCoverage(numerator, denominator) {
   return Math.max(0, Math.min(100, Math.round((toNumber(numerator) * 100) / total)));
 }
 
+/**
+ * สถิติรายหมู่ใช้ endpoint รายงานเป็นแหล่งหลัก
+ * รายการ map ใช้เฉพาะสำหรับหมุดและรายละเอียด ไม่เอามาปั้นยอดทับรายงานที่มีค่า 0 จริง
+ */
 export function buildVillageRows({ villages = [], items = [], requests = [], cases = [] } = {}) {
   const reportByVillage = new Map(
     (Array.isArray(villages) ? villages : [])
@@ -98,36 +76,35 @@ export function buildVillageRows({ villages = [], items = [], requests = [], cas
   const casesByVillage = groupByVillage(cases);
 
   return THA_PHO_VILLAGES.map((village) => {
-    const hasReport = reportByVillage.has(village.id);
-    const report = reportByVillage.get(village.id) || {};
+    const report = reportByVillage.get(village.id) || null;
     const pets = petsByVillage.get(village.id) || [];
     const villageRequests = requestsByVillage.get(village.id) || [];
     const villageCases = casesByVillage.get(village.id) || [];
 
-    const totalPets = hasReport
-      ? toNumber(report.totalPets)
-      : pets.length;
-    const dogs = hasReport
+    const totalPets = hasField(report, "totalPets") ? toNumber(report.totalPets) : pets.length;
+    const dogs = hasField(report, "dogs")
       ? toNumber(report.dogs)
       : pets.filter((item) => item?.species === "DOG").length;
-    const cats = hasReport
+    const cats = hasField(report, "cats")
       ? toNumber(report.cats)
       : pets.filter((item) => item?.species === "CAT").length;
-    const vaccinated = hasReport
+    const vaccinated = hasField(report, "vaccinated")
       ? toNumber(report.vaccinated)
       : pets.filter((item) => Boolean(item?.vaccinated)).length;
-    const sterilized = hasReport
+    const sterilized = hasField(report, "sterilized")
       ? toNumber(report.sterilized)
       : pets.filter((item) => Boolean(item?.sterilized)).length;
-    const pending = villageRequests
-      .filter((item) => ACTIVE_REGISTRATION_STATUSES.has(item?.status)).length;
-    const openCases = villageCases
-      .filter((item) => ACTIVE_CASE_STATUSES.has(item?.status)).length;
+    const pending = hasField(report, "pending")
+      ? toNumber(report.pending)
+      : villageRequests.filter((item) => ACTIVE_REGISTRATION_STATUSES.has(item?.status)).length;
+    const openCases = hasField(report, "openCases")
+      ? toNumber(report.openCases)
+      : villageCases.filter((item) => ACTIVE_CASE_STATUSES.has(item?.status)).length;
 
     return {
       ...village,
       villageNo: village.id,
-      villageName: report.villageName || village.name,
+      villageName: report?.villageName || village.name,
       totalPets,
       dogs,
       cats,
@@ -150,36 +127,25 @@ export function getMetricValue(row, metric = "total") {
   if (!row) return 0;
 
   switch (metric) {
-    case "vaccination":
-      return toNumber(row.vaccinationCoverage);
-    case "sterilization":
-      return toNumber(row.sterilizationCoverage);
-    case "pending":
-      return toNumber(row.pending);
-    case "cases":
-      return toNumber(row.openCases);
+    case "vaccination": return toNumber(row.vaccinationCoverage);
+    case "sterilization": return toNumber(row.sterilizationCoverage);
+    case "pending": return toNumber(row.pending);
+    case "cases": return toNumber(row.openCases);
     case "total":
-    default:
-      return toNumber(row.totalPets);
+    default: return toNumber(row.totalPets);
   }
-}
-
-export function getMetricMaximum(rows = [], metric = "total") {
-  if (metric === "vaccination" || metric === "sterilization") return 100;
-  return Math.max(1, ...rows.map((row) => getMetricValue(row, metric)));
 }
 
 export function formatMetricValue(row, metric = "total") {
   const value = getMetricValue(row, metric);
   const unit = DASHBOARD_METRICS[metric]?.unit || "";
-  return unit === "%"
-    ? `${value}%`
-    : `${value.toLocaleString("th-TH")} ${unit}`;
+  return unit === "%" ? `${value}%` : `${value.toLocaleString("th-TH")} ${unit}`;
 }
 
 export function summarizeVillageRows(rows = []) {
-  const summary = rows.reduce(
+  const summary = (Array.isArray(rows) ? rows : []).reduce(
     (result, row) => ({
+      ...result,
       totalPets: result.totalPets + toNumber(row.totalPets),
       dogs: result.dogs + toNumber(row.dogs),
       cats: result.cats + toNumber(row.cats),
@@ -194,7 +160,7 @@ export function summarizeVillageRows(rows = []) {
     {
       id: null,
       name: "ทุกหมู่บ้าน",
-      villageName: "ภาพรวมเทศบาลท่าโพธ์",
+      villageName: "ภาพรวมตำบลท่าโพธ์",
       totalPets: 0,
       dogs: 0,
       cats: 0,
