@@ -438,6 +438,53 @@ function ServiceDialog({
   );
 }
 
+function PetLifecycleDialog({ pet, api, onClose, onSaved }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [detail, setDetail] = useState(null);
+  const [owners, setOwners] = useState([]);
+  const [mode, setMode] = useState("status");
+  const [nextStatus, setNextStatus] = useState(pet.status === "ACTIVE" ? "MISSING" : "ACTIVE");
+  const [ownerId, setOwnerId] = useState("");
+  const [effectiveAt, setEffectiveAt] = useState(today);
+  const [note, setNote] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      api.get(`/api/admin/pets/${pet.id}`),
+      api.get("/api/admin/owners"),
+    ]).then(([petDetail, ownerRows]) => {
+      setDetail(petDetail);
+      setOwners((Array.isArray(ownerRows) ? ownerRows : []).filter((owner) => owner.id !== pet.ownerId));
+    }).catch((error) => setMessage(error.message));
+  }, [api, pet.id, pet.ownerId]);
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      if (mode === "status") {
+        await api.patch(`/api/admin/pets/${pet.id}/status`, { status: nextStatus, effectiveAt, note });
+      } else {
+        await api.patch(`/api/admin/pets/${pet.id}/owner`, { ownerId, transferredAt: effectiveAt, reason: note });
+      }
+      await onSaved();
+    } catch (error) {
+      setMessage(error.message || "ไม่สามารถบันทึกการเปลี่ยนแปลงได้");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="pet-modal-backdrop" role="presentation"><section className="pet-service-dialog pet-lifecycle-dialog"><div className="pet-dialog-header"><div><p className="eyebrow">ประวัติและวงจรชีวิตสัตว์</p><h2>{pet.petName}</h2><p>{pet.registrationNo} · เจ้าของปัจจุบัน {pet.ownerName}</p></div><button type="button" className="pet-dialog-close" onClick={onClose}>×</button></div>
+    <div className="pet-lifecycle-tabs"><button type="button" className={mode === "status" ? "active" : ""} onClick={() => setMode("status")}>เปลี่ยนสถานะ</button><button type="button" className={mode === "owner" ? "active" : ""} onClick={() => setMode("owner")}>โอนเจ้าของ</button></div>
+    <form onSubmit={submit} className="pet-lifecycle-form">{mode === "status" ? <label className="pet-form-field"><span>สถานะใหม่</span><select value={nextStatus} onChange={(event) => setNextStatus(event.target.value)}>{Object.entries(PET_STATUS_LABELS).filter(([value]) => value !== pet.status).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : <label className="pet-form-field"><span>เจ้าของใหม่</span><select value={ownerId} onChange={(event) => setOwnerId(event.target.value)} required><option value="">เลือกจากทะเบียนเจ้าของ</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.fullName} · บ้านเลขที่ {owner.houseNo} หมู่ {owner.villageNo}</option>)}</select></label>}<label className="pet-form-field"><span>วันที่มีผล</span><input type="date" value={effectiveAt} max={today} onChange={(event) => setEffectiveAt(event.target.value)} required /></label><label className="pet-form-field pet-lifecycle-note"><span>{mode === "owner" ? "เหตุผลการโอน" : "เหตุผล/รายละเอียด"}</span><textarea value={note} onChange={(event) => setNote(event.target.value)} minLength="2" maxLength="500" rows="3" required /></label><Notice message={message}/><div className="pet-dialog-actions"><button type="button" className="pet-secondary-button" onClick={onClose}>ยกเลิก</button><button type="submit" className="pet-primary-button" disabled={busy}>{busy ? "กำลังบันทึก…" : "ยืนยันการเปลี่ยนแปลง"}</button></div></form>
+    <div className="pet-history-section"><h3>ประวัติล่าสุด</h3>{!detail ? <p>กำลังโหลดประวัติ…</p> : <div className="pet-history-columns"><div><b>สถานะ</b>{detail.statusHistory.length ? detail.statusHistory.slice(0, 6).map((item) => <article key={item.id}><span>{PET_STATUS_LABELS[item.newStatus] || item.newStatus}</span><small>{formatThaiDate(item.effectiveAt)} · {item.note || "—"}</small></article>) : <p>ยังไม่มีประวัติ</p>}</div><div><b>เจ้าของ</b>{detail.ownerHistory.length ? detail.ownerHistory.slice(0, 6).map((item) => <article key={item.id}><span>{item.newOwner}</span><small>{formatThaiDate(item.transferredAt)} · {item.reason || "เริ่มต้นทะเบียน"}</small></article>) : <p>ยังไม่มีประวัติ</p>}</div></div>}</div>
+  </section></div>;
+}
+
 function PetSummaryCards({ rows, visibleCount }) {
   const summary = useMemo(() => {
     return rows.reduce(
@@ -540,6 +587,7 @@ export default function PetDirectory({
   const [vaccination, setVaccination] = useState("");
   const [sterilization, setSterilization] = useState("");
   const [selectedPet, setSelectedPet] = useState(null);
+  const [lifecyclePet, setLifecyclePet] = useState(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -831,7 +879,7 @@ export default function PetDirectory({
                   <th>สถานะ</th>
                   <th>วัคซีน</th>
                   <th>ทำหมัน</th>
-                  {serviceMode && <th>ดำเนินการ</th>}
+                  <th>ดำเนินการ</th>
                 </tr>
               </thead>
 
@@ -970,8 +1018,8 @@ export default function PetDirectory({
                         </span>
                       </td>
 
-                      {serviceMode && (
-                        <td>
+                      <td>
+                        {serviceMode ? (
                           <button
                             type="button"
                             className="pet-service-button"
@@ -981,8 +1029,8 @@ export default function PetDirectory({
                           >
                             + บันทึกบริการ
                           </button>
-                        </td>
-                      )}
+                        ) : <button type="button" className="pet-service-button" onClick={() => setLifecyclePet(pet)}>ดูประวัติ / เปลี่ยนสถานะ</button>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -1003,6 +1051,8 @@ export default function PetDirectory({
           }}
         />
       )}
+
+      {lifecyclePet && <PetLifecycleDialog pet={lifecyclePet} api={api} onClose={() => setLifecyclePet(null)} onSaved={async () => { setLifecyclePet(null); await loadPets(); }} />}
     </div>
   );
 }

@@ -66,6 +66,18 @@ const staffUpdateSchema = z.object({
   isActive: z.boolean(),
 });
 
+const petStatusUpdateSchema = z.object({
+  status: z.enum(["ACTIVE", "MISSING", "TRANSFERRED", "DECEASED"]),
+  effectiveAt: z.string().date(),
+  note: z.string().trim().min(2).max(500),
+});
+
+const petOwnerTransferSchema = z.object({
+  ownerId: z.string().uuid(),
+  transferredAt: z.string().date(),
+  reason: z.string().trim().min(2).max(500),
+});
+
 function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
@@ -1285,6 +1297,7 @@ export function createApp() {
           SELECT
             p.id,
             p.registration_no AS registrationNo,
+            p.microchip_no AS microchipNo,
             p.name AS petName,
             p.species,
             p.sex,
@@ -1292,6 +1305,7 @@ export function createApp() {
             p.color,
             p.status,
             p.registered_at AS registeredAt,
+            o.id AS ownerId,
             o.full_name AS ownerName,
             o.phone,
             h.house_no AS houseNo,
@@ -1345,6 +1359,155 @@ export function createApp() {
       next(error);
     }
   });
+
+  app.get("/api/admin/pets/:id", authenticate, async (req, res, next) => {
+    try {
+      const [petRows] = await pool.execute(
+        `SELECT p.id, p.registration_no AS registrationNo, p.microchip_no AS microchipNo,
+                p.name AS petName, p.species, p.sex, p.breed, p.color,
+                p.birth_date AS birthDate, p.status, p.photo_path AS photoPath,
+                p.registered_at AS registeredAt,
+                o.id AS ownerId, o.full_name AS ownerName, o.phone,
+                h.house_no AS houseNo, v.village_no AS villageNo, v.name_th AS villageName
+         FROM pets p
+         INNER JOIN owners o ON o.id = p.owner_id
+         INNER JOIN households h ON h.id = o.household_id
+         INNER JOIN villages v ON v.id = h.village_id
+         WHERE p.id = ? AND p.deleted_at IS NULL
+         LIMIT 1`,
+        [req.params.id],
+      );
+      if (!petRows[0]) return res.status(404).json({ message: "ไม่พบข้อมูลสัตว์" });
+
+      const [statusHistory, ownerHistory, vaccinations, sterilizations] = await Promise.all([
+        pool.execute(
+          `SELECT history.id, history.old_status AS oldStatus, history.new_status AS newStatus,
+                  history.effective_at AS effectiveAt, history.note,
+                  users.full_name AS recordedBy
+           FROM pet_status_history history
+           LEFT JOIN users ON users.id = history.recorded_by
+           WHERE history.pet_id = ? ORDER BY history.effective_at DESC, history.created_at DESC`,
+          [req.params.id],
+        ).then(([rows]) => rows),
+        pool.execute(
+          `SELECT history.id, previous.full_name AS previousOwner,
+                  current.full_name AS newOwner, history.transferred_at AS transferredAt,
+                  history.reason, users.full_name AS recordedBy
+           FROM pet_owner_history history
+           LEFT JOIN owners previous ON previous.id = history.previous_owner_id
+           INNER JOIN owners current ON current.id = history.new_owner_id
+           LEFT JOIN users ON users.id = history.recorded_by
+           WHERE history.pet_id = ? ORDER BY history.transferred_at DESC, history.created_at DESC`,
+          [req.params.id],
+        ).then(([rows]) => rows),
+        pool.execute(
+          `SELECT id, vaccine_name AS vaccineName, lot_no AS lotNo,
+                  vaccinated_at AS vaccinatedAt, next_due_at AS nextDueAt,
+                  provider_name AS providerName
+           FROM vaccination_records WHERE pet_id = ? ORDER BY vaccinated_at DESC`,
+          [req.params.id],
+        ).then(([rows]) => rows),
+        pool.execute(
+          `SELECT id, sterilized_at AS sterilizedAt, provider_name AS providerName, note
+           FROM sterilization_records WHERE pet_id = ? ORDER BY sterilized_at DESC`,
+          [req.params.id],
+        ).then(([rows]) => rows),
+      ]);
+
+      return res.json({ data: { ...petRows[0], statusHistory, ownerHistory, vaccinations, sterilizations } });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch(
+    "/api/admin/pets/:id/status",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const input = petStatusUpdateSchema.parse(req.body);
+        const data = await withTransaction(async (db) => {
+          const [rows] = await db.execute(
+            "SELECT id, status FROM pets WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE",
+            [req.params.id],
+          );
+          const pet = rows[0];
+          if (!pet) throw createHttpError(404, "ไม่พบข้อมูลสัตว์");
+          if (pet.status === input.status) throw createHttpError(409, "สัตว์มีสถานะนี้อยู่แล้ว");
+
+          await db.execute("UPDATE pets SET status = ? WHERE id = ?", [input.status, req.params.id]);
+          await db.execute(
+            `INSERT INTO pet_status_history
+              (id, pet_id, old_status, new_status, effective_at, note, recorded_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.params.id, pet.status, input.status, input.effectiveAt, input.note, req.user.sub],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, 'UPDATE_PET_STATUS', 'PET', ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, req.params.id, JSON.stringify({ status: pet.status }), JSON.stringify(input), req.ip],
+          );
+          return { id: req.params.id, ...input };
+        });
+        return res.json({ data });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/admin/pets/:id/owner",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const input = petOwnerTransferSchema.parse(req.body);
+        const data = await withTransaction(async (db) => {
+          const [petRows] = await db.execute(
+            "SELECT id, owner_id AS ownerId, status FROM pets WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE",
+            [req.params.id],
+          );
+          const pet = petRows[0];
+          if (!pet) throw createHttpError(404, "ไม่พบข้อมูลสัตว์");
+          if (pet.ownerId === input.ownerId) throw createHttpError(409, "เจ้าของใหม่ต้องไม่ใช่เจ้าของปัจจุบัน");
+          const [ownerRows] = await db.execute(
+            "SELECT id FROM owners WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+            [input.ownerId],
+          );
+          if (!ownerRows[0]) throw createHttpError(404, "ไม่พบเจ้าของใหม่ในทะเบียน");
+
+          await db.execute("UPDATE pets SET owner_id = ?, status = 'ACTIVE' WHERE id = ?", [input.ownerId, req.params.id]);
+          await db.execute(
+            `INSERT INTO pet_owner_history
+              (id, pet_id, previous_owner_id, new_owner_id, transferred_at, reason, recorded_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.params.id, pet.ownerId, input.ownerId, input.transferredAt, input.reason, req.user.sub],
+          );
+          if (pet.status !== "ACTIVE") {
+            await db.execute(
+              `INSERT INTO pet_status_history
+                (id, pet_id, old_status, new_status, effective_at, note, recorded_by)
+               VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?)`,
+              [crypto.randomUUID(), req.params.id, pet.status, input.transferredAt, `กลับเป็นสถานะปกติหลังโอนเจ้าของ: ${input.reason}`, req.user.sub],
+            );
+          }
+          await db.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, 'TRANSFER_PET_OWNER', 'PET', ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, req.params.id, JSON.stringify({ ownerId: pet.ownerId }), JSON.stringify(input), req.ip],
+          );
+          return { id: req.params.id, ...input };
+        });
+        return res.json({ data });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   app.get("/api/admin/map", authenticate, async (_req, res, next) => {
     try {
