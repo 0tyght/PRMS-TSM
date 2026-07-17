@@ -8,7 +8,7 @@ import DashboardPage from "./pages/DashboardPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import PetsPage from "./pages/PetsPage.jsx";
 import RegistrationsPage from "./pages/RegistrationsPage.jsx";
-import ReportsPage from "./pages/ReportsPage.jsx";
+import ReportsPage from "./pages/ReportsPageResponsive.jsx";
 import ServicesPage from "./pages/ServicesPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 

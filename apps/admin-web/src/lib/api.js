@@ -1,10 +1,8 @@
 import { getApiBase } from "./runtimeConfig.js";
 
-/*
- * คง export นี้ไว้เพื่อรองรับ LoginPage.jsx เดิม
- * แต่กำหนดเป็น false เพื่อปิดระบบข้อมูลสาธิตอย่างถาวร
- */
-export const IS_GITHUB_DEMO = false;
+export const IS_TEMPORARY_PASSWORD_BYPASS =
+  import.meta.env.DEV ||
+  (typeof window !== "undefined" && window.location.hostname.endsWith("github.io"));
 
 const REQUEST_TIMEOUT_MS = 12000;
 

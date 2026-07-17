@@ -685,3 +685,33 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Keep dense registry information readable on desktop displays. */
+.pet-summary-card > div > span,
+.pet-summary-card small,
+.pet-search-field input,
+.pet-filter-panel select,
+.pet-clear-button,
+.pet-table-heading p,
+.pet-live-source,
+.pet-data-table,
+.pet-data-table th,
+.pet-main-cell strong,
+.pet-registration-cell strong,
+.pet-owner-cell strong,
+.pet-main-cell span,
+.pet-registration-cell span,
+.pet-owner-cell span,
+.pet-main-cell small,
+.pet-registration-cell small,
+.pet-owner-cell small,
+.pet-health-cell small,
+.pet-status-badge,
+.pet-health-badge,
+.pet-sterilization-badge,
+.pet-service-button { font-size: 11px; }
+
+.pet-data-table thead th { position: sticky; top: 0; z-index: 2; }
+.pet-service-button,
+.pet-clear-button,
+.pet-refresh-button { min-height: 38px; }

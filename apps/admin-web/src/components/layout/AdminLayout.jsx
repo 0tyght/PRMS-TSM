@@ -7,7 +7,7 @@ function Header({ onMenu, onLogout }) {
 }
 
 function Sidebar({ page, navigate, open, close }) {
-  return <><div className={`scrim ${open ? "show" : ""}`} onClick={close}/><aside className={`sidebar ${open ? "open" : ""}`}><nav>{ADMIN_MENU.map(item=><button key={item.id} className={page===item.id?"active":""} onClick={()=>{navigate(item.id);close()}}><i>{item.icon}</i><span>{item.label}</span></button>)}</nav><div className="help"><b>ศูนย์ช่วยเหลือ</b><span>คู่มือและแจ้งปัญหาการใช้งาน</span><button>ดูคู่มือระบบ</button></div></aside></>;
+  return <><div className={`scrim ${open ? "show" : ""}`} onClick={close}/><aside className={`sidebar ${open ? "open" : ""}`}><nav aria-label="เมนูหลัก">{ADMIN_MENU.map(item=><button type="button" key={item.id} className={page===item.id?"active":""} aria-current={page===item.id?"page":undefined} onClick={()=>{navigate(item.id);close()}}><i aria-hidden="true">{item.icon}</i><span>{item.label}</span></button>)}</nav><div className="help"><b>ศูนย์ช่วยเหลือ</b><span>คู่มือและแจ้งปัญหาการใช้งาน</span><button type="button" title="คู่มือระบบอยู่ระหว่างจัดทำ">ดูคู่มือระบบ</button></div></aside></>;
 }
 
 export default function AdminLayout({ page, navigate, title, onLogout, children }) {

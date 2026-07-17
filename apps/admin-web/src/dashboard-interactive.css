@@ -1252,3 +1252,45 @@
     flex: 1;
   }
 }
+
+/* Readable Thai text and consistent control targets. */
+.production-kpi__body em,
+.production-map-empty span,
+.production-map-legend,
+.map-data-quality span,
+.production-area-summary span,
+.production-area-summary small,
+.production-progress > div,
+.production-progress > small,
+.production-task-list button b,
+.production-task-list button small,
+.production-empty-state strong,
+.production-empty-state span,
+.production-village-grid__text b,
+.production-village-grid__text small,
+.production-request-list b,
+.production-request-list small,
+.production-request-list em { font-size: 11px; }
+
+.production-segmented,
+.production-segmented button,
+.production-map-actions button,
+.production-area-panel__header button,
+.production-section-heading > button { min-height: 36px; }
+
+.production-dashboard button:focus-visible,
+.production-dashboard select:focus-visible {
+  outline: 3px solid rgb(13 139 103 / 24%);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1024px) {
+  .production-dashboard { padding: 16px; }
+  .production-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .production-map-stage,
+  .production-map-canvas { min-height: 460px; height: 460px; }
+}
+
+@media (max-width: 820px) {
+  .production-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

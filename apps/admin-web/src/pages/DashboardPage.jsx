@@ -57,7 +57,7 @@ function Icon({ name }) {
   );
 }
 
-function KpiCard({ metric, active, icon, label, value, suffix = "", detail, tone, onSelect }) {
+function KpiCard({ metric, active, icon, label, value, suffix = "", detail, tone, onSelect, unavailable = false }) {
   return (
     <button
       type="button"
@@ -68,8 +68,8 @@ function KpiCard({ metric, active, icon, label, value, suffix = "", detail, tone
       <span className="production-kpi__icon"><Icon name={icon} /></span>
       <span className="production-kpi__body">
         <small>{label}</small>
-        <strong>{toNumber(value).toLocaleString("th-TH")}{suffix}</strong>
-        <em>{detail}</em>
+        <strong>{unavailable ? "—" : `${toNumber(value).toLocaleString("th-TH")}${suffix}`}</strong>
+        <em>{unavailable ? "รอข้อมูลจาก API" : detail}</em>
       </span>
     </button>
   );
@@ -382,6 +382,7 @@ export default function DashboardPage({ token, navigate }) {
   const pending = villageReportLoaded ? summary.pending : toNumber(stats.pending);
   const openCases = villageReportLoaded ? summary.openCases : toNumber(stats.openCases);
   const live = apiStatus.successful === apiStatus.total;
+  const dataUnavailable = !loading && apiStatus.successful === 0;
   const buddhistYear = new Date().getFullYear() + 543;
 
   return (
@@ -440,6 +441,7 @@ export default function DashboardPage({ token, navigate }) {
           detail={`สุนัข ${dogs.toLocaleString("th-TH")} · แมว ${cats.toLocaleString("th-TH")}`}
           tone="green"
           onSelect={setMetric}
+          unavailable={dataUnavailable}
         />
         <KpiCard
           metric="vaccination"
@@ -451,6 +453,7 @@ export default function DashboardPage({ token, navigate }) {
           detail={`${vaccinated.toLocaleString("th-TH")} ตัวมีประวัติภายใน 1 ปี`}
           tone="teal"
           onSelect={setMetric}
+          unavailable={dataUnavailable}
         />
         <KpiCard
           metric="sterilization"
@@ -462,6 +465,7 @@ export default function DashboardPage({ token, navigate }) {
           detail={`${sterilized.toLocaleString("th-TH")} ตัวมีประวัติ`}
           tone="violet"
           onSelect={setMetric}
+          unavailable={dataUnavailable}
         />
         <KpiCard
           metric="pending"
@@ -472,6 +476,7 @@ export default function DashboardPage({ token, navigate }) {
           detail="คำขอที่ยังต้องดำเนินการ"
           tone="amber"
           onSelect={setMetric}
+          unavailable={dataUnavailable}
         />
         <KpiCard
           metric="cases"
@@ -482,6 +487,7 @@ export default function DashboardPage({ token, navigate }) {
           detail="เหตุแจ้งที่ต้องติดตาม"
           tone="rose"
           onSelect={setMetric}
+          unavailable={dataUnavailable}
         />
       </section>
 
