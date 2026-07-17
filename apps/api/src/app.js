@@ -78,6 +78,20 @@ const petOwnerTransferSchema = z.object({
   reason: z.string().trim().min(2).max(500),
 });
 
+const vaccinationRecordSchema = z.object({
+  vaccineName: z.string().trim().min(2).max(150),
+  vaccinatedAt: z.string().date(),
+  nextDueAt: z.string().date().optional().or(z.literal("")),
+  lotNo: z.string().trim().max(100).optional().default(""),
+  providerName: z.string().trim().max(150).optional().default(""),
+});
+
+const sterilizationRecordSchema = z.object({
+  sterilizedAt: z.string().date(),
+  providerName: z.string().trim().max(150).optional().default(""),
+  note: z.string().trim().max(500).optional().default(""),
+});
+
 function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
@@ -1567,15 +1581,7 @@ export function createApp() {
     requireRole("ADMIN", "OFFICER"),
     async (req, res, next) => {
       try {
-        const input = z
-          .object({
-            vaccineName: z.string().trim().min(2).max(150),
-            vaccinatedAt: z.string().date(),
-            nextDueAt: z.string().date().optional().or(z.literal("")),
-            lotNo: z.string().trim().max(100).optional().default(""),
-            providerName: z.string().trim().max(150).optional().default(""),
-          })
-          .parse(req.body);
+        const input = vaccinationRecordSchema.parse(req.body);
 
         const id = crypto.randomUUID();
 
@@ -1641,19 +1647,51 @@ export function createApp() {
     },
   );
 
+  app.patch(
+    "/api/admin/vaccinations/:id",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const input = vaccinationRecordSchema.parse(req.body);
+        const data = await withTransaction(async (db) => {
+          const [rows] = await db.execute(
+            `SELECT id, pet_id AS petId, vaccine_name AS vaccineName, lot_no AS lotNo,
+                    vaccinated_at AS vaccinatedAt, next_due_at AS nextDueAt,
+                    provider_name AS providerName
+             FROM vaccination_records WHERE id = ? LIMIT 1 FOR UPDATE`,
+            [req.params.id],
+          );
+          if (!rows[0]) throw createHttpError(404, "ไม่พบประวัติวัคซีน");
+          await db.execute(
+            `UPDATE vaccination_records
+             SET vaccine_name = ?, lot_no = NULLIF(?, ''), vaccinated_at = ?,
+                 next_due_at = NULLIF(?, ''), provider_name = NULLIF(?, ''), recorded_by = ?
+             WHERE id = ?`,
+            [input.vaccineName, input.lotNo, input.vaccinatedAt, input.nextDueAt || "", input.providerName, req.user.sub, req.params.id],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, 'UPDATE_VACCINATION', 'PET', ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, rows[0].petId, JSON.stringify(rows[0]), JSON.stringify(input), req.ip],
+          );
+          return { id: req.params.id, ...input };
+        });
+        return res.json({ data });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   app.post(
     "/api/admin/pets/:petId/sterilizations",
     authenticate,
     requireRole("ADMIN", "OFFICER"),
     async (req, res, next) => {
       try {
-        const input = z
-          .object({
-            sterilizedAt: z.string().date(),
-            providerName: z.string().trim().max(150).optional().default(""),
-            note: z.string().trim().max(500).optional().default(""),
-          })
-          .parse(req.body);
+        const input = sterilizationRecordSchema.parse(req.body);
 
         const id = crypto.randomUUID();
 
@@ -1714,6 +1752,42 @@ export function createApp() {
         });
 
         return res.status(201).json({ data: { id } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/admin/sterilizations/:id",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const input = sterilizationRecordSchema.parse(req.body);
+        const data = await withTransaction(async (db) => {
+          const [rows] = await db.execute(
+            `SELECT id, pet_id AS petId, sterilized_at AS sterilizedAt,
+                    provider_name AS providerName, note
+             FROM sterilization_records WHERE id = ? LIMIT 1 FOR UPDATE`,
+            [req.params.id],
+          );
+          if (!rows[0]) throw createHttpError(404, "ไม่พบประวัติการทำหมัน");
+          await db.execute(
+            `UPDATE sterilization_records
+             SET sterilized_at = ?, provider_name = NULLIF(?, ''), note = NULLIF(?, ''), recorded_by = ?
+             WHERE id = ?`,
+            [input.sterilizedAt, input.providerName, input.note, req.user.sub, req.params.id],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, 'UPDATE_STERILIZATION', 'PET', ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, rows[0].petId, JSON.stringify(rows[0]), JSON.stringify(input), req.ip],
+          );
+          return { id: req.params.id, ...input };
+        });
+        return res.json({ data });
       } catch (error) {
         next(error);
       }
