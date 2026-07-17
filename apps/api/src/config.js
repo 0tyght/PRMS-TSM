@@ -107,9 +107,12 @@ export const config = Object.freeze({
 
   lineLiffId: readText(process.env.LINE_LIFF_ID),
 
+  lineChannelAccessToken: readText(process.env.LINE_CHANNEL_ACCESS_TOKEN),
+
   lineConfigured: Boolean(
     readText(process.env.LINE_CHANNEL_ID) &&
     readText(process.env.LINE_CHANNEL_SECRET) &&
+    readText(process.env.LINE_CHANNEL_ACCESS_TOKEN) &&
     readText(process.env.LINE_LIFF_ID)
   ),
 

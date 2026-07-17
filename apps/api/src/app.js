@@ -144,6 +144,24 @@ function createCitizenToken(lineProfile, ownerId = null) {
   );
 }
 
+async function pushLineText(lineUserId, text) {
+  if (!lineUserId || !config.lineChannelAccessToken) return { status: "SKIPPED" };
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.lineChannelAccessToken}`,
+        "Content-Type": "application/json",
+        "X-Line-Retry-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ to: lineUserId, messages: [{ type: "text", text }] }),
+    });
+    return { status: response.ok ? "SENT" : "FAILED", httpStatus: response.status };
+  } catch {
+    return { status: "FAILED", httpStatus: null };
+  }
+}
+
 async function ensureVillageExists(db, villageId) {
   const [rows] = await db.execute(
     `
@@ -1270,8 +1288,10 @@ export function createApp() {
                 r.id,
                 r.reference_no AS referenceNo,
                 r.pet_id AS petId,
-                r.status AS oldStatus
+                r.status AS oldStatus,
+                o.line_user_id AS lineUserId
               FROM registrations r
+              INNER JOIN owners o ON o.id = r.owner_id
               WHERE r.id = ?
               LIMIT 1
               FOR UPDATE
@@ -1422,10 +1442,40 @@ export function createApp() {
           return {
             id: req.params.id,
             status,
+            referenceNo: registration.referenceNo,
+            lineUserId: registration.lineUserId,
           };
         });
 
-        return res.json({ data: result });
+        const statusText = {
+          UNDER_REVIEW: "เจ้าหน้าที่รับตรวจสอบคำขอแล้ว",
+          NEED_MORE_INFO: "คำขอต้องแก้ไขหรือเพิ่มข้อมูล",
+          APPROVED: "คำขอได้รับอนุมัติแล้ว",
+          REJECTED: "คำขอไม่ได้รับอนุมัติ",
+        }[result.status] || result.status;
+        const notification = await pushLineText(
+          result.lineUserId,
+          `PRMS-TSM เทศบาลท่าโพธ์\n${statusText}\nเลขที่คำขอ ${result.referenceNo}${note ? `\nหมายเหตุ: ${note}` : ""}`,
+        );
+        try {
+          await pool.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+             VALUES (?, ?, ?, 'REGISTRATION', ?, ?, ?)`,
+            [
+              crypto.randomUUID(),
+              req.user.sub,
+              `LINE_NOTIFICATION_${notification.status}`,
+              result.id,
+              JSON.stringify({ status: result.status, httpStatus: notification.httpStatus || null }),
+              req.ip,
+            ],
+          );
+        } catch (auditError) {
+          console.error("Unable to record LINE notification audit", auditError);
+        }
+
+        return res.json({ data: { id: result.id, status: result.status, notification: notification.status } });
       } catch (error) {
         next(error);
       }
