@@ -27,6 +27,10 @@ API: `http://localhost:4100/api/health`
 
 Admin Web: `https://0tyght.github.io/PRMS-TSM/`
 
+Citizen Web / LINE LIFF Endpoint: `https://0tyght.github.io/PRMS-TSM/citizen/`
+
+การเปิด LINE LIFF ต้องกำหนด `LINE_CHANNEL_ID`, `LINE_CHANNEL_SECRET` และ `LINE_LIFF_ID` ใน `.env` ของ API แล้วตั้ง Endpoint URL ของ LIFF ให้ชี้มายัง Citizen Web ด้านบน ระบบจะส่ง ID Token ไปตรวจสอบกับ LINE Platform ฝั่งเซิร์ฟเวอร์ก่อนอนุญาตให้เข้าถึงข้อมูลเจ้าของ
+
 เปิดช่องทางเข้าถึงชั่วคราวด้วย `powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1` หน้า GitHub Pages จะอ่านที่อยู่ API จาก `runtime-config.json` และเชื่อมต่อผ่าน Cloudflare Quick Tunnel หาก Tunnel หรือ API ออฟไลน์ ระบบจะแจ้งสถานะการเชื่อมต่อโดยไม่สร้างหรือแสดงข้อมูลจำลอง
 
 ข้อมูลระบบจริงต้องผ่าน API และฐานข้อมูลกลางเท่านั้น ห้ามใช้ `localStorage` เป็นแหล่งข้อมูลหลัก

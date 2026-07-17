@@ -92,6 +92,11 @@ const sterilizationRecordSchema = z.object({
   note: z.string().trim().max(500).optional().default(""),
 });
 
+const citizenLinkSchema = z.object({
+  referenceNo: z.string().trim().min(8).max(30),
+  phone: z.string().regex(/^0\d{9}$/),
+});
+
 function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
@@ -114,6 +119,29 @@ function createReferenceNo() {
 
 function createRegistrationNo(referenceNo) {
   return `PET-${String(referenceNo).replace(/^TSM-/, "")}`;
+}
+
+async function verifyLineIdToken(idToken) {
+  if (!config.lineChannelId) {
+    throw createHttpError(503, "ยังไม่ได้ตั้งค่า LINE Login Channel ID");
+  }
+  const body = new URLSearchParams({ id_token: idToken, client_id: config.lineChannelId });
+  const response = await fetch("https://api.line.me/oauth2/v2.1/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.sub) throw createHttpError(401, "ไม่สามารถยืนยันตัวตน LINE ได้ กรุณาเข้าสู่ระบบใหม่");
+  return result;
+}
+
+function createCitizenToken(lineProfile, ownerId = null) {
+  return jwt.sign(
+    { sub: lineProfile.sub, name: lineProfile.name || "ผู้ใช้ LINE", role: "CITIZEN", lineUserId: lineProfile.sub, ownerId },
+    config.jwtSecret,
+    { expiresIn: "2h" },
+  );
 }
 
 async function ensureVillageExists(db, villageId) {
@@ -571,6 +599,109 @@ export function createApp() {
         }
 
         return res.json({ data: rows[0] });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get("/api/public/line-config", (_req, res) => {
+    res.json({ data: { enabled: Boolean(config.lineLiffId), liffId: config.lineLiffId || null } });
+  });
+
+  app.post("/api/citizen/line/session", async (req, res, next) => {
+    try {
+      const { idToken } = z.object({ idToken: z.string().min(20).max(5000) }).parse(req.body);
+      const profile = await verifyLineIdToken(idToken);
+      const [rows] = await pool.execute(
+        "SELECT id, full_name AS fullName FROM owners WHERE line_user_id = ? AND deleted_at IS NULL LIMIT 1",
+        [profile.sub],
+      );
+      const owner = rows[0] || null;
+      return res.json({
+        data: {
+          token: createCitizenToken(profile, owner?.id || null),
+          profile: { displayName: profile.name || "ผู้ใช้ LINE", pictureUrl: profile.picture || null },
+          linked: Boolean(owner),
+          owner,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post(
+    "/api/citizen/line/link",
+    authenticate,
+    requireRole("CITIZEN"),
+    async (req, res, next) => {
+      try {
+        const input = citizenLinkSchema.parse(req.body);
+        const data = await withTransaction(async (db) => {
+          const [rows] = await db.execute(
+            `SELECT o.id, o.full_name AS fullName, o.line_user_id AS lineUserId
+             FROM registrations r
+             INNER JOIN owners o ON o.id = r.owner_id
+             WHERE r.reference_no = ? AND o.phone = ? AND o.deleted_at IS NULL
+             LIMIT 1 FOR UPDATE`,
+            [input.referenceNo, input.phone],
+          );
+          const owner = rows[0];
+          if (!owner) throw createHttpError(404, "ไม่พบข้อมูลที่ตรงกับเลขคำขอและเบอร์โทรศัพท์");
+          if (owner.lineUserId && owner.lineUserId !== req.user.lineUserId) {
+            throw createHttpError(409, "ทะเบียนนี้เชื่อมกับบัญชี LINE อื่นแล้ว");
+          }
+          await db.execute("UPDATE owners SET line_user_id = ? WHERE id = ?", [req.user.lineUserId, owner.id]);
+          await db.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+             VALUES (?, NULL, 'LINK_LINE_OWNER', 'OWNER', ?, ?, ?)`,
+            [crypto.randomUUID(), owner.id, JSON.stringify({ lineUserId: req.user.lineUserId }), req.ip],
+          );
+          return owner;
+        });
+        const profile = { sub: req.user.lineUserId, name: req.user.name };
+        return res.json({ data: { token: createCitizenToken(profile, data.id), owner: data } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get(
+    "/api/citizen/me",
+    authenticate,
+    requireRole("CITIZEN"),
+    async (req, res, next) => {
+      try {
+        if (!req.user.ownerId) return res.json({ data: { linked: false, pets: [], registrations: [] } });
+        const [ownerRows] = await pool.execute(
+          `SELECT o.id, o.full_name AS fullName, o.phone, h.house_no AS houseNo,
+                  v.village_no AS villageNo, v.name_th AS villageName
+           FROM owners o INNER JOIN households h ON h.id = o.household_id
+           INNER JOIN villages v ON v.id = h.village_id
+           WHERE o.id = ? AND o.line_user_id = ? AND o.deleted_at IS NULL LIMIT 1`,
+          [req.user.ownerId, req.user.lineUserId],
+        );
+        if (!ownerRows[0]) throw createHttpError(403, "ไม่สามารถเข้าถึงทะเบียนเจ้าของนี้ได้");
+        const [pets, registrations] = await Promise.all([
+          pool.execute(
+            `SELECT p.id, p.registration_no AS registrationNo, p.name AS petName,
+                    p.species, p.sex, p.breed, p.color, p.status,
+                    (SELECT MAX(vaccinated_at) FROM vaccination_records vr WHERE vr.pet_id = p.id) AS lastVaccinatedAt,
+                    EXISTS(SELECT 1 FROM sterilization_records sr WHERE sr.pet_id = p.id) AS sterilized
+             FROM pets p WHERE p.owner_id = ? AND p.deleted_at IS NULL ORDER BY p.created_at DESC`,
+            [req.user.ownerId],
+          ).then(([rows]) => rows),
+          pool.execute(
+            `SELECT reference_no AS referenceNo, status, review_note AS reviewNote,
+                    submitted_at AS submittedAt, reviewed_at AS reviewedAt
+             FROM registrations WHERE owner_id = ? ORDER BY created_at DESC`,
+            [req.user.ownerId],
+          ).then(([rows]) => rows),
+        ]);
+        return res.json({ data: { linked: true, owner: ownerRows[0], pets, registrations } });
       } catch (error) {
         next(error);
       }
