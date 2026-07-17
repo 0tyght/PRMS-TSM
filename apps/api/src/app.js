@@ -65,6 +65,7 @@ const ownerUpdateSchema = z.object({
 const staffUpdateSchema = z.object({
   role: z.enum(["ADMIN", "OFFICER", "VIEWER"]),
   isActive: z.boolean(),
+  villageId: z.coerce.number().int().positive().nullable().optional().default(null),
 });
 
 const petStatusUpdateSchema = z.object({
@@ -103,6 +104,37 @@ function createHttpError(status, message) {
   error.status = status;
   error.expose = true;
   return error;
+}
+
+function getAreaScope(req) {
+  if (req.user?.role === "ADMIN") return null;
+  const villageId = Number(req.user?.villageId || 0);
+  return villageId > 0 ? villageId : null;
+}
+
+function resolveAreaVillage(req, requestedVillageId = null) {
+  const scope = getAreaScope(req);
+  if (scope && requestedVillageId && Number(requestedVillageId) !== scope) {
+    throw createHttpError(403, "บัญชีนี้ไม่มีสิทธิ์เข้าถึงพื้นที่ที่เลือก");
+  }
+  return scope || (requestedVillageId ? Number(requestedVillageId) : null);
+}
+
+async function assertEntityAreaAccess(db, req, entityType, entityId) {
+  const villageId = getAreaScope(req);
+  if (!villageId) return;
+  const queries = {
+    OWNER: `SELECT o.id FROM owners o INNER JOIN households h ON h.id = o.household_id WHERE o.id = ? AND h.village_id = ?`,
+    PET: `SELECT p.id FROM pets p INNER JOIN owners o ON o.id = p.owner_id INNER JOIN households h ON h.id = o.household_id WHERE p.id = ? AND h.village_id = ?`,
+    REGISTRATION: `SELECT r.id FROM registrations r INNER JOIN owners o ON o.id = r.owner_id INNER JOIN households h ON h.id = o.household_id WHERE r.id = ? AND h.village_id = ?`,
+    CASE: `SELECT id FROM cases WHERE id = ? AND village_id = ?`,
+    VACCINATION: `SELECT vr.id FROM vaccination_records vr INNER JOIN pets p ON p.id = vr.pet_id INNER JOIN owners o ON o.id = p.owner_id INNER JOIN households h ON h.id = o.household_id WHERE vr.id = ? AND h.village_id = ?`,
+    STERILIZATION: `SELECT sr.id FROM sterilization_records sr INNER JOIN pets p ON p.id = sr.pet_id INNER JOIN owners o ON o.id = p.owner_id INNER JOIN households h ON h.id = o.household_id WHERE sr.id = ? AND h.village_id = ?`,
+  };
+  const query = queries[entityType];
+  if (!query) throw createHttpError(500, "ไม่พบกฎการจำกัดพื้นที่");
+  const [rows] = await db.execute(query, [entityId, villageId]);
+  if (!rows[0]) throw createHttpError(403, "บัญชีนี้ไม่มีสิทธิ์ดำเนินการกับข้อมูลนอกพื้นที่รับผิดชอบ");
 }
 
 function createReferenceNo() {
@@ -809,6 +841,7 @@ export function createApp() {
             email,
             password_hash,
             role,
+            scope_village_id AS villageId,
             failed_login_attempts AS failedLoginAttempts,
             locked_until AS lockedUntil
           FROM users
@@ -854,6 +887,7 @@ export function createApp() {
           sub: user.id,
           name: user.full_name,
           role: user.role,
+          villageId: user.villageId || null,
         },
         config.jwtSecret,
         { expiresIn: "30m" },
@@ -883,7 +917,7 @@ export function createApp() {
     try {
       const [rows] = await pool.query(
         `
-          SELECT id, full_name, email, role
+          SELECT id, full_name, email, role, scope_village_id AS villageId
           FROM users
           WHERE is_active = 1
             AND role = 'ADMIN'
@@ -905,6 +939,7 @@ export function createApp() {
           sub: user.id,
           name: user.full_name,
           role: user.role,
+          villageId: user.villageId || null,
         },
         config.jwtSecret,
         { expiresIn: "30m" },
@@ -927,10 +962,11 @@ export function createApp() {
     }
   });
 
-  app.get("/api/admin/dashboard", authenticate, async (_req, res, next) => {
+  app.get("/api/admin/dashboard", authenticate, async (req, res, next) => {
     try {
+      const villageId = getAreaScope(req);
       const [[pets], [pending], [services], [cases]] = await Promise.all([
-        pool.query(
+        pool.execute(
           `
             SELECT
               COUNT(*) AS total,
@@ -944,45 +980,58 @@ export function createApp() {
               ON h.id = o.household_id
              AND h.deleted_at IS NULL
             WHERE p.deleted_at IS NULL
+              AND (? IS NULL OR h.village_id = ?)
               AND EXISTS (
                 SELECT 1
                 FROM registrations r
                 WHERE r.pet_id = p.id
                   AND r.status = 'APPROVED'
               )
-          `,
+          `, [villageId, villageId],
         ),
-        pool.query(
+        pool.execute(
           `
             SELECT COUNT(*) AS pending
-            FROM registrations
-            WHERE status IN (
+            FROM registrations r
+            INNER JOIN owners o ON o.id = r.owner_id
+            INNER JOIN households h ON h.id = o.household_id
+            WHERE r.status IN (
               'SUBMITTED',
               'UNDER_REVIEW',
               'NEED_MORE_INFO'
             )
-          `,
+              AND (? IS NULL OR h.village_id = ?)
+          `, [villageId, villageId],
         ),
-        pool.query(
+        pool.execute(
           `
             SELECT
               (
                 SELECT COUNT(*)
-                FROM vaccination_records
-                WHERE vaccinated_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+                FROM vaccination_records vr
+                INNER JOIN pets p ON p.id = vr.pet_id
+                INNER JOIN owners o ON o.id = p.owner_id
+                INNER JOIN households h ON h.id = o.household_id
+                WHERE vr.vaccinated_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+                  AND (? IS NULL OR h.village_id = ?)
               ) AS vaccinations,
               (
                 SELECT COUNT(*)
-                FROM sterilization_records
+                FROM sterilization_records sr
+                INNER JOIN pets p ON p.id = sr.pet_id
+                INNER JOIN owners o ON o.id = p.owner_id
+                INNER JOIN households h ON h.id = o.household_id
+                WHERE (? IS NULL OR h.village_id = ?)
               ) AS sterilizations
-          `,
+          `, [villageId, villageId, villageId, villageId],
         ),
-        pool.query(
+        pool.execute(
           `
             SELECT COUNT(*) AS openCases
             FROM cases
             WHERE status NOT IN ('RESOLVED', 'CLOSED')
-          `,
+              AND (? IS NULL OR village_id = ?)
+          `, [villageId, villageId],
         ),
       ]);
 
@@ -1003,7 +1052,7 @@ export function createApp() {
     try {
       const searchText = String(req.query.search || "").trim();
       const search = `%${searchText}%`;
-      const villageId = req.query.villageId ? Number(req.query.villageId) : null;
+      const villageId = resolveAreaVillage(req, req.query.villageId || null);
       const [rows] = await pool.execute(
         `
           SELECT
@@ -1057,6 +1106,7 @@ export function createApp() {
 
   app.get("/api/admin/owners/:id", authenticate, requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
     try {
+      const villageId = getAreaScope(req);
       const [rows] = await pool.execute(
         `
           SELECT
@@ -1079,9 +1129,10 @@ export function createApp() {
           INNER JOIN households h ON h.id = o.household_id
           INNER JOIN villages v ON v.id = h.village_id
           WHERE o.id = ? AND o.deleted_at IS NULL
+            AND (? IS NULL OR v.id = ?)
           LIMIT 1
         `,
-        [req.params.id],
+        [req.params.id, villageId, villageId],
       );
       if (!rows[0]) return res.status(404).json({ message: "ไม่พบข้อมูลเจ้าของสัตว์" });
       return res.json({ data: rows[0] });
@@ -1097,7 +1148,9 @@ export function createApp() {
     async (req, res, next) => {
       try {
         const input = ownerUpdateSchema.parse(req.body);
+        resolveAreaVillage(req, input.villageId);
         const result = await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "OWNER", req.params.id);
           await ensureVillageExists(db, input.villageId);
           const [rows] = await db.execute(
             `SELECT id, household_id AS householdId, full_name AS fullName,
@@ -1149,10 +1202,12 @@ export function createApp() {
     async (_req, res, next) => {
       try {
         const [rows] = await pool.query(
-          `SELECT id, full_name AS fullName, email, role,
+          `SELECT users.id, users.full_name AS fullName, users.email, users.role,
                   is_active AS isActive, last_login_at AS lastLoginAt,
-                  created_at AS createdAt
-           FROM users ORDER BY is_active DESC, full_name`,
+                  users.created_at AS createdAt, users.scope_village_id AS villageId,
+                  villages.name_th AS villageName
+           FROM users LEFT JOIN villages ON villages.id = users.scope_village_id
+           ORDER BY is_active DESC, full_name`,
         );
         return res.json({ data: rows });
       } catch (error) {
@@ -1168,6 +1223,7 @@ export function createApp() {
     async (req, res, next) => {
       try {
         const input = staffUpdateSchema.parse(req.body);
+        const villageId = input.role === "ADMIN" ? null : input.villageId;
         if (req.params.id === req.user.sub && !input.isActive) {
           throw createHttpError(422, "ไม่สามารถระงับบัญชีที่กำลังใช้งานอยู่");
         }
@@ -1177,9 +1233,10 @@ export function createApp() {
             [req.params.id],
           );
           if (!rows[0]) throw createHttpError(404, "ไม่พบบัญชีเจ้าหน้าที่");
+          if (villageId) await ensureVillageExists(db, villageId);
           await db.execute(
-            "UPDATE users SET role = ?, is_active = ? WHERE id = ?",
-            [input.role, input.isActive, req.params.id],
+            "UPDATE users SET role = ?, is_active = ?, scope_village_id = ? WHERE id = ?",
+            [input.role, input.isActive, villageId, req.params.id],
           );
           await db.execute(
             `INSERT INTO audit_logs
@@ -1187,7 +1244,7 @@ export function createApp() {
              VALUES (?, ?, 'UPDATE_STAFF_ACCESS', 'USER', ?, ?, ?, ?)`,
             [crypto.randomUUID(), req.user.sub, req.params.id, JSON.stringify(rows[0]), JSON.stringify(input), req.ip],
           );
-          return { id: req.params.id, ...input };
+          return { id: req.params.id, ...input, villageId };
         });
         return res.json({ data: result });
       } catch (error) {
@@ -1253,6 +1310,7 @@ export function createApp() {
     async (req, res, next) => {
       try {
         const status = req.query.status || null;
+        const villageId = getAreaScope(req);
         const [rows] = await pool.execute(
           `
             SELECT
@@ -1274,10 +1332,11 @@ export function createApp() {
             INNER JOIN villages v
               ON v.id = h.village_id
             WHERE (? IS NULL OR r.status = ?)
+              AND (? IS NULL OR v.id = ?)
             ORDER BY r.submitted_at DESC
             LIMIT 200
           `,
-          [status, status],
+          [status, status, villageId, villageId],
         );
 
         return res.json({ data: rows });
@@ -1289,6 +1348,7 @@ export function createApp() {
 
   app.get("/api/admin/registrations/:id", authenticate, requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
     try {
+      const villageId = getAreaScope(req);
       const [rows] = await pool.execute(
         `
           SELECT
@@ -1311,10 +1371,10 @@ export function createApp() {
           INNER JOIN villages v ON v.id = h.village_id
           INNER JOIN pets p ON p.id = r.pet_id
           LEFT JOIN users reviewer ON reviewer.id = r.reviewed_by
-          WHERE r.id = ?
+          WHERE r.id = ? AND (? IS NULL OR v.id = ?)
           LIMIT 1
         `,
-        [req.params.id],
+        [req.params.id, villageId, villageId],
       );
       const registration = rows[0];
       if (!registration) return res.status(404).json({ message: "ไม่พบคำขอขึ้นทะเบียน" });
@@ -1368,6 +1428,7 @@ export function createApp() {
         const { status, note } = registrationStatusSchema.parse(req.body);
 
         const result = await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "REGISTRATION", req.params.id);
           const [registrationRows] = await db.execute(
             `
               SELECT
@@ -1572,6 +1633,7 @@ export function createApp() {
     try {
       const search = `%${String(req.query.search || "").trim()}%`;
       const species = req.query.species || null;
+      const villageId = getAreaScope(req);
 
       const [rows] = await pool.execute(
         `
@@ -1623,6 +1685,7 @@ export function createApp() {
                 AND approved_registration.status = 'APPROVED'
             )
             AND (? IS NULL OR p.species = ?)
+            AND (? IS NULL OR v.id = ?)
             AND (
               p.name LIKE ?
               OR o.full_name LIKE ?
@@ -1632,7 +1695,7 @@ export function createApp() {
           ORDER BY COALESCE(p.registered_at, p.created_at) DESC
           LIMIT 300
         `,
-        [species, species, search, search, search, search],
+        [species, species, villageId, villageId, search, search, search, search],
       );
 
       const data = req.user.role === "VIEWER"
@@ -1646,6 +1709,7 @@ export function createApp() {
 
   app.get("/api/admin/pets/:id", authenticate, async (req, res, next) => {
     try {
+      const villageId = getAreaScope(req);
       const [petRows] = await pool.execute(
         `SELECT p.id, p.registration_no AS registrationNo, p.microchip_no AS microchipNo,
                 p.name AS petName, p.species, p.sex, p.breed, p.color,
@@ -1657,9 +1721,9 @@ export function createApp() {
          INNER JOIN owners o ON o.id = p.owner_id
          INNER JOIN households h ON h.id = o.household_id
          INNER JOIN villages v ON v.id = h.village_id
-         WHERE p.id = ? AND p.deleted_at IS NULL
+         WHERE p.id = ? AND p.deleted_at IS NULL AND (? IS NULL OR v.id = ?)
          LIMIT 1`,
-        [req.params.id],
+        [req.params.id, villageId, villageId],
       );
       if (!petRows[0]) return res.status(404).json({ message: "ไม่พบข้อมูลสัตว์" });
 
@@ -1715,6 +1779,7 @@ export function createApp() {
       try {
         const input = petStatusUpdateSchema.parse(req.body);
         const data = await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "PET", req.params.id);
           const [rows] = await db.execute(
             "SELECT id, status FROM pets WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE",
             [req.params.id],
@@ -1753,6 +1818,8 @@ export function createApp() {
       try {
         const input = petOwnerTransferSchema.parse(req.body);
         const data = await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "PET", req.params.id);
+          await assertEntityAreaAccess(db, req, "OWNER", input.ownerId);
           const [petRows] = await db.execute(
             "SELECT id, owner_id AS ownerId, status FROM pets WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE",
             [req.params.id],
@@ -1796,9 +1863,10 @@ export function createApp() {
     },
   );
 
-  app.get("/api/admin/map", authenticate, async (_req, res, next) => {
+  app.get("/api/admin/map", authenticate, async (req, res, next) => {
     try {
-      const [rows] = await pool.query(
+      const villageId = getAreaScope(req);
+      const [rows] = await pool.execute(
         `
           SELECT
             p.id,
@@ -1832,6 +1900,7 @@ export function createApp() {
           INNER JOIN villages v
             ON v.id = h.village_id
           WHERE p.deleted_at IS NULL
+            AND (? IS NULL OR v.id = ?)
             AND EXISTS (
               SELECT 1
               FROM registrations approved_registration
@@ -1840,6 +1909,7 @@ export function createApp() {
             )
           ORDER BY v.village_no, p.name
         `,
+        [villageId, villageId],
       );
 
       return res.json({ data: rows });
@@ -1859,6 +1929,7 @@ export function createApp() {
         const id = crypto.randomUUID();
 
         await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "PET", req.params.petId);
           await db.execute(
             `
               INSERT INTO vaccination_records (
@@ -1928,6 +1999,7 @@ export function createApp() {
       try {
         const input = vaccinationRecordSchema.parse(req.body);
         const data = await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "VACCINATION", req.params.id);
           const [rows] = await db.execute(
             `SELECT id, pet_id AS petId, vaccine_name AS vaccineName, lot_no AS lotNo,
                     vaccinated_at AS vaccinatedAt, next_due_at AS nextDueAt,
@@ -1969,6 +2041,7 @@ export function createApp() {
         const id = crypto.randomUUID();
 
         await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "PET", req.params.petId);
           await db.execute(
             `
               INSERT INTO sterilization_records (
@@ -2039,6 +2112,7 @@ export function createApp() {
       try {
         const input = sterilizationRecordSchema.parse(req.body);
         const data = await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "STERILIZATION", req.params.id);
           const [rows] = await db.execute(
             `SELECT id, pet_id AS petId, sterilized_at AS sterilizedAt,
                     provider_name AS providerName, note
@@ -2069,7 +2143,8 @@ export function createApp() {
 
   app.get("/api/admin/cases", authenticate, async (req, res, next) => {
     try {
-      const [rows] = await pool.query(
+      const villageId = getAreaScope(req);
+      const [rows] = await pool.execute(
         `
           SELECT
             c.id,
@@ -2087,6 +2162,7 @@ export function createApp() {
             ON v.id = c.village_id
           LEFT JOIN users u
             ON u.id = c.assigned_to
+          WHERE (? IS NULL OR v.id = ?)
           ORDER BY
             FIELD(
               c.status,
@@ -2099,6 +2175,7 @@ export function createApp() {
             c.created_at DESC
           LIMIT 300
         `,
+        [villageId, villageId],
       );
 
       const data = req.user.role === "VIEWER"
@@ -2129,6 +2206,7 @@ export function createApp() {
           .parse(req.body);
 
         await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "CASE", req.params.id);
           await db.execute(
             `
               UPDATE cases
@@ -2186,7 +2264,8 @@ export function createApp() {
         villageId: z.coerce.number().int().positive().optional(),
       }).parse(req.query);
       const cutoff = input.cutoff || new Date().toISOString().slice(0, 10);
-      const rows = await loadVillageReport(cutoff, input.villageId || null);
+      const villageId = resolveAreaVillage(req, input.villageId || null);
+      const rows = await loadVillageReport(cutoff, villageId);
       return res.json({ data: { rows, cutoff } });
     } catch (error) {
       next(error);
@@ -2205,7 +2284,8 @@ export function createApp() {
         }).parse(req.query);
         const format = z.enum(["pdf", "xlsx"]).parse(req.params.format);
         const cutoff = input.cutoff || new Date().toISOString().slice(0, 10);
-        const rows = await loadVillageReport(cutoff, input.villageId || null);
+        const villageId = resolveAreaVillage(req, input.villageId || null);
+        const rows = await loadVillageReport(cutoff, villageId);
         const cutoffLabel = new Intl.DateTimeFormat("th-TH", { dateStyle: "long" }).format(new Date(`${cutoff}T12:00:00+07:00`));
         const buffer = format === "pdf"
           ? await createVillageReportPdf(rows, { cutoffLabel })
@@ -2216,7 +2296,7 @@ export function createApp() {
           `INSERT INTO audit_logs
             (id, user_id, action, entity_type, entity_id, new_value, ip_address)
            VALUES (?, ?, 'EXPORT_REPORT', 'REPORT', NULL, ?, ?)`,
-          [crypto.randomUUID(), req.user.sub, JSON.stringify({ format, cutoff, villageId: input.villageId || null, rowCount: rows.length }), req.ip],
+          [crypto.randomUUID(), req.user.sub, JSON.stringify({ format, cutoff, villageId, rowCount: rows.length }), req.ip],
         );
         res.setHeader("Content-Type", format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);

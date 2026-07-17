@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS users (
         'VIEWER'
     ) NOT NULL DEFAULT 'OFFICER',
 
+    scope_village_id INT UNSIGNED NULL,
+
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
 
     last_login_at DATETIME NULL,
@@ -73,6 +75,12 @@ CREATE TABLE IF NOT EXISTS users (
     PRIMARY KEY (id),
 
     UNIQUE KEY uk_user_email (email),
+
+    CONSTRAINT fk_user_scope_village
+        FOREIGN KEY (scope_village_id)
+        REFERENCES villages(id)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL,
 
     INDEX idx_user_active_role (
         is_active,

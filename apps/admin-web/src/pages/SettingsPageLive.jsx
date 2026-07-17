@@ -9,6 +9,7 @@ export default function SettingsPageLive({ token }) {
   const api = useMemo(() => createApi(token), [token]);
   const [system, setSystem] = useState(null);
   const [users, setUsers] = useState([]);
+  const [villages, setVillages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [savingId, setSavingId] = useState(null);
@@ -16,13 +17,15 @@ export default function SettingsPageLive({ token }) {
   const load = async () => {
     setLoading(true);
     setMessage("");
-    const [systemResult, userResult] = await Promise.allSettled([
+    const [systemResult, userResult, villageResult] = await Promise.allSettled([
       api.get("/api/admin/system-status"),
       api.get("/api/admin/users"),
+      api.get("/api/public/villages"),
     ]);
     if (systemResult.status === "fulfilled") setSystem(systemResult.value);
     else setMessage(systemResult.reason?.message || "ไม่สามารถโหลดสถานะระบบได้");
     if (userResult.status === "fulfilled") setUsers(Array.isArray(userResult.value) ? userResult.value : []);
+    if (villageResult.status === "fulfilled") setVillages(Array.isArray(villageResult.value) ? villageResult.value : []);
     setLoading(false);
   };
 
@@ -32,7 +35,7 @@ export default function SettingsPageLive({ token }) {
     setSavingId(user.id);
     setMessage("");
     try {
-      const next = { role: user.role, isActive: Boolean(user.isActive), ...changes };
+      const next = { role: user.role, isActive: Boolean(user.isActive), villageId: user.villageId || null, ...changes };
       await api.patch(`/api/admin/users/${user.id}`, next);
       setUsers((current) => current.map((item) => item.id === user.id ? { ...item, ...next } : item));
     } catch (error) {
@@ -57,7 +60,7 @@ export default function SettingsPageLive({ token }) {
 
       <article className="panel core-panel core-users-panel">
         <div className="panel-head"><div><h2>บัญชีเจ้าหน้าที่และบทบาท</h2><p>บัญชีทั้งหมด {Number(system?.users?.total || users.length).toLocaleString("th-TH")} · ใช้งาน {Number(system?.users?.active || 0).toLocaleString("th-TH")}</p></div></div>
-        {users.length ? <div className="core-table-wrap"><table className="core-table"><thead><tr><th>เจ้าหน้าที่</th><th>บทบาท</th><th>สถานะ</th><th>เข้าสู่ระบบล่าสุด</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><strong>{user.fullName}</strong><small>{user.email}</small></td><td><select aria-label={`บทบาทของ ${user.fullName}`} value={user.role} disabled={savingId === user.id} onChange={(event) => updateUser(user, { role: event.target.value })}><option value="ADMIN">{roleLabels.ADMIN}</option><option value="OFFICER">{roleLabels.OFFICER}</option><option value="VIEWER">{roleLabels.VIEWER}</option></select></td><td><button type="button" className={`core-toggle ${user.isActive ? "active" : ""}`} disabled={savingId === user.id} onClick={() => updateUser(user, { isActive: !user.isActive })}>{user.isActive ? "ใช้งานอยู่" : "ระงับแล้ว"}</button></td><td>{user.lastLoginAt ? new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(user.lastLoginAt)) : "ยังไม่เคยเข้าสู่ระบบ"}</td></tr>)}</tbody></table></div> : <div className="module-empty"><i>◇</i><b>บัญชีนี้ไม่มีสิทธิ์จัดการผู้ใช้</b><span>เฉพาะผู้ดูแลระบบเท่านั้นที่เห็นรายชื่อและแก้ไขบทบาทได้</span></div>}
+        {users.length ? <div className="core-table-wrap"><table className="core-table"><thead><tr><th>เจ้าหน้าที่</th><th>บทบาท</th><th>พื้นที่รับผิดชอบ</th><th>สถานะ</th><th>เข้าสู่ระบบล่าสุด</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><strong>{user.fullName}</strong><small>{user.email}</small></td><td><select aria-label={`บทบาทของ ${user.fullName}`} value={user.role} disabled={savingId === user.id} onChange={(event) => updateUser(user, { role: event.target.value })}><option value="ADMIN">{roleLabels.ADMIN}</option><option value="OFFICER">{roleLabels.OFFICER}</option><option value="VIEWER">{roleLabels.VIEWER}</option></select></td><td><select aria-label={`พื้นที่ของ ${user.fullName}`} value={user.villageId || ""} disabled={savingId === user.id || user.role === "ADMIN"} onChange={(event) => updateUser(user, { villageId: event.target.value ? Number(event.target.value) : null })}><option value="">ทุกหมู่บ้าน</option>{villages.map((village) => <option key={village.id} value={village.id}>{village.name}</option>)}</select></td><td><button type="button" className={`core-toggle ${user.isActive ? "active" : ""}`} disabled={savingId === user.id} onClick={() => updateUser(user, { isActive: !user.isActive })}>{user.isActive ? "ใช้งานอยู่" : "ระงับแล้ว"}</button></td><td>{user.lastLoginAt ? new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(user.lastLoginAt)) : "ยังไม่เคยเข้าสู่ระบบ"}</td></tr>)}</tbody></table></div> : <div className="module-empty"><i>◇</i><b>บัญชีนี้ไม่มีสิทธิ์จัดการผู้ใช้</b><span>เฉพาะผู้ดูแลระบบเท่านั้นที่เห็นรายชื่อและแก้ไขบทบาทได้</span></div>}
       </article>
     </>
   );
