@@ -20,6 +20,14 @@ const REGISTRATION_LABELS = {
   REJECTED: "ไม่อนุมัติ",
 };
 
+const SPECIES_LABELS = { DOG: "สุนัข", CAT: "แมว" };
+const SEX_LABELS = { MALE: "เพศผู้", FEMALE: "เพศเมีย", UNKNOWN: "ไม่ระบุ" };
+
+function maskNationalId(value) {
+  if (!value) return "ไม่ระบุ";
+  return `x-xxxx-xxxxx-${String(value).slice(-2)}-x`;
+}
+
 function formatThaiDate(value) {
   if (!value) {
     return "—";
@@ -58,6 +66,10 @@ export default function RegistrationsPage({ token }) {
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [decision, setDecision] = useState("");
+  const [note, setNote] = useState("");
 
   const load = useCallback(async () => {
     const requestId = requestSequence.current + 1;
@@ -109,7 +121,22 @@ export default function RegistrationsPage({ token }) {
     };
   }, [load]);
 
-  async function changeStatus(id, status) {
+  async function openDetail(id) {
+    setDetailLoading(true);
+    setMessage("");
+    try {
+      const data = await api.get(`/api/admin/registrations/${id}`);
+      setDetail(data);
+      setDecision("");
+      setNote(data.reviewNote || "");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "ไม่สามารถโหลดรายละเอียดคำขอได้");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function changeStatus(id, status, reviewNote = "") {
     const busyKey = `${id}:${status}`;
 
     setBusy(busyKey);
@@ -120,10 +147,12 @@ export default function RegistrationsPage({ token }) {
         `/api/admin/registrations/${id}/status`,
         {
           status,
+          note: reviewNote,
         },
       );
 
       await load();
+      if (detail?.id === id) setDetail(null);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -236,51 +265,31 @@ export default function RegistrationsPage({ token }) {
 
                       <td>
                         <div className="action-group">
+                          <button
+                            type="button"
+                            disabled={detailLoading}
+                            onClick={() => openDetail(registration.id)}
+                          >
+                            ตรวจรายละเอียด
+                          </button>
                           {![
                             "APPROVED",
                             "REJECTED",
                           ].includes(registration.status) && (
                             <>
-                              <button
-                                type="button"
-                                disabled={processing}
-                                onClick={() =>
-                                  changeStatus(
-                                    registration.id,
-                                    "UNDER_REVIEW",
-                                  )
-                                }
-                              >
-                                รับตรวจ
-                              </button>
+                              {registration.status !== "UNDER_REVIEW" ? <button
+                                  type="button"
+                                  disabled={processing}
+                                  onClick={() =>
+                                    changeStatus(
+                                      registration.id,
+                                      "UNDER_REVIEW",
+                                    )
+                                  }
+                                >
+                                  รับตรวจ
+                                </button> : null}
 
-                              <button
-                                type="button"
-                                className="approve"
-                                disabled={processing}
-                                onClick={() =>
-                                  changeStatus(
-                                    registration.id,
-                                    "APPROVED",
-                                  )
-                                }
-                              >
-                                อนุมัติ
-                              </button>
-
-                              <button
-                                type="button"
-                                className="reject"
-                                disabled={processing}
-                                onClick={() =>
-                                  changeStatus(
-                                    registration.id,
-                                    "REJECTED",
-                                  )
-                                }
-                              >
-                                ไม่อนุมัติ
-                              </button>
                             </>
                           )}
                         </div>
@@ -295,6 +304,28 @@ export default function RegistrationsPage({ token }) {
           <EmptyState text="ไม่มีคำขอในสถานะที่เลือก" />
         )}
       </article>
+
+      {detail ? (
+        <div className="modal-backdrop registration-backdrop" role="presentation">
+          <section className="registration-dialog" role="dialog" aria-modal="true" aria-labelledby="registration-detail-title">
+            <header className="registration-dialog-head">
+              <div><p className="eyebrow">คำขอ {detail.referenceNo}</p><h2 id="registration-detail-title">ตรวจข้อมูลก่อนอนุมัติ</h2><span className={`badge ${getStatusTone(detail.status)}`}>{REGISTRATION_LABELS[detail.status]}</span></div>
+              <button type="button" aria-label="ปิด" onClick={() => setDetail(null)}>×</button>
+            </header>
+
+            <div className="registration-review-grid">
+              <article><h3>ข้อมูลเจ้าของที่เสนอ</h3><dl><div><dt>ชื่อ–นามสกุล</dt><dd>{detail.proposed.ownerName}</dd></div><div><dt>โทรศัพท์</dt><dd>{detail.proposed.phone}</dd></div><div><dt>เลขบัตรประชาชน</dt><dd>{maskNationalId(detail.proposed.nationalId)}</dd></div><div><dt>ที่อยู่</dt><dd>บ้านเลขที่ {detail.proposed.houseNo} หมู่ {detail.proposed.villageNo} {detail.proposed.villageName}</dd></div><div><dt>รายละเอียด</dt><dd>{detail.proposed.addressDetail || "—"}</dd></div></dl></article>
+              <article><h3>ข้อมูลสัตว์ที่เสนอ</h3><dl><div><dt>ชื่อสัตว์</dt><dd>{detail.proposed.petName}</dd></div><div><dt>ชนิด / เพศ</dt><dd>{SPECIES_LABELS[detail.proposed.species]} · {SEX_LABELS[detail.proposed.sex]}</dd></div><div><dt>พันธุ์</dt><dd>{detail.proposed.breed || "ไม่ระบุ"}</dd></div><div><dt>สี</dt><dd>{detail.proposed.color || "ไม่ระบุ"}</dd></div><div><dt>วันเกิด</dt><dd>{formatThaiDate(detail.proposed.birthDate)}</dd></div></dl></article>
+            </div>
+
+            <article className="registration-evidence"><div><h3>หลักฐานประกอบ</h3><p>{detail.attachments.length ? `${detail.attachments.length} ไฟล์` : "ยังไม่มีไฟล์แนบในคำขอนี้"}</p></div>{detail.attachments.length ? <ul>{detail.attachments.map((file) => <li key={file.id}><b>{file.fileName}</b><span>{file.mimeType} · {Math.ceil(Number(file.fileSize || 0) / 1024).toLocaleString("th-TH")} KB</span></li>)}</ul> : <span className="registration-warning">ควรตรวจเอกสารยืนยันเจ้าของและภาพสัตว์ก่อนอนุมัติ</span>}</article>
+
+            {detail.reviewNote ? <div className="registration-previous-note"><b>หมายเหตุจากการตรวจครั้งก่อน</b><span>{detail.reviewNote}</span></div> : null}
+
+            {!['APPROVED', 'REJECTED'].includes(detail.status) ? <form className="registration-decision" onSubmit={(event) => { event.preventDefault(); if (decision) changeStatus(detail.id, decision, note); }}><label>ผลการตรวจ<select value={decision} onChange={(event) => setDecision(event.target.value)} required><option value="">เลือกผลการตรวจ</option>{detail.status !== 'UNDER_REVIEW' ? <option value="UNDER_REVIEW">รับตรวจสอบ</option> : null}<option value="NEED_MORE_INFO">ส่งกลับให้แก้ไข/ขอข้อมูลเพิ่ม</option><option value="APPROVED">อนุมัติและออกเลขทะเบียน</option><option value="REJECTED">ไม่อนุมัติ</option></select></label><label>หมายเหตุ<textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength="500" required={['NEED_MORE_INFO', 'REJECTED'].includes(decision)} placeholder="ระบุสิ่งที่ต้องแก้ไขหรือเหตุผลประกอบการพิจารณา" /></label><div className="dialog-actions"><button type="button" onClick={() => setDetail(null)}>ยกเลิก</button><button type="submit" className="approve" disabled={!decision || Boolean(busy)}>{busy ? "กำลังบันทึก…" : "ยืนยันผลการตรวจ"}</button></div></form> : <div className="registration-closed"><b>ดำเนินการเสร็จสิ้น</b><span>{detail.reviewerName ? `ตรวจโดย ${detail.reviewerName}` : "—"} · {formatThaiDate(detail.reviewedAt)}</span></div>}
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }

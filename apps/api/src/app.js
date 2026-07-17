@@ -30,8 +30,26 @@ const registrationSchema = z.object({
 });
 
 const registrationStatusSchema = z.object({
-  status: z.enum(Object.values(REGISTRATION_STATUS)),
+  status: z.enum([
+    REGISTRATION_STATUS.UNDER_REVIEW,
+    REGISTRATION_STATUS.NEED_MORE_INFO,
+    REGISTRATION_STATUS.APPROVED,
+    REGISTRATION_STATUS.REJECTED,
+  ]),
   note: z.string().trim().max(500).optional().default(""),
+}).superRefine((input, context) => {
+  if (
+    [REGISTRATION_STATUS.NEED_MORE_INFO, REGISTRATION_STATUS.REJECTED].includes(input.status) &&
+    !input.note
+  ) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["note"], message: "กรุณาระบุเหตุผลหรือข้อมูลที่ต้องแก้ไข" });
+  }
+});
+
+const REGISTRATION_TRANSITIONS = Object.freeze({
+  SUBMITTED: ["UNDER_REVIEW", "NEED_MORE_INFO", "APPROVED", "REJECTED"],
+  UNDER_REVIEW: ["NEED_MORE_INFO", "APPROVED", "REJECTED"],
+  NEED_MORE_INFO: ["UNDER_REVIEW", "APPROVED", "REJECTED"],
 });
 
 const ownerUpdateSchema = z.object({
@@ -1008,6 +1026,78 @@ export function createApp() {
     },
   );
 
+  app.get("/api/admin/registrations/:id", authenticate, async (req, res, next) => {
+    try {
+      const [rows] = await pool.execute(
+        `
+          SELECT
+            r.id, r.reference_no AS referenceNo, r.status,
+            r.review_note AS reviewNote, r.submitted_at AS submittedAt,
+            r.reviewed_at AS reviewedAt, reviewer.full_name AS reviewerName,
+            o.id AS ownerId, o.full_name AS ownerName, o.phone,
+            o.national_id AS nationalId, o.line_user_id AS lineUserId,
+            o.consent_at AS consentAt,
+            h.house_no AS houseNo, h.address_detail AS addressDetail,
+            h.latitude, h.longitude,
+            v.id AS villageId, v.village_no AS villageNo, v.name_th AS villageName,
+            p.id AS petId, p.registration_no AS registrationNo,
+            p.name AS petName, p.species, p.sex, p.breed, p.color,
+            p.birth_date AS birthDate, p.photo_path AS photoPath,
+            p.status AS petStatus, p.registered_at AS registeredAt
+          FROM registrations r
+          INNER JOIN owners o ON o.id = r.owner_id
+          INNER JOIN households h ON h.id = o.household_id
+          INNER JOIN villages v ON v.id = h.village_id
+          INNER JOIN pets p ON p.id = r.pet_id
+          LEFT JOIN users reviewer ON reviewer.id = r.reviewed_by
+          WHERE r.id = ?
+          LIMIT 1
+        `,
+        [req.params.id],
+      );
+      const registration = rows[0];
+      if (!registration) return res.status(404).json({ message: "ไม่พบคำขอขึ้นทะเบียน" });
+
+      const [attachments] = await pool.execute(
+        `SELECT id, file_name AS fileName, mime_type AS mimeType,
+                file_size AS fileSize, uploaded_at AS uploadedAt
+         FROM attachments
+         WHERE entity_type = 'REGISTRATION' AND entity_id = ?
+         ORDER BY uploaded_at`,
+        [req.params.id],
+      );
+
+      const proposed = {
+        ownerName: registration.ownerName,
+        phone: registration.phone,
+        nationalId: registration.nationalId,
+        houseNo: registration.houseNo,
+        villageId: registration.villageId,
+        villageNo: registration.villageNo,
+        villageName: registration.villageName,
+        addressDetail: registration.addressDetail,
+        petName: registration.petName,
+        species: registration.species,
+        sex: registration.sex,
+        breed: registration.breed,
+        color: registration.color,
+        birthDate: registration.birthDate,
+      };
+
+      return res.json({
+        data: {
+          ...registration,
+          requestType: "REGISTER_PET",
+          current: registration.status === REGISTRATION_STATUS.APPROVED ? proposed : null,
+          proposed,
+          attachments,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.patch(
     "/api/admin/registrations/:id/status",
     authenticate,
@@ -1036,6 +1126,11 @@ export function createApp() {
 
           if (!registration) {
             throw createHttpError(404, "ไม่พบคำขอขึ้นทะเบียน");
+          }
+
+          const allowedStatuses = REGISTRATION_TRANSITIONS[registration.oldStatus] || [];
+          if (!allowedStatuses.includes(status)) {
+            throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะคำขอตามลำดับงานนี้ได้");
           }
 
           await db.execute(
