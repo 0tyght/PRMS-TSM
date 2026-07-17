@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AdminLayout from "./components/layout/AdminLayout.jsx";
 import PageErrorBoundary from "./components/layout/PageErrorBoundary.jsx";
 import { ADMIN_MENU } from "./config/navigation.js";
@@ -33,6 +33,15 @@ export default function App() {
     () => ADMIN_MENU.find((item) => item.id === page)?.label || "ภาพรวมและแผนที่",
     [page],
   );
+
+  useEffect(() => {
+    const expireSession = () => {
+      sessionStorage.removeItem("prms_access_token");
+      setToken(null);
+    };
+    window.addEventListener("prms:session-expired", expireSession);
+    return () => window.removeEventListener("prms:session-expired", expireSession);
+  }, []);
 
   if (!token) return <LoginPage onLogin={setToken} />;
 

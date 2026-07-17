@@ -624,11 +624,38 @@ export function createApp() {
       }
 
       const input = registrationSchema.parse(req.body);
-      const result = await withTransaction((db) =>
-        createPublicRegistration(db, input),
-      );
+      const idempotencyKey = String(req.get("Idempotency-Key") || "").trim();
+      if (idempotencyKey.length > 128) throw createHttpError(422, "Idempotency-Key ยาวเกินกำหนด");
+      const keyHash = idempotencyKey ? crypto.createHash("sha256").update(idempotencyKey).digest("hex") : null;
+      const result = await withTransaction(async (db) => {
+        if (!keyHash) return createPublicRegistration(db, input);
+        await db.execute(
+          `INSERT INTO idempotency_keys (key_hash, scope, expires_at)
+           VALUES (?, 'PUBLIC_REGISTRATION', DATE_ADD(NOW(), INTERVAL 24 HOUR))
+           ON DUPLICATE KEY UPDATE key_hash = VALUES(key_hash)`,
+          [keyHash],
+        );
+        const [keyRows] = await db.execute(
+          `SELECT response_body AS responseBody, response_status AS responseStatus, expires_at AS expiresAt
+           FROM idempotency_keys WHERE key_hash = ? AND scope = 'PUBLIC_REGISTRATION' LIMIT 1 FOR UPDATE`,
+          [keyHash],
+        );
+        const saved = keyRows[0];
+        if (saved?.responseBody && new Date(saved.expiresAt) > new Date()) {
+          const responseBody = typeof saved.responseBody === "string" ? JSON.parse(saved.responseBody) : saved.responseBody;
+          return { ...responseBody, idempotentReplay: true, responseStatus: saved.responseStatus };
+        }
+        const created = await createPublicRegistration(db, input);
+        const responseStatus = created.duplicate ? 200 : 201;
+        await db.execute(
+          `UPDATE idempotency_keys SET response_status = ?, response_body = ?, expires_at = DATE_ADD(NOW(), INTERVAL 24 HOUR)
+           WHERE key_hash = ? AND scope = 'PUBLIC_REGISTRATION'`,
+          [responseStatus, JSON.stringify(created), keyHash],
+        );
+        return { ...created, responseStatus };
+      });
 
-      return res.status(result.duplicate ? 200 : 201).json({ data: result });
+      return res.status(result.responseStatus || (result.duplicate ? 200 : 201)).json({ data: result });
     } catch (error) {
       next(error);
     }
@@ -781,7 +808,9 @@ export function createApp() {
             full_name,
             email,
             password_hash,
-            role
+            role,
+            failed_login_attempts AS failedLoginAttempts,
+            locked_until AS lockedUntil
           FROM users
           WHERE email = ?
             AND is_active = 1
@@ -791,14 +820,32 @@ export function createApp() {
 
       const user = rows[0];
 
+      if (user?.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+        return res.status(423).json({ message: "บัญชีถูกล็อกชั่วคราว กรุณาลองใหม่ภายหลังหรือติดต่อผู้ดูแลระบบ" });
+      }
+
       if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+        if (user) {
+          const attempts = Number(user.failedLoginAttempts || 0) + 1;
+          await pool.execute(
+            `UPDATE users SET failed_login_attempts = ?,
+                    locked_until = CASE WHEN ? >= 5 THEN DATE_ADD(NOW(), INTERVAL 15 MINUTE) ELSE NULL END
+             WHERE id = ?`,
+            [attempts, attempts, user.id],
+          );
+          await pool.execute(
+            `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+             VALUES (?, ?, 'LOGIN_FAILED', 'USER', ?, ?, ?)`,
+            [crypto.randomUUID(), user.id, user.id, JSON.stringify({ attempts }), req.ip],
+          );
+        }
         return res
           .status(401)
           .json({ message: "อีเมลหรือรหัสผ่านไม่ถูกต้อง" });
       }
 
       await pool.execute(
-        "UPDATE users SET last_login_at = NOW() WHERE id = ?",
+        "UPDATE users SET last_login_at = NOW(), failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
         [user.id],
       );
 
@@ -809,7 +856,7 @@ export function createApp() {
           role: user.role,
         },
         config.jwtSecret,
-        { expiresIn: "8h" },
+        { expiresIn: "30m" },
       );
 
       return res.json({
@@ -860,7 +907,7 @@ export function createApp() {
           role: user.role,
         },
         config.jwtSecret,
-        { expiresIn: "8h" },
+        { expiresIn: "30m" },
       );
 
       return res.json({
@@ -1008,7 +1055,7 @@ export function createApp() {
     }
   });
 
-  app.get("/api/admin/owners/:id", authenticate, async (req, res, next) => {
+  app.get("/api/admin/owners/:id", authenticate, requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
     try {
       const [rows] = await pool.execute(
         `
@@ -1240,7 +1287,7 @@ export function createApp() {
     },
   );
 
-  app.get("/api/admin/registrations/:id", authenticate, async (req, res, next) => {
+  app.get("/api/admin/registrations/:id", authenticate, requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
     try {
       const [rows] = await pool.execute(
         `
@@ -1588,7 +1635,10 @@ export function createApp() {
         [species, species, search, search, search, search],
       );
 
-      return res.json({ data: rows });
+      const data = req.user.role === "VIEWER"
+        ? rows.map((row) => ({ ...row, phone: row.phone ? `${row.phone.slice(0, 3)}xxx${row.phone.slice(-4)}` : null }))
+        : rows;
+      return res.json({ data });
     } catch (error) {
       next(error);
     }
@@ -1648,7 +1698,10 @@ export function createApp() {
         ).then(([rows]) => rows),
       ]);
 
-      return res.json({ data: { ...petRows[0], statusHistory, ownerHistory, vaccinations, sterilizations } });
+      const pet = req.user.role === "VIEWER"
+        ? { ...petRows[0], phone: petRows[0].phone ? `${petRows[0].phone.slice(0, 3)}xxx${petRows[0].phone.slice(-4)}` : null }
+        : petRows[0];
+      return res.json({ data: { ...pet, statusHistory, ownerHistory, vaccinations, sterilizations } });
     } catch (error) {
       next(error);
     }
@@ -2014,7 +2067,7 @@ export function createApp() {
     },
   );
 
-  app.get("/api/admin/cases", authenticate, async (_req, res, next) => {
+  app.get("/api/admin/cases", authenticate, async (req, res, next) => {
     try {
       const [rows] = await pool.query(
         `
@@ -2048,7 +2101,10 @@ export function createApp() {
         `,
       );
 
-      return res.json({ data: rows });
+      const data = req.user.role === "VIEWER"
+        ? rows.map((row) => ({ ...row, reporterPhone: row.reporterPhone ? `${row.reporterPhone.slice(0, 3)}xxx${row.reporterPhone.slice(-4)}` : null }))
+        : rows;
+      return res.json({ data });
     } catch (error) {
       next(error);
     }

@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS users (
 
     last_login_at DATETIME NULL,
 
+    failed_login_attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+
+    locked_until DATETIME NULL,
+
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     updated_at TIMESTAMP NOT NULL
@@ -77,6 +81,18 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
+
+-- เก็บผลคำขอที่มี Idempotency-Key เพื่อป้องกันการบันทึกซ้ำ
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    key_hash CHAR(64) NOT NULL,
+    scope VARCHAR(80) NOT NULL,
+    response_status SMALLINT UNSIGNED NULL,
+    response_body JSON NULL,
+    expires_at DATETIME NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (key_hash, scope),
+    INDEX idx_idempotency_expiry (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
 -- 3. ครัวเรือน

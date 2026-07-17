@@ -147,6 +147,7 @@ export function createApi(token) {
 
     if (!response.ok) {
       if (response.status === 401) {
+        window.dispatchEvent(new CustomEvent("prms:session-expired"));
         throw new Error(
           body.message ||
             "อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือเซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่"
