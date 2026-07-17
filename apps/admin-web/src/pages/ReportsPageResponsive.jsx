@@ -32,12 +32,18 @@ export default function ReportsPageResponsive({ token }) {
   const [rows, setRows] = useState([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [cutoff, setCutoff] = useState(() => new Date().toISOString().slice(0, 10));
+  const [villageId, setVillageId] = useState("");
+  const [villages, setVillages] = useState([]);
+  const [exporting, setExporting] = useState("");
 
   const load = () => {
     setLoading(true);
     setMessage("");
-    api.get("/api/admin/reports/villages")
-      .then((data) => setRows(Array.isArray(data) ? data : []))
+    const query = new URLSearchParams({ cutoff });
+    if (villageId) query.set("villageId", villageId);
+    api.get(`/api/admin/reports/villages-v2?${query}`)
+      .then((data) => setRows(Array.isArray(data?.rows) ? data.rows : []))
       .catch((error) => {
         setRows([]);
         setMessage(error.message);
@@ -45,7 +51,22 @@ export default function ReportsPageResponsive({ token }) {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [api]);
+  useEffect(() => { api.get("/api/public/villages").then((data) => setVillages(Array.isArray(data) ? data : [])).catch(() => setVillages([])); }, [api]);
+  useEffect(load, [api, cutoff, villageId]);
+
+  const exportReport = async (format) => {
+    const query = new URLSearchParams({ cutoff });
+    if (villageId) query.set("villageId", villageId);
+    setExporting(format);
+    setMessage("");
+    try {
+      await api.download(`/api/admin/reports/villages/export/${format}?${query}`, `PRMS-TSM-village-report-${cutoff}.${format}`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setExporting("");
+    }
+  };
 
   const totals = rows.reduce(
     (result, row) => ({
@@ -68,8 +89,9 @@ export default function ReportsPageResponsive({ token }) {
         eyebrow="รายงานผู้บริหาร"
         title="รายงานทะเบียนสัตว์"
         detail="สรุปสัตว์ขึ้นทะเบียน วัคซีน และการทำหมัน แยกรายหมู่บ้าน"
-        actions={<div className="report-actions"><button type="button" className="refresh-btn" onClick={load} disabled={loading}>↻ อัปเดตข้อมูล</button><button type="button" className="export-btn" onClick={() => exportCsv(rows)} disabled={!rows.length}>ส่งออก CSV</button></div>}
+        actions={<div className="report-actions"><button type="button" className="refresh-btn" onClick={load} disabled={loading}>↻ อัปเดต</button><button type="button" className="export-btn" onClick={() => exportReport("pdf")} disabled={!rows.length || Boolean(exporting)}>{exporting === "pdf" ? "กำลังสร้าง…" : "PDF"}</button><button type="button" className="export-btn" onClick={() => exportReport("xlsx")} disabled={!rows.length || Boolean(exporting)}>{exporting === "xlsx" ? "กำลังสร้าง…" : "XLSX"}</button><button type="button" className="export-btn" onClick={() => exportCsv(rows)} disabled={!rows.length}>CSV</button></div>}
       />
+      <section className="report-filter-bar"><label>ข้อมูล ณ วันที่<input type="date" value={cutoff} max={new Date().toISOString().slice(0, 10)} onChange={(event) => { if (event.target.value) setCutoff(event.target.value); }} required /></label><label>พื้นที่<select value={villageId} onChange={(event) => setVillageId(event.target.value)}><option value="">ทุกหมู่บ้าน</option>{villages.map((village) => <option key={village.id} value={village.id}>{village.name}</option>)}</select></label><span>สถิติทางการนับเฉพาะคำขอที่อนุมัติภายในวันตัดยอด</span></section>
       <Notice message={message} />
       {loading ? <LoadingPanel text="กำลังจัดทำรายงาน…" /> : (
         <>
@@ -82,7 +104,7 @@ export default function ReportsPageResponsive({ token }) {
             <StatCard label="พื้นที่ครอบคลุม" value={display(rows.length)} detail={unavailable ? "รอข้อมูลจาก API" : "หมู่บ้าน"} />
           </section>
           <article className="panel module-panel report-panel">
-            <div className="panel-head"><div><h2>สรุปรายหมู่บ้าน</h2><p>เปรียบเทียบความครอบคลุมบริการของเทศบาลท่าโพธ์</p></div><span className="report-period">ข้อมูลปัจจุบัน</span></div>
+            <div className="panel-head"><div><h2>สรุปรายหมู่บ้าน</h2><p>เปรียบเทียบความครอบคลุมบริการของเทศบาลท่าโพธ์</p></div><span className="report-period">ณ {new Date(`${cutoff}T12:00:00`).toLocaleDateString("th-TH")}</span></div>
             {rows.length ? (
               <div className="report-table-wrap"><table className="report-table"><thead><tr><th>หมู่บ้าน</th><th>สัตว์ทั้งหมด</th><th>สุนัข</th><th>แมว</th><th>วัคซีน</th><th>ทำหมัน</th><th>ความครอบคลุมวัคซีน</th></tr></thead><tbody>{rows.map((row) => { const total = Number(row.totalPets || 0); const vaccinated = Number(row.vaccinated || 0); const coverage = total ? Math.round((vaccinated * 100) / total) : 0; return <tr key={row.villageNo}><td><div className="report-village"><i>{row.villageNo}</i><b>{row.villageName}</b></div></td><td><strong>{total}</strong> ตัว</td><td>{Number(row.dogs || 0)}</td><td>{Number(row.cats || 0)}</td><td>{vaccinated}</td><td>{Number(row.sterilized || 0)}</td><td><div className="coverage-cell"><em><strong style={{ width: `${coverage}%` }} /></em><b>{coverage}%</b></div></td></tr>; })}</tbody></table></div>
             ) : (

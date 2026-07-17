@@ -207,5 +207,22 @@ export function createApi(token) {
     delete(path, data) {
       return request(path, createJsonOptions("DELETE", data));
     },
+
+    async download(path, fallbackFileName) {
+      const apiBase = await resolveApiBase(false);
+      const response = await fetchOnce(apiBase, path);
+      if (!response.ok) {
+        const body = await parseResponseBody(response);
+        throw new Error(body.message || "ไม่สามารถส่งออกรายงานได้");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const matched = disposition.match(/filename="?([^";]+)"?/i);
+      const anchor = document.createElement("a");
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = matched?.[1] || fallbackFileName;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
+    },
   };
 }

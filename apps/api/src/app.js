@@ -13,6 +13,7 @@ import {
 import { config } from "./config.js";
 import { pool, withTransaction } from "./db.js";
 import { authenticate, errorHandler, requireRole } from "./middleware.js";
+import { createVillageReportPdf, createVillageReportXlsx } from "./reportExports.js";
 
 const registrationSchema = z.object({
   ownerName: z.string().trim().min(2).max(150),
@@ -521,6 +522,44 @@ async function createPublicRegistration(db, input) {
     duplicate: false,
     reusedOwner: owner.reused,
   };
+}
+
+async function loadVillageReport(cutoffDate, villageId = null) {
+  const [rows] = await pool.execute(
+    `SELECT v.village_no AS villageNo, v.name_th AS villageName,
+            COUNT(DISTINCT p.id) AS totalPets,
+            COUNT(DISTINCT CASE WHEN p.species = 'DOG' THEN p.id END) AS dogs,
+            COUNT(DISTINCT CASE WHEN p.species = 'CAT' THEN p.id END) AS cats,
+            COUNT(DISTINCT CASE WHEN vr.pet_id IS NOT NULL THEN p.id END) AS vaccinated,
+            COUNT(DISTINCT CASE WHEN sr.pet_id IS NOT NULL THEN p.id END) AS sterilized,
+            (SELECT COUNT(*) FROM registrations pending_registration
+             INNER JOIN owners pending_owner ON pending_owner.id = pending_registration.owner_id AND pending_owner.deleted_at IS NULL
+             INNER JOIN households pending_household ON pending_household.id = pending_owner.household_id AND pending_household.deleted_at IS NULL
+             WHERE pending_household.village_id = v.id
+               AND pending_registration.submitted_at < DATE_ADD(?, INTERVAL 1 DAY)
+               AND pending_registration.status IN ('SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO')) AS pending,
+            (SELECT COUNT(*) FROM cases village_case
+             WHERE village_case.village_id = v.id
+               AND village_case.created_at < DATE_ADD(?, INTERVAL 1 DAY)
+               AND village_case.status NOT IN ('RESOLVED','CLOSED')) AS openCases
+     FROM villages v
+     LEFT JOIN households h ON h.village_id = v.id AND h.deleted_at IS NULL
+     LEFT JOIN owners o ON o.household_id = h.id AND o.deleted_at IS NULL
+     LEFT JOIN pets p ON p.owner_id = o.id AND p.deleted_at IS NULL
+       AND p.registered_at < DATE_ADD(?, INTERVAL 1 DAY)
+       AND EXISTS (SELECT 1 FROM registrations approved_registration
+                   WHERE approved_registration.pet_id = p.id
+                     AND approved_registration.status = 'APPROVED'
+                     AND approved_registration.reviewed_at < DATE_ADD(?, INTERVAL 1 DAY))
+     LEFT JOIN (SELECT DISTINCT pet_id FROM vaccination_records
+                WHERE vaccinated_at <= ? AND vaccinated_at >= DATE_SUB(?, INTERVAL 1 YEAR)) vr ON vr.pet_id = p.id
+     LEFT JOIN (SELECT DISTINCT pet_id FROM sterilization_records WHERE sterilized_at <= ?) sr ON sr.pet_id = p.id
+     WHERE (? IS NULL OR v.id = ?)
+     GROUP BY v.id, v.village_no, v.name_th
+     ORDER BY v.village_no`,
+    [cutoffDate, cutoffDate, cutoffDate, cutoffDate, cutoffDate, cutoffDate, cutoffDate, villageId, villageId],
+  );
+  return rows;
 }
 
 export function createApp() {
@@ -2078,6 +2117,54 @@ export function createApp() {
             status,
           },
         });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get("/api/admin/reports/villages-v2", authenticate, async (req, res, next) => {
+    try {
+      const input = z.object({
+        cutoff: z.string().date().optional(),
+        villageId: z.coerce.number().int().positive().optional(),
+      }).parse(req.query);
+      const cutoff = input.cutoff || new Date().toISOString().slice(0, 10);
+      const rows = await loadVillageReport(cutoff, input.villageId || null);
+      return res.json({ data: { rows, cutoff } });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get(
+    "/api/admin/reports/villages/export/:format",
+    authenticate,
+    requireRole("ADMIN", "OFFICER", "VIEWER"),
+    async (req, res, next) => {
+      try {
+        const input = z.object({
+          cutoff: z.string().date().optional(),
+          villageId: z.coerce.number().int().positive().optional(),
+        }).parse(req.query);
+        const format = z.enum(["pdf", "xlsx"]).parse(req.params.format);
+        const cutoff = input.cutoff || new Date().toISOString().slice(0, 10);
+        const rows = await loadVillageReport(cutoff, input.villageId || null);
+        const cutoffLabel = new Intl.DateTimeFormat("th-TH", { dateStyle: "long" }).format(new Date(`${cutoff}T12:00:00+07:00`));
+        const buffer = format === "pdf"
+          ? await createVillageReportPdf(rows, { cutoffLabel })
+          : createVillageReportXlsx(rows, { cutoffLabel });
+        const fileName = `PRMS-TSM-village-report-${cutoff}.${format}`;
+
+        await pool.execute(
+          `INSERT INTO audit_logs
+            (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+           VALUES (?, ?, 'EXPORT_REPORT', 'REPORT', NULL, ?, ?)`,
+          [crypto.randomUUID(), req.user.sub, JSON.stringify({ format, cutoff, villageId: input.villageId || null, rowCount: rows.length }), req.ip],
+        );
+        res.setHeader("Content-Type", format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+        return res.send(buffer);
       } catch (error) {
         next(error);
       }
