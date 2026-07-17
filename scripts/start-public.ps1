@@ -297,93 +297,112 @@ if (Test-Path $pidPath) {
     }
 }
 
-$stamp = Get-Date `
-    -Format "yyyyMMdd-HHmmss"
-
-$outLog = Join-Path `
-    $runtimeDir `
-    ("tunnel-{0}.out.log" -f $stamp)
-
-$errLog = Join-Path `
-    $runtimeDir `
-    ("tunnel-{0}.err.log" -f $stamp)
-
-Write-Host `
-    "Starting Cloudflare Quick Tunnel..." `
-    -ForegroundColor Cyan
-
-$tunnelProcess = Start-Process `
-    -FilePath $cloudflaredPath `
-    -ArgumentList @(
-        "tunnel",
-        "--url",
-        "http://127.0.0.1:4100",
-        "--no-autoupdate"
-    ) `
-    -WorkingDirectory $root `
-    -RedirectStandardOutput $outLog `
-    -RedirectStandardError $errLog `
-    -WindowStyle Hidden `
-    -PassThru
-
-[IO.File]::WriteAllText(
-    $pidPath,
-    [string]$tunnelProcess.Id
-)
-
 $tunnelUrl = $null
-$urlDeadline = (Get-Date).AddSeconds(60)
+$tunnelProcess = $null
+$outLog = $null
+$errLog = $null
+$tunnelStartErrors = @()
+$maxTunnelStartAttempts = 6
 
-while (
-    $null -eq $tunnelUrl -and
-    (Get-Date) -lt $urlDeadline -and
-    -not $tunnelProcess.HasExited
+for (
+    $tunnelStartAttempt = 1;
+    $tunnelStartAttempt -le $maxTunnelStartAttempts;
+    $tunnelStartAttempt += 1
 ) {
-    Start-Sleep -Seconds 1
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $logSuffix = "{0}-{1}" -f $stamp, $tunnelStartAttempt
+    $outLog = Join-Path $runtimeDir ("tunnel-{0}.out.log" -f $logSuffix)
+    $errLog = Join-Path $runtimeDir ("tunnel-{0}.err.log" -f $logSuffix)
 
-    $logLines = @()
+    Write-Host `
+        ("Starting Cloudflare Quick Tunnel (attempt {0}/{1})..." -f `
+            $tunnelStartAttempt,
+            $maxTunnelStartAttempts) `
+        -ForegroundColor Cyan
 
-    if (Test-Path $outLog) {
-        $logLines += Get-Content `
-            $outLog `
+    $tunnelProcess = Start-Process `
+        -FilePath $cloudflaredPath `
+        -ArgumentList @(
+            "tunnel",
+            "--url",
+            "http://127.0.0.1:4100",
+            "--no-autoupdate"
+        ) `
+        -WorkingDirectory $root `
+        -RedirectStandardOutput $outLog `
+        -RedirectStandardError $errLog `
+        -WindowStyle Hidden `
+        -PassThru
+
+    [IO.File]::WriteAllText(
+        $pidPath,
+        [string]$tunnelProcess.Id
+    )
+
+    $urlDeadline = (Get-Date).AddSeconds(45)
+
+    while (
+        $null -eq $tunnelUrl -and
+        (Get-Date) -lt $urlDeadline -and
+        -not $tunnelProcess.HasExited
+    ) {
+        Start-Sleep -Seconds 1
+
+        $logLines = @()
+
+        if (Test-Path $outLog) {
+            $logLines += Get-Content $outLog -ErrorAction SilentlyContinue
+        }
+
+        if (Test-Path $errLog) {
+            $logLines += Get-Content $errLog -ErrorAction SilentlyContinue
+        }
+
+        $urlMatch = [regex]::Match(
+            ($logLines -join [Environment]::NewLine),
+            "https://[a-z0-9-]+\.trycloudflare\.com"
+        )
+
+        if ($urlMatch.Success) {
+            $tunnelUrl = $urlMatch.Value
+        }
+    }
+
+    if ($null -ne $tunnelUrl) {
+        break
+    }
+
+    $tunnelLogTail = if (Test-Path $errLog) {
+        (Get-Content $errLog -Tail 20 | Out-String).Trim()
+    }
+    else {
+        "No Cloudflare error log was created."
+    }
+
+    $tunnelStartErrors += (
+        "Attempt {0}: {1}" -f $tunnelStartAttempt, $tunnelLogTail
+    )
+
+    if ($null -ne $tunnelProcess -and -not $tunnelProcess.HasExited) {
+        Stop-Process `
+            -Id $tunnelProcess.Id `
+            -Force `
             -ErrorAction SilentlyContinue
     }
 
-    if (Test-Path $errLog) {
-        $logLines += Get-Content `
-            $errLog `
-            -ErrorAction SilentlyContinue
-    }
-
-    $combinedLog = (
-        $logLines -join [Environment]::NewLine
-    )
-
-    $urlMatch = [regex]::Match(
-        $combinedLog,
-        "https://[a-z0-9-]+\.trycloudflare\.com"
-    )
-
-    if ($urlMatch.Success) {
-        $tunnelUrl = $urlMatch.Value
+    if ($tunnelStartAttempt -lt $maxTunnelStartAttempts) {
+        Write-Host `
+            "Cloudflare did not issue a URL; retrying in 6 seconds..." `
+            -ForegroundColor Yellow
+        Start-Sleep -Seconds 6
     }
 }
 
 if ($null -eq $tunnelUrl) {
-    $tunnelLogTail = ""
-
-    if (Test-Path $errLog) {
-        $tunnelLogTail = (
-            Get-Content `
-                $errLog `
-                -Tail 40 |
-            Out-String
-        )
-    }
-
     throw (
-        "Cloudflare did not return a Tunnel URL. " +
-        "Log: {0}" -f $tunnelLogTail
+        "Cloudflare did not return a Tunnel URL after {0} attempts. {1}" -f `
+            $maxTunnelStartAttempts,
+            ($tunnelStartErrors -join [Environment]::NewLine)
     )
 }
 
