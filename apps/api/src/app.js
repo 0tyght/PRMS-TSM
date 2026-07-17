@@ -34,6 +34,20 @@ const registrationStatusSchema = z.object({
   note: z.string().trim().max(500).optional().default(""),
 });
 
+const ownerUpdateSchema = z.object({
+  fullName: z.string().trim().min(2).max(150),
+  phone: z.string().regex(/^0\d{9}$/),
+  lineUserId: z.string().trim().max(100).optional().default(""),
+  houseNo: z.string().trim().min(1).max(30),
+  villageId: z.coerce.number().int().positive(),
+  addressDetail: z.string().trim().max(255).optional().default(""),
+});
+
+const staffUpdateSchema = z.object({
+  role: z.enum(["ADMIN", "OFFICER", "VIEWER"]),
+  isActive: z.boolean(),
+});
+
 function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
@@ -699,6 +713,254 @@ export function createApp() {
           ...pending[0],
           ...services[0],
           ...cases[0],
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/admin/owners", authenticate, async (req, res, next) => {
+    try {
+      const searchText = String(req.query.search || "").trim();
+      const search = `%${searchText}%`;
+      const villageId = req.query.villageId ? Number(req.query.villageId) : null;
+      const [rows] = await pool.execute(
+        `
+          SELECT
+            o.id,
+            o.full_name AS fullName,
+            CONCAT(LEFT(o.phone, 3), 'xxx', RIGHT(o.phone, 4)) AS phone,
+            CASE
+              WHEN o.national_id IS NULL OR o.national_id = '' THEN NULL
+              ELSE CONCAT('xxxxxxxxx', RIGHT(o.national_id, 4))
+            END AS nationalId,
+            o.line_user_id IS NOT NULL AS linkedLine,
+            o.consent_at AS consentAt,
+            h.house_no AS houseNo,
+            h.address_detail AS addressDetail,
+            v.id AS villageId,
+            v.village_no AS villageNo,
+            v.name_th AS villageName,
+            COUNT(DISTINCT CASE
+              WHEN p.deleted_at IS NULL AND approved.id IS NOT NULL THEN p.id
+            END) AS petCount,
+            o.created_at AS createdAt
+          FROM owners o
+          INNER JOIN households h
+            ON h.id = o.household_id
+           AND h.deleted_at IS NULL
+          INNER JOIN villages v ON v.id = h.village_id
+          LEFT JOIN pets p ON p.owner_id = o.id
+          LEFT JOIN registrations approved
+            ON approved.pet_id = p.id
+           AND approved.status = 'APPROVED'
+          WHERE o.deleted_at IS NULL
+            AND (? IS NULL OR v.id = ?)
+            AND (
+              ? = ''
+              OR o.full_name LIKE ?
+              OR o.phone LIKE ?
+              OR COALESCE(o.national_id, '') LIKE ?
+              OR h.house_no LIKE ?
+            )
+          GROUP BY o.id, h.id, v.id
+          ORDER BY o.updated_at DESC, o.full_name
+          LIMIT 300
+        `,
+        [villageId, villageId, searchText, search, search, search, search],
+      );
+      return res.json({ data: rows });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/admin/owners/:id", authenticate, async (req, res, next) => {
+    try {
+      const [rows] = await pool.execute(
+        `
+          SELECT
+            o.id,
+            o.full_name AS fullName,
+            o.phone,
+            o.national_id AS nationalId,
+            o.line_user_id AS lineUserId,
+            o.consent_at AS consentAt,
+            h.house_no AS houseNo,
+            h.address_detail AS addressDetail,
+            h.latitude,
+            h.longitude,
+            v.id AS villageId,
+            v.village_no AS villageNo,
+            v.name_th AS villageName,
+            o.created_at AS createdAt,
+            o.updated_at AS updatedAt
+          FROM owners o
+          INNER JOIN households h ON h.id = o.household_id
+          INNER JOIN villages v ON v.id = h.village_id
+          WHERE o.id = ? AND o.deleted_at IS NULL
+          LIMIT 1
+        `,
+        [req.params.id],
+      );
+      if (!rows[0]) return res.status(404).json({ message: "ไม่พบข้อมูลเจ้าของสัตว์" });
+      return res.json({ data: rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch(
+    "/api/admin/owners/:id",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const input = ownerUpdateSchema.parse(req.body);
+        const result = await withTransaction(async (db) => {
+          await ensureVillageExists(db, input.villageId);
+          const [rows] = await db.execute(
+            `SELECT id, household_id AS householdId, full_name AS fullName,
+                    phone, line_user_id AS lineUserId
+             FROM owners WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
+            [req.params.id],
+          );
+          const owner = rows[0];
+          if (!owner) throw createHttpError(404, "ไม่พบข้อมูลเจ้าของสัตว์");
+
+          await db.execute(
+            `UPDATE households
+             SET house_no = ?, village_id = ?, address_detail = NULLIF(?, '')
+             WHERE id = ?`,
+            [input.houseNo, input.villageId, input.addressDetail, owner.householdId],
+          );
+          await db.execute(
+            `UPDATE owners
+             SET full_name = ?, phone = ?, line_user_id = NULLIF(?, '')
+             WHERE id = ?`,
+            [input.fullName, input.phone, input.lineUserId, req.params.id],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, 'UPDATE_OWNER', 'OWNER', ?, ?, ?, ?)`,
+            [
+              crypto.randomUUID(),
+              req.user.sub,
+              req.params.id,
+              JSON.stringify(owner),
+              JSON.stringify(input),
+              req.ip,
+            ],
+          );
+          return { id: req.params.id, ...input };
+        });
+        return res.json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get(
+    "/api/admin/users",
+    authenticate,
+    requireRole("ADMIN"),
+    async (_req, res, next) => {
+      try {
+        const [rows] = await pool.query(
+          `SELECT id, full_name AS fullName, email, role,
+                  is_active AS isActive, last_login_at AS lastLoginAt,
+                  created_at AS createdAt
+           FROM users ORDER BY is_active DESC, full_name`,
+        );
+        return res.json({ data: rows });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/admin/users/:id",
+    authenticate,
+    requireRole("ADMIN"),
+    async (req, res, next) => {
+      try {
+        const input = staffUpdateSchema.parse(req.body);
+        if (req.params.id === req.user.sub && !input.isActive) {
+          throw createHttpError(422, "ไม่สามารถระงับบัญชีที่กำลังใช้งานอยู่");
+        }
+        const result = await withTransaction(async (db) => {
+          const [rows] = await db.execute(
+            `SELECT id, role, is_active AS isActive FROM users WHERE id = ? LIMIT 1 FOR UPDATE`,
+            [req.params.id],
+          );
+          if (!rows[0]) throw createHttpError(404, "ไม่พบบัญชีเจ้าหน้าที่");
+          await db.execute(
+            "UPDATE users SET role = ?, is_active = ? WHERE id = ?",
+            [input.role, input.isActive, req.params.id],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, 'UPDATE_STAFF_ACCESS', 'USER', ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, req.params.id, JSON.stringify(rows[0]), JSON.stringify(input), req.ip],
+          );
+          return { id: req.params.id, ...input };
+        });
+        return res.json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get(
+    "/api/admin/audit-logs",
+    authenticate,
+    requireRole("ADMIN", "VIEWER"),
+    async (req, res, next) => {
+      try {
+        const entityType = String(req.query.entityType || "").trim();
+        const [rows] = await pool.execute(
+          `SELECT a.id, a.action, a.entity_type AS entityType,
+                  a.entity_id AS entityId, a.ip_address AS ipAddress,
+                  a.created_at AS createdAt, u.full_name AS actorName,
+                  u.email AS actorEmail
+           FROM audit_logs a
+           LEFT JOIN users u ON u.id = a.user_id
+           WHERE (? = '' OR a.entity_type = ?)
+           ORDER BY a.created_at DESC
+           LIMIT 500`,
+          [entityType, entityType],
+        );
+        return res.json({ data: rows });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get("/api/admin/system-status", authenticate, async (_req, res, next) => {
+    try {
+      const [[database], [users], [owners], [audit]] = await Promise.all([
+        pool.query("SELECT VERSION() AS version, NOW() AS checkedAt"),
+        pool.query("SELECT COUNT(*) AS total, SUM(is_active = 1) AS active FROM users"),
+        pool.query("SELECT COUNT(*) AS total FROM owners WHERE deleted_at IS NULL"),
+        pool.query("SELECT COUNT(*) AS total FROM audit_logs"),
+      ]);
+      return res.json({
+        data: {
+          api: "ready",
+          database: "ready",
+          databaseVersion: database[0]?.version || null,
+          checkedAt: database[0]?.checkedAt || new Date(),
+          users: users[0],
+          owners: owners[0],
+          auditLogs: audit[0],
+          line: config.lineConfigured ? "configured" : "waiting",
         },
       });
     } catch (error) {

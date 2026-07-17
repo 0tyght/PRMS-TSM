@@ -4,21 +4,25 @@ import PageErrorBoundary from "./components/layout/PageErrorBoundary.jsx";
 import { ADMIN_MENU } from "./config/navigation.js";
 import { useHashPage } from "./hooks/useHashPage.js";
 import CasesPage from "./pages/CasesPage.jsx";
+import AuditPage from "./pages/AuditPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import OwnersPage from "./pages/OwnersPage.jsx";
 import PetsPage from "./pages/PetsPage.jsx";
 import RegistrationsPage from "./pages/RegistrationsPage.jsx";
 import ReportsPage from "./pages/ReportsPageResponsive.jsx";
 import ServicesPage from "./pages/ServicesPage.jsx";
-import SettingsPage from "./pages/SettingsPage.jsx";
+import SettingsPage from "./pages/SettingsPageLive.jsx";
 
 const PAGE_COMPONENTS = {
   dashboard: DashboardPage,
   registrations: RegistrationsPage,
+  owners: OwnersPage,
   pets: PetsPage,
   services: ServicesPage,
   cases: CasesPage,
   reports: ReportsPage,
+  audit: AuditPage,
   settings: SettingsPage,
 };
 

@@ -103,6 +103,8 @@ export const config = Object.freeze({
 
   jwtSecret,
 
+  lineConfigured: Boolean(readText(process.env.LINE_CHANNEL_SECRET)),
+
   origins: Object.freeze([...new Set(origins)]),
 
   db: Object.freeze({
