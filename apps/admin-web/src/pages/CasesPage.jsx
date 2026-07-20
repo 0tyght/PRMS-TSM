@@ -10,6 +10,7 @@ import {
   EmptyState,
   Notice,
   PageHead,
+  Pagination,
 } from "../components/common/PageUI.jsx";
 
 const CASE_STATUS_LABELS = {
@@ -45,6 +46,8 @@ export default function CasesPage({ token }) {
   const [rows, setRows] = useState([]);
   const [message, setMessage] = useState("");
   const [busyCaseId, setBusyCaseId] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageMeta, setPageMeta] = useState({ page: 1, hasNext: false });
 
   const load = useCallback(async () => {
     const requestId = requestSequence.current + 1;
@@ -53,13 +56,14 @@ export default function CasesPage({ token }) {
     setMessage("");
 
     try {
-      const data = await api.get("/api/admin/cases");
+      const response = await api.getPage(`/api/admin/cases?page=${page}&pageSize=50`);
 
       if (requestId !== requestSequence.current) {
         return;
       }
 
-      setRows(Array.isArray(data) ? data : []);
+      setRows(Array.isArray(response?.data) ? response.data : []);
+      setPageMeta(response?.meta || { page, hasNext: false });
     } catch (error) {
       if (requestId !== requestSequence.current) {
         return;
@@ -73,7 +77,7 @@ export default function CasesPage({ token }) {
           : "ไม่สามารถโหลดข้อมูลแจ้งเหตุได้",
       );
     }
-  }, [api]);
+  }, [api, page]);
 
   /*
    * เรียก async function ภายใน Effect
@@ -120,7 +124,7 @@ export default function CasesPage({ token }) {
 
       <article className="panel module-panel">
         {rows.length > 0 ? (
-          <div className="case-list">
+          <><div className="case-list">
             {rows.map((caseItem) => (
               <div className="case-row" key={caseItem.id}>
                 <div className="case-symbol">!</div>
@@ -166,7 +170,7 @@ export default function CasesPage({ token }) {
                 </select>
               </div>
             ))}
-          </div>
+          </div><Pagination page={Number(pageMeta.page || page)} hasNext={Boolean(pageMeta.hasNext)} onChange={setPage} disabled={Boolean(busyCaseId)} /></>
         ) : (
           <EmptyState text="ขณะนี้ไม่มีเหตุที่รับแจ้ง" />
         )}

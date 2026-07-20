@@ -10,6 +10,7 @@ import {
   EmptyState,
   Notice,
   PageHead,
+  Pagination,
 } from "../components/common/PageUI.jsx";
 
 const REGISTRATION_LABELS = {
@@ -75,6 +76,10 @@ export default function RegistrationsPage({ token }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [decision, setDecision] = useState("");
   const [note, setNote] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageMeta, setPageMeta] = useState({ page: 1, hasNext: false });
+  const [changePage, setChangePage] = useState(1);
+  const [changePageMeta, setChangePageMeta] = useState({ page: 1, hasNext: false });
 
   const load = useCallback(async () => {
     const requestId = requestSequence.current + 1;
@@ -83,19 +88,16 @@ export default function RegistrationsPage({ token }) {
     setMessage("");
 
     try {
-      const query = filter
-        ? `?status=${encodeURIComponent(filter)}`
-        : "";
-
-      const data = await api.get(
-        `/api/admin/registrations${query}`,
-      );
+      const query = new URLSearchParams({ page: String(page), pageSize: "50" });
+      if (filter) query.set("status", filter);
+      const response = await api.getPage(`/api/admin/registrations?${query}`);
 
       if (requestId !== requestSequence.current) {
         return;
       }
 
-      setRows(Array.isArray(data) ? data : []);
+      setRows(Array.isArray(response?.data) ? response.data : []);
+      setPageMeta(response?.meta || { page, hasNext: false });
     } catch (error) {
       if (requestId !== requestSequence.current) {
         return;
@@ -109,18 +111,20 @@ export default function RegistrationsPage({ token }) {
           : "ไม่สามารถโหลดคำขอขึ้นทะเบียนได้",
       );
     }
-  }, [api, filter]);
+  }, [api, filter, page]);
 
   const loadChanges = useCallback(async () => {
     try {
-      const query = filter ? `?status=${encodeURIComponent(filter)}` : "";
-      const data = await api.get(`/api/admin/citizen-submissions${query}`);
-      setChangeRows(Array.isArray(data) ? data : []);
+      const query = new URLSearchParams({ page: String(changePage), pageSize: "50" });
+      if (filter) query.set("status", filter);
+      const response = await api.getPage(`/api/admin/citizen-submissions?${query}`);
+      setChangeRows(Array.isArray(response?.data) ? response.data : []);
+      setChangePageMeta(response?.meta || { page: changePage, hasNext: false });
     } catch (error) {
       setChangeRows([]);
       setMessage(error instanceof Error ? error.message : "ไม่สามารถโหลดคำขอเปลี่ยนแปลงได้");
     }
-  }, [api, filter]);
+  }, [api, filter, changePage]);
 
   /*
    * ห้ามเขียน useEffect(load, ...)
@@ -217,7 +221,7 @@ export default function RegistrationsPage({ token }) {
           <select
             value={filter}
             onChange={(event) =>
-              setFilter(event.target.value)
+              { setFilter(event.target.value); setPage(1); setChangePage(1); }
             }
           >
             <option value="">ทุกสถานะ</option>
@@ -237,7 +241,7 @@ export default function RegistrationsPage({ token }) {
 
       <article className="panel module-panel">
         {rows.length > 0 ? (
-          <div className="table-wrap">
+          <><div className="table-wrap">
             <table>
               <thead>
                 <tr>
@@ -342,7 +346,7 @@ export default function RegistrationsPage({ token }) {
                 })}
               </tbody>
             </table>
-          </div>
+          </div><Pagination page={Number(pageMeta.page || page)} hasNext={Boolean(pageMeta.hasNext)} onChange={setPage} disabled={detailLoading}/></>
         ) : (
           <EmptyState text="ไม่มีคำขอในสถานะที่เลือก" />
         )}
@@ -350,7 +354,7 @@ export default function RegistrationsPage({ token }) {
 
       <article className="panel module-panel">
         <div className="panel-head"><div><h2>คำขอเปลี่ยนแปลงจาก LINE</h2><p>ข้อมูลเดิมยังคงอยู่จนกว่าเจ้าหน้าที่อนุมัติคำขอ</p></div><span className="badge amber">{changeRows.length} รายการ</span></div>
-        {changeRows.length ? <div className="table-wrap"><table><thead><tr><th>เลขที่คำขอ</th><th>ประเภท</th><th>เจ้าของ / สัตว์</th><th>หมู่</th><th>สถานะ</th><th>ดำเนินการ</th></tr></thead><tbody>{changeRows.map((item)=><tr key={item.id}><td><b>{item.referenceNo}</b></td><td>{SUBJECT_LABELS[item.subjectType]||item.subjectType}</td><td><div className="pet-cell"><i>{item.species==='DOG'?'ส':'ม'}</i><span><b>{item.petName}</b><small>{item.ownerName}</small></span></div></td><td>{item.villageNo}</td><td><span className={`badge ${getStatusTone(item.status)}`}>{REGISTRATION_LABELS[item.status]||item.status}</span></td><td><button type="button" onClick={()=>openChangeDetail(item.id)} disabled={detailLoading}>ตรวจรายละเอียด</button></td></tr>)}</tbody></table></div>:<EmptyState text="ไม่มีคำขอเปลี่ยนแปลงในสถานะที่เลือก"/>}
+        {changeRows.length ? <><div className="table-wrap"><table><thead><tr><th>เลขที่คำขอ</th><th>ประเภท</th><th>เจ้าของ / สัตว์</th><th>หมู่</th><th>สถานะ</th><th>ดำเนินการ</th></tr></thead><tbody>{changeRows.map((item)=><tr key={item.id}><td><b>{item.referenceNo}</b></td><td>{SUBJECT_LABELS[item.subjectType]||item.subjectType}</td><td><div className="pet-cell"><i>{item.species==='DOG'?'ส':'ม'}</i><span><b>{item.petName}</b><small>{item.ownerName}</small></span></div></td><td>{item.villageNo}</td><td><span className={`badge ${getStatusTone(item.status)}`}>{REGISTRATION_LABELS[item.status]||item.status}</span></td><td><button type="button" onClick={()=>openChangeDetail(item.id)} disabled={detailLoading}>ตรวจรายละเอียด</button></td></tr>)}</tbody></table></div><Pagination page={Number(changePageMeta.page || changePage)} hasNext={Boolean(changePageMeta.hasNext)} onChange={setChangePage} disabled={detailLoading}/></>:<EmptyState text="ไม่มีคำขอเปลี่ยนแปลงในสถานะที่เลือก"/>}
       </article>
 
       {detail ? (

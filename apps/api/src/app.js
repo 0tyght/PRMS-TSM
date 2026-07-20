@@ -152,6 +152,17 @@ const citizenSubmissionDecisionSchema = z.object({
   }
 });
 
+function validateCitizenSubmissionDates(input) {
+  if (input.subjectType === "VACCINATION") {
+    ensureOccurredDate(input.vaccinatedAt, "วันที่ฉีดวัคซีน");
+    if (input.nextDueAt && input.nextDueAt < input.vaccinatedAt) {
+      throw createHttpError(422, "วันครบกำหนดครั้งถัดไปต้องไม่ก่อนวันที่ฉีดวัคซีน");
+    }
+  }
+  if (input.subjectType === "STERILIZATION") ensureOccurredDate(input.sterilizedAt, "วันที่ทำหมัน");
+  if (input.subjectType === "PET_STATUS") ensureOccurredDate(input.effectiveAt, "วันที่มีผล");
+}
+
 function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
@@ -1182,12 +1193,7 @@ export function createApp() {
       try {
         if (!req.user.ownerId) throw createHttpError(403, "กรุณาเชื่อมทะเบียนเจ้าของกับ LINE ก่อนส่งคำขอ");
         const input = citizenSubmissionSchema.parse(req.body);
-        if (input.subjectType === "VACCINATION") {
-          ensureOccurredDate(input.vaccinatedAt, "วันที่ฉีดวัคซีน");
-          if (input.nextDueAt && input.nextDueAt < input.vaccinatedAt) throw createHttpError(422, "วันครบกำหนดครั้งถัดไปต้องไม่ก่อนวันที่ฉีดวัคซีน");
-        }
-        if (input.subjectType === "STERILIZATION") ensureOccurredDate(input.sterilizedAt, "วันที่ทำหมัน");
-        if (input.subjectType === "PET_STATUS") ensureOccurredDate(input.effectiveAt, "วันที่มีผล");
+        validateCitizenSubmissionDates(input);
 
         const data = await withTransaction(async (db) => {
           const [petRows] = await db.execute(
@@ -1254,6 +1260,92 @@ export function createApp() {
     },
   );
 
+  app.get(
+    "/api/citizen/submissions/:id",
+    authenticate,
+    requireRole("CITIZEN"),
+    async (req, res, next) => {
+      try {
+        const [rows] = await pool.execute(
+          `SELECT s.id, s.reference_no AS referenceNo, s.pet_id AS petId,
+                  s.subject_type AS subjectType, s.proposed_payload AS proposedPayload,
+                  s.status, s.review_note AS reviewNote, s.version,
+                  p.registration_no AS registrationNo, p.name AS petName
+           FROM citizen_submissions s
+           INNER JOIN pets p ON p.id = s.pet_id AND p.deleted_at IS NULL
+           WHERE s.id = ? AND s.owner_id = ? LIMIT 1`,
+          [req.params.id, req.user.ownerId],
+        );
+        const submission = rows[0];
+        if (!submission) throw createHttpError(404, "ไม่พบคำขอหรือไม่มีสิทธิ์เข้าถึง");
+        return res.json({ data: { ...submission, proposedPayload: parseJsonObject(submission.proposedPayload) } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/citizen/submissions/:id/resubmit",
+    authenticate,
+    requireRole("CITIZEN"),
+    async (req, res, next) => {
+      try {
+        const version = z.coerce.number().int().positive().parse(req.body?.version);
+        const input = citizenSubmissionSchema.parse(req.body);
+        validateCitizenSubmissionDates(input);
+
+        const data = await withTransaction(async (db) => {
+          const [rows] = await db.execute(
+            `SELECT s.id, s.reference_no AS referenceNo, s.pet_id AS petId,
+                    s.subject_type AS subjectType, s.status, s.version, s.proposed_payload AS proposedPayload,
+                    p.status AS petStatus
+             FROM citizen_submissions s
+             INNER JOIN pets p ON p.id = s.pet_id AND p.deleted_at IS NULL
+             WHERE s.id = ? AND s.owner_id = ? LIMIT 1 FOR UPDATE`,
+            [req.params.id, req.user.ownerId],
+          );
+          const submission = rows[0];
+          if (!submission) throw createHttpError(404, "ไม่พบคำขอหรือไม่มีสิทธิ์เข้าถึง");
+          if (submission.status !== "NEED_MORE_INFO" || Number(submission.version) !== version) {
+            throw createHttpError(409, "คำขอถูกดำเนินการหรือมีการเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลล่าสุด");
+          }
+          if (submission.subjectType !== input.subjectType) {
+            throw createHttpError(422, "ไม่สามารถเปลี่ยนประเภทคำขอเดิมได้");
+          }
+          if (input.subjectType === "PET_STATUS" && input.status === submission.petStatus) {
+            throw createHttpError(422, "สถานะที่แจ้งตรงกับสถานะปัจจุบันแล้ว");
+          }
+
+          await db.execute(
+            `UPDATE citizen_submissions
+             SET proposed_payload = ?, status = 'SUBMITTED', review_note = NULL,
+                 reviewed_by = NULL, reviewed_at = NULL, submitted_at = CURRENT_TIMESTAMP,
+                 version = version + 1
+             WHERE id = ? AND owner_id = ? AND version = ? AND status = 'NEED_MORE_INFO'`,
+            [JSON.stringify(input), submission.id, req.user.ownerId, version],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, NULL, 'RESUBMIT_CITIZEN_CHANGE', 'CITIZEN_SUBMISSION', ?, ?, ?, ?)`,
+            [
+              crypto.randomUUID(),
+              submission.id,
+              JSON.stringify({ status: submission.status, version, proposedPayload: parseJsonObject(submission.proposedPayload) }),
+              JSON.stringify({ status: "SUBMITTED", version: version + 1, proposedPayload: input }),
+              req.ip,
+            ],
+          );
+          return { id: submission.id, referenceNo: submission.referenceNo, status: "SUBMITTED", subjectType: input.subjectType, version: version + 1 };
+        });
+        return res.json({ data });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   app.patch(
     "/api/citizen/submissions/:id/cancel",
     authenticate,
@@ -1261,12 +1353,20 @@ export function createApp() {
     async (req, res, next) => {
       try {
         const version = z.coerce.number().int().positive().parse(req.body?.version);
-        const result = await pool.execute(
-          `UPDATE citizen_submissions SET status = 'CANCELLED', version = version + 1
-           WHERE id = ? AND owner_id = ? AND version = ? AND status IN ('SUBMITTED','NEED_MORE_INFO')`,
-          [req.params.id, req.user.ownerId, version],
-        );
-        if (!result[0].affectedRows) throw createHttpError(409, "คำขอถูกดำเนินการหรือมีการเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลล่าสุด");
+        await withTransaction(async (db) => {
+          const [result] = await db.execute(
+            `UPDATE citizen_submissions SET status = 'CANCELLED', version = version + 1
+             WHERE id = ? AND owner_id = ? AND version = ? AND status IN ('SUBMITTED','NEED_MORE_INFO')`,
+            [req.params.id, req.user.ownerId, version],
+          );
+          if (!result.affectedRows) throw createHttpError(409, "คำขอถูกดำเนินการหรือมีการเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลล่าสุด");
+          await db.execute(
+            `INSERT INTO audit_logs
+              (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, NULL, 'CANCEL_CITIZEN_CHANGE', 'CITIZEN_SUBMISSION', ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.params.id, JSON.stringify({ version }), JSON.stringify({ status: "CANCELLED", version: version + 1 }), req.ip],
+          );
+        });
         return res.json({ data: { id: req.params.id, status: "CANCELLED", version: version + 1 } });
       } catch (error) {
         next(error);
@@ -2239,6 +2339,9 @@ export function createApp() {
       const pagination = getPagination(req.query);
       const search = `%${String(req.query.search || "").trim()}%`;
       const species = req.query.species || null;
+      const status = req.query.status || null;
+      const vaccination = req.query.vaccination || null;
+      const sterilization = req.query.sterilization || null;
       const villageId = getAreaScope(req);
 
       const [rows] = await pool.execute(
@@ -2291,7 +2394,23 @@ export function createApp() {
                 AND approved_registration.status = 'APPROVED'
             )
             AND (? IS NULL OR p.species = ?)
+            AND (? IS NULL OR p.status = ?)
             AND (? IS NULL OR v.id = ?)
+            AND (
+              ? IS NULL
+              OR (? = 'DONE' AND EXISTS (SELECT 1 FROM sterilization_records sr_filter WHERE sr_filter.pet_id = p.id))
+              OR (? = 'NOT_DONE' AND NOT EXISTS (SELECT 1 FROM sterilization_records sr_filter WHERE sr_filter.pet_id = p.id))
+            )
+            AND (
+              ? IS NULL
+              OR (? = 'NONE' AND NOT EXISTS (SELECT 1 FROM vaccination_records vr_filter WHERE vr_filter.pet_id = p.id))
+              OR (? = 'RECORDED'
+                  AND EXISTS (SELECT 1 FROM vaccination_records vr_filter WHERE vr_filter.pet_id = p.id)
+                  AND NOT EXISTS (SELECT 1 FROM vaccination_records vr_filter WHERE vr_filter.pet_id = p.id AND vr_filter.next_due_at IS NOT NULL))
+              OR (? = 'CURRENT' AND (SELECT MAX(vr_filter.next_due_at) FROM vaccination_records vr_filter WHERE vr_filter.pet_id = p.id) > DATE_ADD(CURDATE(), INTERVAL 30 DAY))
+              OR (? = 'DUE_SOON' AND (SELECT MAX(vr_filter.next_due_at) FROM vaccination_records vr_filter WHERE vr_filter.pet_id = p.id) BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY))
+              OR (? = 'OVERDUE' AND (SELECT MAX(vr_filter.next_due_at) FROM vaccination_records vr_filter WHERE vr_filter.pet_id = p.id) < CURDATE())
+            )
             AND (
               p.name LIKE ?
               OR o.full_name LIKE ?
@@ -2301,7 +2420,14 @@ export function createApp() {
           ORDER BY COALESCE(p.registered_at, p.created_at) DESC
           LIMIT ${pagination.fetchSize} OFFSET ${pagination.offset}
         `,
-        [species, species, villageId, villageId, search, search, search, search],
+        [
+          species, species,
+          status, status,
+          villageId, villageId,
+          sterilization, sterilization, sterilization,
+          vaccination, vaccination, vaccination, vaccination, vaccination, vaccination,
+          search, search, search, search,
+        ],
       );
 
       const data = req.user.role === "VIEWER"

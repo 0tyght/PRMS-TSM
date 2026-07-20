@@ -104,7 +104,7 @@ export function createApi(token) {
     return apiBase.replace(/\/+$/, "");
   }
 
-  async function request(path, options = {}) {
+  async function request(path, options = {}, unwrap = true) {
     let apiBase;
 
     try {
@@ -178,7 +178,7 @@ export function createApi(token) {
       );
     }
 
-    return body.data ?? null;
+    return unwrap ? (body.data ?? null) : body;
   }
 
   function createJsonOptions(method, data) {
@@ -191,6 +191,10 @@ export function createApi(token) {
   return {
     get(path) {
       return request(path);
+    },
+
+    getPage(path) {
+      return request(path, {}, false);
     },
 
     post(path, data) {

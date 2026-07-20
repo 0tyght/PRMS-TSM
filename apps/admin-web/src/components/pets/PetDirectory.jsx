@@ -9,6 +9,7 @@ import { createApi } from "../../lib/api.js";
 import {
   EmptyState,
   Notice,
+  Pagination,
   PageHead,
 } from "../common/PageUI.jsx";
 import "./PetDirectory.css";
@@ -620,6 +621,8 @@ export default function PetDirectory({
   const [lifecyclePet, setLifecyclePet] = useState(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageMeta, setPageMeta] = useState({ page: 1, hasNext: false });
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -649,11 +652,27 @@ export default function PetDirectory({
         query.set("species", species);
       }
 
+      if (status) {
+        query.set("status", status);
+      }
+
+      if (vaccination) {
+        query.set("vaccination", vaccination);
+      }
+
+      if (sterilization) {
+        query.set("sterilization", sterilization);
+      }
+
+      query.set("page", String(page));
+      query.set("pageSize", "50");
+
       const path = `/api/admin/pets${
         query.toString() ? `?${query.toString()}` : ""
       }`;
 
-      const data = await api.get(path);
+      const response = await api.getPage(path);
+      const data = response?.data;
 
       if (requestId !== requestSequence.current) {
         return;
@@ -669,6 +688,7 @@ export default function PetDirectory({
         : [];
 
       setRows(safeRows);
+      setPageMeta(response?.meta || { page, hasNext: false });
     } catch (error) {
       if (requestId !== requestSequence.current) {
         return;
@@ -685,46 +705,13 @@ export default function PetDirectory({
         setLoading(false);
       }
     }
-  }, [api, search, species]);
+  }, [api, page, search, species, status, vaccination, sterilization]);
 
   useEffect(() => {
     loadPets();
   }, [loadPets]);
 
-  const filteredRows = useMemo(() => {
-    return rows.filter((pet) => {
-      if (status && pet.status !== status) {
-        return false;
-      }
-
-      if (sterilization === "DONE") {
-        if (!Boolean(Number(pet.sterilized))) {
-          return false;
-        }
-      }
-
-      if (sterilization === "NOT_DONE") {
-        if (Boolean(Number(pet.sterilized))) {
-          return false;
-        }
-      }
-
-      if (vaccination) {
-        const vaccineStatus = getVaccinationStatus(pet);
-
-        if (vaccineStatus.key !== vaccination) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }, [
-    rows,
-    status,
-    sterilization,
-    vaccination,
-  ]);
+  const filteredRows = rows;
 
   function clearFilters() {
     setSearchInput("");
@@ -733,6 +720,7 @@ export default function PetDirectory({
     setStatus("");
     setVaccination("");
     setSterilization("");
+    setPage(1);
   }
 
   const hasFilters = Boolean(
@@ -785,18 +773,20 @@ export default function PetDirectory({
 
           <input
             value={searchInput}
-            onChange={(event) =>
-              setSearchInput(event.target.value)
-            }
+            onChange={(event) => {
+              setSearchInput(event.target.value);
+              setPage(1);
+            }}
             placeholder="ค้นหาชื่อสัตว์ เจ้าของ เบอร์โทร เลขทะเบียน หรือไมโครชิป"
           />
         </div>
 
         <select
           value={species}
-          onChange={(event) =>
-            setSpecies(event.target.value)
-          }
+          onChange={(event) => {
+            setSpecies(event.target.value);
+            setPage(1);
+          }}
           aria-label="กรองชนิดสัตว์"
         >
           <option value="">ทุกชนิด</option>
@@ -806,9 +796,10 @@ export default function PetDirectory({
 
         <select
           value={status}
-          onChange={(event) =>
-            setStatus(event.target.value)
-          }
+          onChange={(event) => {
+            setStatus(event.target.value);
+            setPage(1);
+          }}
           aria-label="กรองสถานะสัตว์"
         >
           <option value="">ทุกสถานะ</option>
@@ -820,9 +811,10 @@ export default function PetDirectory({
 
         <select
           value={vaccination}
-          onChange={(event) =>
-            setVaccination(event.target.value)
-          }
+          onChange={(event) => {
+            setVaccination(event.target.value);
+            setPage(1);
+          }}
           aria-label="กรองสถานะวัคซีน"
         >
           <option value="">วัคซีนทั้งหมด</option>
@@ -835,9 +827,10 @@ export default function PetDirectory({
 
         <select
           value={sterilization}
-          onChange={(event) =>
-            setSterilization(event.target.value)
-          }
+          onChange={(event) => {
+            setSterilization(event.target.value);
+            setPage(1);
+          }}
           aria-label="กรองสถานะทำหมัน"
         >
           <option value="">การทำหมันทั้งหมด</option>
@@ -1067,6 +1060,14 @@ export default function PetDirectory({
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && filteredRows.length > 0 && (
+          <Pagination
+            page={Number(pageMeta.page || page)}
+            hasNext={Boolean(pageMeta.hasNext)}
+            onChange={setPage}
+            disabled={loading}
+          />
         )}
       </article>
 
