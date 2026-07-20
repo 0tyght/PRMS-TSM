@@ -88,6 +88,15 @@
 .registration-evidence li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid #eee4d0; font-size: 11px; }
 .registration-evidence li>div { display: flex; flex-direction: column; min-width: 0; }
 .registration-evidence li>button { align-self: center; border: 1px solid #d8c7a7; border-radius: 8px; background: #fff; color: #765a22; padding: 6px 10px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.operational-report-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.operational-report-grid article { display: flex; flex-direction: column; justify-content: space-between; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: #fff; }
+.operational-report-grid article>div { display: flex; flex-direction: column; gap: 4px; }
+.operational-report-grid b { font: 600 11px 'Prompt'; }
+.operational-report-grid span { color: var(--muted); font-size: 9px; line-height: 1.4; }
+.operational-report-grid aside { display: flex; flex-wrap: wrap; gap: 5px; }
+.operational-report-grid button { flex: 1; border: 1px solid #bfddd1; border-radius: 7px; background: #edf7f3; color: var(--green); padding: 6px 8px; font-size: 9px; font-weight: 700; }
+@media (max-width: 1280px) { .operational-report-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .operational-report-grid { grid-template-columns: 1fr; } }
 .registration-warning { display: block; color: #8a5a08; font-size: 10px; margin-top: 9px; }
 .registration-previous-note { display: flex; flex-direction: column; gap: 4px; margin: 14px 24px 0; padding: 12px 14px; border-left: 3px solid #d39a28; background: #fff7e6; font-size: 11px; }
 .registration-decision { margin-top: 18px; padding: 18px 24px 22px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 260px 1fr; gap: 13px; }

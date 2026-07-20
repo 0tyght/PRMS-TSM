@@ -62,6 +62,7 @@ export const openApiDocument = {
     "/admin/audit-logs": { get: { tags: ["Admin"], summary: "Audit Log", security: [{ bearerAuth: [] }], responses: { 200: { description: "Audit events" } } } },
     "/admin/reports/villages-v2": { get: { tags: ["Reports"], summary: "รายงานรายหมู่บ้านตามวันตัดยอด", security: [{ bearerAuth: [] }], responses: { 200: { description: "Report data" } } } },
     "/admin/reports/villages/export/{format}": { get: { tags: ["Reports"], summary: "ส่งออกรายงาน PDF/XLSX", security: [{ bearerAuth: [] }], parameters: [{ in: "path", name: "format", required: true, schema: { enum: ["pdf", "xlsx"] } }, { in: "query", name: "cutoff", schema: { type: "string", format: "date" } }, { in: "query", name: "villageId", schema: { type: "integer" } }], responses: { 200: { description: "Report file" } } } },
+    "/admin/reports/{type}/export/{format}": { get: { tags: ["Reports"], summary: "ส่งออกรายงานทะเบียน วัคซีน ทำหมัน SLA หรือคุณภาพข้อมูล", security: [{ bearerAuth: [] }], parameters: [{ in: "path", name: "type", required: true, schema: { enum: ["registry", "vaccination", "sterilization", "submissions", "data-quality"] } }, { in: "path", name: "format", required: true, schema: { enum: ["pdf", "xlsx"] } }], responses: { 200: { description: "Report file" }, 422: { description: "Unsupported format" } } } },
     "/admin/reports/villages": { get: { deprecated: true, tags: ["Reports"], summary: "รายงานรายหมู่บ้านแบบเดิม", security: [{ bearerAuth: [] }], responses: { 200: { description: "Legacy report data" } } } },
   },
 };

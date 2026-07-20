@@ -15,7 +15,7 @@ import {
 import { config } from "./config.js";
 import { pool, withTransaction } from "./db.js";
 import { authenticate, errorHandler, requireRole } from "./middleware.js";
-import { createVillageReportPdf, createVillageReportXlsx } from "./reportExports.js";
+import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "./reportExports.js";
 import { openApiDocument } from "./openapi.js";
 
 const registrationSchema = z.object({
@@ -768,6 +768,103 @@ async function loadVillageReport(cutoffDate, villageId = null) {
     [cutoffDate, cutoffDate, cutoffDate, cutoffDate, cutoffDate, cutoffDate, cutoffDate, villageId, villageId],
   );
   return rows;
+}
+
+function dateCell(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toISOString().slice(0, 10);
+}
+
+async function loadOperationalReport(type, cutoffDate, villageId = null) {
+  if (type === "registry") {
+    const [rows] = await pool.execute(
+      `SELECT p.registration_no AS registrationNo, p.name AS petName, p.species, p.sex,
+              p.status, o.full_name AS ownerName, CONCAT('xxx-xxx-', RIGHT(o.phone, 4)) AS phone,
+              v.village_no AS villageNo, h.house_no AS houseNo
+       FROM pets p INNER JOIN owners o ON o.id = p.owner_id AND o.deleted_at IS NULL
+       INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
+       INNER JOIN villages v ON v.id = h.village_id
+       INNER JOIN registrations r ON r.pet_id = p.id AND r.status = 'APPROVED'
+       WHERE p.deleted_at IS NULL AND r.reviewed_at < DATE_ADD(?, INTERVAL 1 DAY)
+         AND (? IS NULL OR v.id = ?) ORDER BY v.village_no, p.registration_no`,
+      [cutoffDate, villageId, villageId],
+    );
+    return { title: "PRMS-TSM รายงานทะเบียนสัตว์ เทศบาลท่าโพธ์", sheetName: "ทะเบียนสัตว์", headers: ["เลขทะเบียน", "ชื่อสัตว์", "ชนิด", "เพศ", "สถานะ", "เจ้าของ", "โทรศัพท์", "หมู่", "บ้านเลขที่"], rows: rows.map((r) => [r.registrationNo, r.petName, r.species, r.sex, r.status, r.ownerName, r.phone, r.villageNo, r.houseNo]) };
+  }
+  if (type === "vaccination") {
+    const [rows] = await pool.execute(
+      `SELECT p.registration_no AS registrationNo, p.name AS petName, p.species,
+              v.village_no AS villageNo, vr.vaccine_name AS vaccineName,
+              vr.vaccinated_at AS vaccinatedAt, vr.next_due_at AS nextDueAt,
+              CASE WHEN vr.id IS NULL THEN 'NO_RECORD' WHEN vr.next_due_at < ? THEN 'OVERDUE'
+                   WHEN vr.next_due_at <= DATE_ADD(?, INTERVAL 30 DAY) THEN 'DUE_SOON' ELSE 'CURRENT' END AS coverageStatus
+       FROM pets p INNER JOIN owners o ON o.id = p.owner_id AND o.deleted_at IS NULL
+       INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
+       INNER JOIN villages v ON v.id = h.village_id
+       INNER JOIN registrations r ON r.pet_id = p.id AND r.status = 'APPROVED' AND r.reviewed_at < DATE_ADD(?, INTERVAL 1 DAY)
+       LEFT JOIN vaccination_records vr ON vr.id = (SELECT vr2.id FROM vaccination_records vr2 WHERE vr2.pet_id = p.id AND vr2.vaccinated_at <= ? ORDER BY vr2.vaccinated_at DESC LIMIT 1)
+       WHERE p.deleted_at IS NULL AND p.status = 'ACTIVE' AND (? IS NULL OR v.id = ?)
+       ORDER BY v.village_no, p.registration_no`,
+      [cutoffDate, cutoffDate, cutoffDate, cutoffDate, villageId, villageId],
+    );
+    return { title: "PRMS-TSM รายงานความครอบคลุมวัคซีน เทศบาลท่าโพธ์", sheetName: "ความครอบคลุมวัคซีน", headers: ["เลขทะเบียน", "ชื่อสัตว์", "ชนิด", "หมู่", "วัคซีน", "วันที่ฉีด", "กำหนดครั้งถัดไป", "สถานะ"], rows: rows.map((r) => [r.registrationNo, r.petName, r.species, r.villageNo, r.vaccineName || "", dateCell(r.vaccinatedAt), dateCell(r.nextDueAt), r.coverageStatus]) };
+  }
+  if (type === "sterilization") {
+    const [rows] = await pool.execute(
+      `SELECT p.registration_no AS registrationNo, p.name AS petName, p.species, p.sex,
+              v.village_no AS villageNo, sr.sterilized_at AS sterilizedAt,
+              sr.provider_name AS providerName, sr.note
+       FROM sterilization_records sr INNER JOIN pets p ON p.id = sr.pet_id AND p.deleted_at IS NULL
+       INNER JOIN owners o ON o.id = p.owner_id AND o.deleted_at IS NULL
+       INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
+       INNER JOIN villages v ON v.id = h.village_id
+       WHERE sr.sterilized_at <= ? AND (? IS NULL OR v.id = ?)
+       ORDER BY sr.sterilized_at DESC`,
+      [cutoffDate, villageId, villageId],
+    );
+    return { title: "PRMS-TSM รายงานการทำหมัน เทศบาลท่าโพธ์", sheetName: "การทำหมัน", headers: ["เลขทะเบียน", "ชื่อสัตว์", "ชนิด", "เพศ", "หมู่", "วันที่ทำหมัน", "ผู้ให้บริการ", "หมายเหตุ"], rows: rows.map((r) => [r.registrationNo, r.petName, r.species, r.sex, r.villageNo, dateCell(r.sterilizedAt), r.providerName || "", r.note || ""]) };
+  }
+  if (type === "submissions") {
+    const [rows] = await pool.execute(
+      `SELECT referenceNo, requestType, status, ownerName, petName, villageNo, submittedAt,
+              TIMESTAMPDIFF(DAY, submittedAt, COALESCE(reviewedAt, NOW())) AS ageDays
+       FROM (
+         SELECT r.reference_no AS referenceNo, 'REGISTER_PET' AS requestType, r.status,
+                o.full_name AS ownerName, p.name AS petName, v.village_no AS villageNo,
+                r.submitted_at AS submittedAt, r.reviewed_at AS reviewedAt, v.id AS villageId
+         FROM registrations r INNER JOIN owners o ON o.id = r.owner_id INNER JOIN pets p ON p.id = r.pet_id
+         INNER JOIN households h ON h.id = o.household_id INNER JOIN villages v ON v.id = h.village_id
+         UNION ALL
+         SELECT s.reference_no, s.subject_type, s.status, o.full_name, p.name, v.village_no,
+                s.submitted_at, s.reviewed_at, v.id
+         FROM citizen_submissions s INNER JOIN owners o ON o.id = s.owner_id INNER JOIN pets p ON p.id = s.pet_id
+         INNER JOIN households h ON h.id = o.household_id INNER JOIN villages v ON v.id = h.village_id
+       ) q WHERE submittedAt < DATE_ADD(?, INTERVAL 1 DAY) AND (? IS NULL OR villageId = ?)
+       ORDER BY submittedAt DESC`,
+      [cutoffDate, villageId, villageId],
+    );
+    return { title: "PRMS-TSM รายงานคำขอและ SLA เทศบาลท่าโพธ์", sheetName: "คำขอและ SLA", headers: ["เลขคำขอ", "ประเภท", "สถานะ", "เจ้าของ", "สัตว์", "หมู่", "วันที่ยื่น", "อายุคำขอ (วัน)"], rows: rows.map((r) => [r.referenceNo, r.requestType, r.status, r.ownerName, r.petName, r.villageNo, dateCell(r.submittedAt), Number(r.ageDays || 0)]) };
+  }
+  if (type === "data-quality") {
+    const [rows] = await pool.execute(
+      `SELECT p.registration_no AS registrationNo, p.name AS petName, o.full_name AS ownerName,
+              v.village_no AS villageNo,
+              CONCAT_WS(', ', IF(h.latitude IS NULL OR h.longitude IS NULL, 'MISSING_COORDINATES', NULL),
+                IF(p.microchip_no IS NULL OR p.microchip_no = '', 'MISSING_MICROCHIP', NULL),
+                IF(NOT EXISTS(SELECT 1 FROM attachments a WHERE a.entity_type = 'REGISTRATION' AND a.entity_id = r.id), 'MISSING_ATTACHMENT', NULL)) AS issues
+       FROM registrations r INNER JOIN pets p ON p.id = r.pet_id AND p.deleted_at IS NULL
+       INNER JOIN owners o ON o.id = r.owner_id AND o.deleted_at IS NULL
+       INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
+       INNER JOIN villages v ON v.id = h.village_id
+       WHERE r.status = 'APPROVED' AND r.reviewed_at < DATE_ADD(?, INTERVAL 1 DAY)
+         AND (? IS NULL OR v.id = ?)
+       HAVING issues <> '' ORDER BY v.village_no, p.registration_no`,
+      [cutoffDate, villageId, villageId],
+    );
+    return { title: "PRMS-TSM รายงานคุณภาพข้อมูล เทศบาลท่าโพธ์", sheetName: "คุณภาพข้อมูล", headers: ["เลขทะเบียน", "ชื่อสัตว์", "เจ้าของ", "หมู่", "ประเด็นคุณภาพข้อมูล"], rows: rows.map((r) => [r.registrationNo, r.petName, r.ownerName, r.villageNo, r.issues]) };
+  }
+  throw createHttpError(404, "ไม่พบประเภทรายงาน");
 }
 
 export function createApp() {
@@ -2793,6 +2890,36 @@ export function createApp() {
            VALUES (?, ?, 'EXPORT_REPORT', 'REPORT', NULL, ?, ?)`,
           [crypto.randomUUID(), req.user.sub, JSON.stringify({ format, cutoff, villageId, rowCount: rows.length }), req.ip],
         );
+        res.setHeader("Content-Type", format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+        return res.send(buffer);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get(
+    "/api/admin/reports/:type/export/:format",
+    authenticate,
+    requireRole("ADMIN", "OFFICER", "VIEWER"),
+    async (req, res, next) => {
+      try {
+        const type = z.enum(["registry", "vaccination", "sterilization", "submissions", "data-quality"]).parse(req.params.type);
+        const format = z.enum(["pdf", "xlsx"]).parse(req.params.format);
+        if (["submissions", "data-quality"].includes(type) && format !== "xlsx") throw createHttpError(422, "รายงานประเภทนี้รองรับเฉพาะ XLSX");
+        const input = z.object({ cutoff: z.string().date().optional(), villageId: z.coerce.number().int().positive().optional() }).parse(req.query);
+        const cutoff = input.cutoff || new Date().toISOString().slice(0, 10);
+        const villageId = resolveAreaVillage(req, input.villageId || null);
+        const report = await loadOperationalReport(type, cutoff, villageId);
+        const cutoffLabel = new Intl.DateTimeFormat("th-TH", { dateStyle: "long" }).format(new Date(`${cutoff}T12:00:00+07:00`));
+        const buffer = format === "pdf" ? await createTabularReportPdf(report, { cutoffLabel }) : createTabularReportXlsx(report, { cutoffLabel });
+        await pool.execute(
+          `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+           VALUES (?, ?, 'EXPORT_REPORT', 'REPORT', NULL, ?, ?)`,
+          [crypto.randomUUID(), req.user.sub, JSON.stringify({ type, format, cutoff, villageId, rowCount: report.rows.length }), req.ip],
+        );
+        const fileName = `PRMS-TSM-${type}-${cutoff}.${format}`;
         res.setHeader("Content-Type", format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
         return res.send(buffer);

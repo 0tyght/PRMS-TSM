@@ -27,6 +27,14 @@ function StatCard({ label, value, detail, tone = "" }) {
   return <article className={tone}><span>{label}</span><b>{value}</b><small>{detail}</small></article>;
 }
 
+const OPERATIONAL_REPORTS = [
+  { type: "registry", title: "ทะเบียนสัตว์รายตัว", detail: "เจ้าของ พื้นที่ ชนิด และสถานะ", formats: ["pdf", "xlsx"] },
+  { type: "vaccination", title: "ความครอบคลุมวัคซีน", detail: "ยังมีผล ใกล้ครบกำหนด และเลยกำหนด", formats: ["pdf", "xlsx"] },
+  { type: "sterilization", title: "ประวัติการทำหมัน", detail: "วันที่ พื้นที่ และหน่วยบริการ", formats: ["pdf", "xlsx"] },
+  { type: "submissions", title: "คำขอและ SLA", detail: "ประเภท สถานะ อายุคำขอ และผู้ยื่น", formats: ["xlsx"] },
+  { type: "data-quality", title: "คุณภาพข้อมูล", detail: "พิกัด ไมโครชิป และหลักฐานที่ยังขาด", formats: ["xlsx"] },
+];
+
 export default function ReportsPageResponsive({ token }) {
   const api = useMemo(() => createApi(token), [token]);
   const [rows, setRows] = useState([]);
@@ -68,6 +76,16 @@ export default function ReportsPageResponsive({ token }) {
     }
   };
 
+  const exportOperational = async (type, format) => {
+    const key = `${type}:${format}`;
+    const query = new URLSearchParams({ cutoff });
+    if (villageId) query.set("villageId", villageId);
+    setExporting(key); setMessage("");
+    try { await api.download(`/api/admin/reports/${type}/export/${format}?${query}`, `PRMS-TSM-${type}-${cutoff}.${format}`); }
+    catch (error) { setMessage(error.message); }
+    finally { setExporting(""); }
+  };
+
   const totals = rows.reduce(
     (result, row) => ({
       pets: result.pets + Number(row.totalPets || 0),
@@ -92,6 +110,7 @@ export default function ReportsPageResponsive({ token }) {
         actions={<div className="report-actions"><button type="button" className="refresh-btn" onClick={load} disabled={loading}>↻ อัปเดต</button><button type="button" className="export-btn" onClick={() => exportReport("pdf")} disabled={!rows.length || Boolean(exporting)}>{exporting === "pdf" ? "กำลังสร้าง…" : "PDF"}</button><button type="button" className="export-btn" onClick={() => exportReport("xlsx")} disabled={!rows.length || Boolean(exporting)}>{exporting === "xlsx" ? "กำลังสร้าง…" : "XLSX"}</button><button type="button" className="export-btn" onClick={() => exportCsv(rows)} disabled={!rows.length}>CSV</button></div>}
       />
       <section className="report-filter-bar"><label>ข้อมูล ณ วันที่<input type="date" value={cutoff} max={new Date().toISOString().slice(0, 10)} onChange={(event) => { if (event.target.value) setCutoff(event.target.value); }} required /></label><label>พื้นที่<select value={villageId} onChange={(event) => setVillageId(event.target.value)}><option value="">ทุกหมู่บ้าน</option>{villages.map((village) => <option key={village.id} value={village.id}>{village.name}</option>)}</select></label><span>สถิติทางการนับเฉพาะคำขอที่อนุมัติภายในวันตัดยอด</span></section>
+      <section className="operational-report-grid" aria-label="ชุดรายงานปฏิบัติการ">{OPERATIONAL_REPORTS.map((report)=><article key={report.type}><div><b>{report.title}</b><span>{report.detail}</span></div><aside>{report.formats.map((format)=>{const key=`${report.type}:${format}`;return <button type="button" key={format} disabled={Boolean(exporting)} onClick={()=>exportOperational(report.type,format)}>{exporting===key?'กำลังสร้าง…':format.toUpperCase()}</button>})}</aside></article>)}</section>
       <Notice message={message} />
       {loading ? <LoadingPanel text="กำลังจัดทำรายงาน…" /> : (
         <>

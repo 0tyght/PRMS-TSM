@@ -16,6 +16,7 @@ const documentedPaths = [
   "/admin/pets/{petId}/sterilizations", "/admin/sterilizations/{id}",
   "/admin/cases", "/admin/cases/{id}/status", "/admin/audit-logs",
   "/admin/reports/villages-v2", "/admin/reports/villages/export/{format}", "/admin/reports/villages",
+  "/admin/reports/{type}/export/{format}",
 ];
 
 test("publishes OpenAPI 3.1 documentation for every supported route family", () => {
