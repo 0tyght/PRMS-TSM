@@ -178,6 +178,28 @@ function createPage(rows, pagination) {
   };
 }
 
+function createRateLimiter({ windowMs, max }) {
+  const attempts = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = req.ip || req.socket?.remoteAddress || "unknown";
+    const current = attempts.get(key);
+    if (!current || current.resetAt <= now) {
+      attempts.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    current.count += 1;
+    if (current.count <= max) return next();
+    const retryAfter = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfter));
+    return res.status(429).json({ message: "มีการเรียกใช้งานบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่" });
+  };
+}
+
+const loginRateLimit = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 30 });
+const publicSubmissionRateLimit = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 20 });
+const lineSessionRateLimit = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 60 });
+
 export function prepareRegistrationAttachment(input) {
   if (!input) return null;
   const bytes = Buffer.from(input.base64, "base64");
@@ -270,6 +292,10 @@ function createReferenceNo() {
 
 function createChangeReferenceNo() {
   return createReferenceNo().replace("TSM-", "TSM-C-");
+}
+
+function hashNationalId(value) {
+  return value ? crypto.createHash("sha256").update(String(value)).digest("hex") : null;
 }
 
 function parseJsonObject(value) {
@@ -392,11 +418,11 @@ async function findOwner(db, input) {
       `
         SELECT id, household_id AS householdId, deleted_at AS deletedAt
         FROM owners
-        WHERE national_id = ?
+        WHERE national_id_hash = ?
         LIMIT 1
         FOR UPDATE
       `,
-      [input.nationalId],
+      [hashNationalId(input.nationalId)],
     );
 
     return rows[0] || null;
@@ -501,17 +527,19 @@ async function findOrCreateOwner(db, input) {
         id,
         household_id,
         full_name,
-        national_id,
+        national_id_hash,
+        national_id_last4,
         phone,
         consent_at
       )
-      VALUES (?, ?, ?, NULLIF(?, ''), ?, NOW())
+      VALUES (?, ?, ?, ?, ?, ?, NOW())
     `,
     [
       ownerId,
       householdId,
       input.ownerName,
-      input.nationalId || "",
+      hashNationalId(input.nationalId),
+      input.nationalId ? input.nationalId.slice(-4) : null,
       input.phone,
     ],
   );
@@ -869,6 +897,7 @@ async function loadOperationalReport(type, cutoffDate, villageId = null) {
 
 export function createApp() {
   const app = express();
+  app.set("trust proxy", 1);
 
   app.use(helmet());
   app.use(
@@ -905,16 +934,22 @@ export function createApp() {
             WHERE table_schema = DATABASE()
               AND table_name IN ('users','owners','pets','registrations','citizen_submissions','audit_logs','idempotency_keys')) AS present,
            EXISTS(SELECT 1 FROM information_schema.columns
-                  WHERE table_schema = DATABASE() AND table_name = 'attachments' AND column_name = 'checksum_sha256') AS secureAttachments`,
+                  WHERE table_schema = DATABASE() AND table_name = 'attachments' AND column_name = 'checksum_sha256') AS secureAttachments,
+           (EXISTS(SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = DATABASE() AND table_name = 'owners' AND column_name = 'national_id_hash')
+            AND NOT EXISTS(SELECT 1 FROM information_schema.columns
+                           WHERE table_schema = DATABASE() AND table_name = 'owners' AND column_name = 'national_id')) AS tokenizedNationalId`,
       );
       const presentTables = Number(rows[0]?.present || 0);
       const secureAttachments = Boolean(Number(rows[0]?.secureAttachments || 0));
-      const ready = presentTables === 7 && secureAttachments;
+      const tokenizedNationalId = Boolean(Number(rows[0]?.tokenizedNationalId || 0));
+      const ready = presentTables === 7 && secureAttachments && tokenizedNationalId;
       return res.status(ready ? 200 : 503).json({
         status: ready ? "ready" : "not_ready",
         requiredTables: 7,
         presentTables,
         secureAttachments,
+        tokenizedNationalId,
         timestamp: new Date().toISOString(),
       });
     } catch {
@@ -966,7 +1001,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/public/registrations", async (req, res, next) => {
+  app.post("/api/public/registrations", publicSubmissionRateLimit, async (req, res, next) => {
     let attachment = null;
     try {
       const basic = validatePetRegistration(req.body);
@@ -1050,7 +1085,7 @@ export function createApp() {
     res.json({ data: { enabled: Boolean(config.lineLiffId), liffId: config.lineLiffId || null } });
   });
 
-  app.post("/api/citizen/line/session", async (req, res, next) => {
+  app.post("/api/citizen/line/session", lineSessionRateLimit, async (req, res, next) => {
     try {
       const { idToken } = z.object({ idToken: z.string().min(20).max(5000) }).parse(req.body);
       const profile = await verifyLineIdToken(idToken);
@@ -1256,7 +1291,7 @@ export function createApp() {
     },
   );
 
-  app.post("/api/auth/login", async (req, res, next) => {
+  app.post("/api/auth/login", loginRateLimit, async (req, res, next) => {
     try {
       const { email, password } = z
         .object({
@@ -1485,6 +1520,7 @@ export function createApp() {
       const pagination = getPagination(req.query);
       const searchText = String(req.query.search || "").trim();
       const search = `%${searchText}%`;
+      const nationalIdHash = /^\d{13}$/.test(searchText) ? hashNationalId(searchText) : null;
       const villageId = resolveAreaVillage(req, req.query.villageId || null);
       const [rows] = await pool.execute(
         `
@@ -1493,8 +1529,8 @@ export function createApp() {
             o.full_name AS fullName,
             CONCAT(LEFT(o.phone, 3), 'xxx', RIGHT(o.phone, 4)) AS phone,
             CASE
-              WHEN o.national_id IS NULL OR o.national_id = '' THEN NULL
-              ELSE CONCAT('xxxxxxxxx', RIGHT(o.national_id, 4))
+              WHEN o.national_id_last4 IS NULL OR o.national_id_last4 = '' THEN NULL
+              ELSE CONCAT('xxxxxxxxx', o.national_id_last4)
             END AS nationalId,
             o.line_user_id IS NOT NULL AS linkedLine,
             o.consent_at AS consentAt,
@@ -1522,14 +1558,15 @@ export function createApp() {
               ? = ''
               OR o.full_name LIKE ?
               OR o.phone LIKE ?
-              OR COALESCE(o.national_id, '') LIKE ?
+              OR (? IS NOT NULL AND o.national_id_hash = ?)
+              OR COALESCE(o.national_id_last4, '') LIKE ?
               OR h.house_no LIKE ?
             )
           GROUP BY o.id, h.id, v.id
           ORDER BY o.updated_at DESC, o.full_name
           LIMIT ${pagination.fetchSize} OFFSET ${pagination.offset}
         `,
-        [villageId, villageId, searchText, search, search, search, search],
+        [villageId, villageId, searchText, search, search, nationalIdHash, nationalIdHash, search, search],
       );
       return res.json(createPage(rows, pagination));
     } catch (error) {
@@ -1546,7 +1583,7 @@ export function createApp() {
             o.id,
             o.full_name AS fullName,
             o.phone,
-            o.national_id AS nationalId,
+            CASE WHEN o.national_id_last4 IS NULL THEN NULL ELSE CONCAT('xxxxxxxxx', o.national_id_last4) END AS nationalId,
             o.line_user_id AS lineUserId,
             o.consent_at AS consentAt,
             h.house_no AS houseNo,
@@ -1945,7 +1982,7 @@ export function createApp() {
             r.review_note AS reviewNote, r.submitted_at AS submittedAt,
             r.reviewed_at AS reviewedAt, reviewer.full_name AS reviewerName,
             o.id AS ownerId, o.full_name AS ownerName, o.phone,
-            o.national_id AS nationalId, o.line_user_id AS lineUserId,
+            CASE WHEN o.national_id_last4 IS NULL THEN NULL ELSE CONCAT('xxxxxxxxx', o.national_id_last4) END AS nationalId, o.line_user_id AS lineUserId,
             o.consent_at AS consentAt,
             h.house_no AS houseNo, h.address_detail AS addressDetail,
             h.latitude, h.longitude,

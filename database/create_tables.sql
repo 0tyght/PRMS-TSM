@@ -160,7 +160,9 @@ CREATE TABLE IF NOT EXISTS owners (
 
     full_name VARCHAR(150) NOT NULL,
 
-    national_id VARCHAR(13) NULL,
+    national_id_hash CHAR(64) NULL,
+
+    national_id_last4 CHAR(4) NULL,
 
     phone VARCHAR(10) NOT NULL,
 
@@ -184,8 +186,8 @@ CREATE TABLE IF NOT EXISTS owners (
         ON UPDATE CASCADE
         ON DELETE RESTRICT,
 
-    UNIQUE KEY uk_owner_national_id (
-        national_id
+    UNIQUE KEY uk_owner_national_id_hash (
+        national_id_hash
     ),
 
     INDEX idx_owner_phone (
