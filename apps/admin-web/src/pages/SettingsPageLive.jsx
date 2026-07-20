@@ -56,6 +56,7 @@ export default function SettingsPageLive({ token }) {
         <article className="panel"><i className="setting-icon">DB</i><div><b>ฐานข้อมูลกลาง</b><span>{system?.databaseVersion ? `MariaDB/MySQL ${system.databaseVersion}` : "ไม่พบข้อมูลเวอร์ชัน"}</span></div><em className={system?.database === "ready" ? "ready" : "waiting"}>{system?.database === "ready" ? "เชื่อมต่อแล้ว" : "ไม่พร้อม"}</em></article>
         <article className="panel"><i className="setting-icon line">L</i><div><b>LINE OA / LIFF</b><span>ช่องทางหลักสำหรับเจ้าของสัตว์</span></div><em className={system?.line === "configured" ? "ready" : "waiting"}>{system?.line === "configured" ? "ตั้งค่าแล้ว" : "รอการตั้งค่า"}</em></article>
         <article className="panel"><i className="setting-icon">AL</i><div><b>Audit Log</b><span>{Number(system?.auditLogs?.total || 0).toLocaleString("th-TH")} เหตุการณ์</span></div><em className="ready">เปิดใช้งาน</em></article>
+        <article className="panel"><i className="setting-icon line">N</i><div><b>คิวแจ้งเตือน LINE</b><span>ส่งแล้ว {Number(system?.notifications?.sent || 0).toLocaleString("th-TH")} · รอส่ง {Number(system?.notifications?.pending || 0).toLocaleString("th-TH")}</span></div><em className={Number(system?.notifications?.failed || 0) ? "waiting" : "ready"}>{Number(system?.notifications?.failed || 0) ? `ล้มเหลว ${Number(system.notifications.failed).toLocaleString("th-TH")}` : "ปกติ"}</em></article>
       </section>
 
       <article className="panel core-panel core-users-panel">

@@ -17,6 +17,7 @@ import { pool, withTransaction } from "./db.js";
 import { authenticate, errorHandler, requireRole } from "./middleware.js";
 import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "./reportExports.js";
 import { openApiDocument } from "./openapi.js";
+import { deliverLineNotification, enqueueLineNotification } from "./lineNotifications.js";
 
 const registrationSchema = z.object({
   ownerName: z.string().trim().min(2).max(150),
@@ -374,24 +375,6 @@ function createCitizenToken(lineProfile, ownerId = null) {
     config.jwtSecret,
     { expiresIn: "2h" },
   );
-}
-
-async function pushLineText(lineUserId, text) {
-  if (!lineUserId || !config.lineChannelAccessToken) return { status: "SKIPPED" };
-  try {
-    const response = await fetch("https://api.line.me/v2/bot/message/push", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.lineChannelAccessToken}`,
-        "Content-Type": "application/json",
-        "X-Line-Retry-Key": crypto.randomUUID(),
-      },
-      body: JSON.stringify({ to: lineUserId, messages: [{ type: "text", text }] }),
-    });
-    return { status: response.ok ? "SENT" : "FAILED", httpStatus: response.status };
-  } catch {
-    return { status: "FAILED", httpStatus: null };
-  }
 }
 
 async function ensureVillageExists(db, villageId) {
@@ -932,7 +915,7 @@ export function createApp() {
         `SELECT
            (SELECT COUNT(*) FROM information_schema.tables
             WHERE table_schema = DATABASE()
-              AND table_name IN ('users','owners','pets','registrations','citizen_submissions','audit_logs','idempotency_keys')) AS present,
+              AND table_name IN ('users','owners','pets','registrations','citizen_submissions','notifications','audit_logs','idempotency_keys')) AS present,
            EXISTS(SELECT 1 FROM information_schema.columns
                   WHERE table_schema = DATABASE() AND table_name = 'attachments' AND column_name = 'checksum_sha256') AS secureAttachments,
            (EXISTS(SELECT 1 FROM information_schema.columns
@@ -943,10 +926,10 @@ export function createApp() {
       const presentTables = Number(rows[0]?.present || 0);
       const secureAttachments = Boolean(Number(rows[0]?.secureAttachments || 0));
       const tokenizedNationalId = Boolean(Number(rows[0]?.tokenizedNationalId || 0));
-      const ready = presentTables === 7 && secureAttachments && tokenizedNationalId;
+      const ready = presentTables === 8 && secureAttachments && tokenizedNationalId;
       return res.status(ready ? 200 : 503).json({
         status: ready ? "ready" : "not_ready",
-        requiredTables: 7,
+        requiredTables: 8,
         presentTables,
         secureAttachments,
         tokenizedNationalId,
@@ -1749,15 +1732,18 @@ export function createApp() {
              VALUES (?, ?, 'REVIEW_CITIZEN_SUBMISSION', 'CITIZEN_SUBMISSION', ?, ?, ?, ?)`,
             [crypto.randomUUID(), req.user.sub, submission.id, JSON.stringify({ status: submission.status, version: submission.version }), JSON.stringify({ status: input.status, note: input.note, version: input.version + 1 }), req.ip],
           );
-          return { ...submission, status: input.status, version: input.version + 1 };
+          const labels = { UNDER_REVIEW: "เจ้าหน้าที่รับตรวจสอบคำขอแล้ว", NEED_MORE_INFO: "กรุณาแก้ไขหรือส่งข้อมูลเพิ่มเติม", APPROVED: "คำขอได้รับอนุมัติแล้ว", REJECTED: "คำขอไม่ได้รับอนุมัติ" };
+          const queued = await enqueueLineNotification(db, {
+            ownerId: submission.ownerId,
+            entityType: "CITIZEN_SUBMISSION",
+            entityId: submission.id,
+            lineUserId: submission.lineUserId,
+            templateCode: `CITIZEN_SUBMISSION_${input.status}`,
+            message: `PRMS-TSM เทศบาลท่าโพธ์\n${labels[input.status]}\nเลขที่คำขอ ${submission.referenceNo}${input.note ? `\nหมายเหตุ: ${input.note}` : ""}`,
+          });
+          return { ...submission, status: input.status, version: input.version + 1, notificationId: queued.id, queuedStatus: queued.status };
         });
-        const labels = { UNDER_REVIEW: "เจ้าหน้าที่รับตรวจสอบคำขอแล้ว", NEED_MORE_INFO: "กรุณาแก้ไขหรือส่งข้อมูลเพิ่มเติม", APPROVED: "คำขอได้รับอนุมัติแล้ว", REJECTED: "คำขอไม่ได้รับอนุมัติ" };
-        const notification = await pushLineText(data.lineUserId, `PRMS-TSM เทศบาลท่าโพธ์\n${labels[data.status]}\nเลขที่คำขอ ${data.referenceNo}${input.note ? `\nหมายเหตุ: ${input.note}` : ""}`);
-        await pool.execute(
-          `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
-           VALUES (?, ?, ?, 'CITIZEN_SUBMISSION', ?, ?, ?)`,
-          [crypto.randomUUID(), req.user.sub, `LINE_NOTIFICATION_${notification.status}`, data.id, JSON.stringify({ status: data.status, httpStatus: notification.httpStatus || null }), req.ip],
-        ).catch((auditError) => console.error("Unable to record LINE notification audit", auditError));
+        const notification = data.queuedStatus === "PENDING" ? await deliverLineNotification(data.notificationId) : { status: data.queuedStatus };
         return res.json({ data: { id: data.id, status: data.status, version: data.version, notification: notification.status } });
       } catch (error) {
         next(error);
@@ -1906,11 +1892,12 @@ export function createApp() {
 
   app.get("/api/admin/system-status", authenticate, async (_req, res, next) => {
     try {
-      const [[database], [users], [owners], [audit]] = await Promise.all([
+      const [[database], [users], [owners], [audit], [notifications]] = await Promise.all([
         pool.query("SELECT VERSION() AS version, NOW() AS checkedAt"),
         pool.query("SELECT COUNT(*) AS total, SUM(is_active = 1) AS active FROM users"),
         pool.query("SELECT COUNT(*) AS total FROM owners WHERE deleted_at IS NULL"),
         pool.query("SELECT COUNT(*) AS total FROM audit_logs"),
+        pool.query("SELECT COUNT(*) AS total, SUM(delivery_status = 'PENDING') AS pending, SUM(delivery_status = 'FAILED') AS failed, SUM(delivery_status = 'SENT') AS sent FROM notifications"),
       ]);
       return res.json({
         data: {
@@ -1921,6 +1908,7 @@ export function createApp() {
           users: users[0],
           owners: owners[0],
           auditLogs: audit[0],
+          notifications: notifications[0],
           line: config.lineConfigured ? "configured" : "waiting",
         },
       });
@@ -2052,6 +2040,12 @@ export function createApp() {
     async (req, res, next) => {
       try {
         const { status, note } = registrationStatusSchema.parse(req.body);
+        const statusText = {
+          UNDER_REVIEW: "เจ้าหน้าที่รับตรวจสอบคำขอแล้ว",
+          NEED_MORE_INFO: "คำขอต้องแก้ไขหรือเพิ่มข้อมูล",
+          APPROVED: "คำขอได้รับอนุมัติแล้ว",
+          REJECTED: "คำขอไม่ได้รับอนุมัติ",
+        }[status] || status;
 
         const result = await withTransaction(async (db) => {
           await assertEntityAreaAccess(db, req, "REGISTRATION", req.params.id);
@@ -2060,6 +2054,7 @@ export function createApp() {
               SELECT
                 r.id,
                 r.reference_no AS referenceNo,
+                r.owner_id AS ownerId,
                 r.pet_id AS petId,
                 r.status AS oldStatus,
                 o.line_user_id AS lineUserId
@@ -2212,41 +2207,25 @@ export function createApp() {
             ],
           );
 
+          const queued = await enqueueLineNotification(db, {
+            ownerId: registration.ownerId,
+            entityType: "REGISTRATION",
+            entityId: registration.id,
+            lineUserId: registration.lineUserId,
+            templateCode: `REGISTRATION_${status}`,
+            message: `PRMS-TSM เทศบาลท่าโพธ์\n${statusText}\nเลขที่คำขอ ${registration.referenceNo}${note ? `\nหมายเหตุ: ${note}` : ""}`,
+          });
+
           return {
             id: req.params.id,
             status,
             referenceNo: registration.referenceNo,
             lineUserId: registration.lineUserId,
+            notificationId: queued.id,
+            queuedStatus: queued.status,
           };
         });
-
-        const statusText = {
-          UNDER_REVIEW: "เจ้าหน้าที่รับตรวจสอบคำขอแล้ว",
-          NEED_MORE_INFO: "คำขอต้องแก้ไขหรือเพิ่มข้อมูล",
-          APPROVED: "คำขอได้รับอนุมัติแล้ว",
-          REJECTED: "คำขอไม่ได้รับอนุมัติ",
-        }[result.status] || result.status;
-        const notification = await pushLineText(
-          result.lineUserId,
-          `PRMS-TSM เทศบาลท่าโพธ์\n${statusText}\nเลขที่คำขอ ${result.referenceNo}${note ? `\nหมายเหตุ: ${note}` : ""}`,
-        );
-        try {
-          await pool.execute(
-            `INSERT INTO audit_logs
-              (id, user_id, action, entity_type, entity_id, new_value, ip_address)
-             VALUES (?, ?, ?, 'REGISTRATION', ?, ?, ?)`,
-            [
-              crypto.randomUUID(),
-              req.user.sub,
-              `LINE_NOTIFICATION_${notification.status}`,
-              result.id,
-              JSON.stringify({ status: result.status, httpStatus: notification.httpStatus || null }),
-              req.ip,
-            ],
-          );
-        } catch (auditError) {
-          console.error("Unable to record LINE notification audit", auditError);
-        }
+        const notification = result.queuedStatus === "PENDING" ? await deliverLineNotification(result.notificationId) : { status: result.queuedStatus };
 
         return res.json({ data: { id: result.id, status: result.status, notification: notification.status } });
       } catch (error) {
