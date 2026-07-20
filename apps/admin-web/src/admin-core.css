@@ -9,6 +9,15 @@
   background: #fff;
 }
 
+.mfa-panel { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:14px; }
+.mfa-panel h2 { margin:0; font-size:16px; }
+.mfa-panel p { margin:5px 0 0; color:var(--muted); font-size:11px; }
+.mfa-setup { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+.mfa-setup code { padding:8px; border-radius:7px; background:#eef4f1; letter-spacing:1px; }
+.mfa-setup input { width:150px; padding:8px; border:1px solid var(--line); border-radius:7px; }
+.mfa-setup button { border:0; border-radius:7px; padding:9px 12px; background:var(--green); color:#fff; font-weight:700; }
+@media (max-width:800px) { .mfa-panel { align-items:stretch; flex-direction:column; } .mfa-setup { justify-content:flex-start; } }
+
 .core-toolbar--compact { justify-content: flex-start; }
 .core-toolbar input,
 .core-toolbar select,

@@ -6,6 +6,7 @@ dist/
 *.log
 .DS_Store
 coverage/
+.codex-tmp/
 ~$*.docx
 storage/uploads/*
 !storage/uploads/.gitkeep

@@ -3,16 +3,14 @@ import AdminLayout from "./components/layout/AdminLayout.jsx";
 import PageErrorBoundary from "./components/layout/PageErrorBoundary.jsx";
 import { ADMIN_MENU } from "./config/navigation.js";
 import { useHashPage } from "./hooks/useHashPage.js";
-import CasesPage from "./pages/CasesPage.jsx";
-import AuditPage from "./pages/AuditPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import MapPage from "./pages/MapPage.jsx";
 import OwnersPage from "./pages/OwnersPage.jsx";
 import PetsPage from "./pages/PetsPage.jsx";
 import RegistrationsPage from "./pages/RegistrationsPage.jsx";
-import ReportsPage from "./pages/ReportsPageResponsive.jsx";
 import ServicesPage from "./pages/ServicesPage.jsx";
-import SettingsPage from "./pages/SettingsPageLive.jsx";
+import SettingsPage from "./pages/SettingsPage.jsx";
 
 const PAGE_COMPONENTS = {
   dashboard: DashboardPage,
@@ -20,9 +18,7 @@ const PAGE_COMPONENTS = {
   owners: OwnersPage,
   pets: PetsPage,
   services: ServicesPage,
-  cases: CasesPage,
-  reports: ReportsPage,
-  audit: AuditPage,
+  map: MapPage,
   settings: SettingsPage,
 };
 

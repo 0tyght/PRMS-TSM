@@ -4,12 +4,6 @@ const ACTIVE_REGISTRATION_STATUSES = new Set([
   "NEED_MORE_INFO",
 ]);
 
-const ACTIVE_CASE_STATUSES = new Set([
-  "RECEIVED",
-  "ASSIGNED",
-  "IN_PROGRESS",
-]);
-
 export const THA_PHO_VILLAGES = Object.freeze(
   Array.from({ length: 11 }, (_, index) => Object.freeze({
     id: index + 1,
@@ -18,11 +12,10 @@ export const THA_PHO_VILLAGES = Object.freeze(
 );
 
 export const DASHBOARD_METRICS = Object.freeze({
-  total: Object.freeze({ id: "total", label: "จำนวนสัตว์", unit: "ตัว" }),
+  total: Object.freeze({ id: "total", label: "จำนวนสัตว์เลี้ยง", unit: "ตัว" }),
   vaccination: Object.freeze({ id: "vaccination", label: "ความครอบคลุมวัคซีน", unit: "%" }),
   sterilization: Object.freeze({ id: "sterilization", label: "ความครอบคลุมทำหมัน", unit: "%" }),
-  pending: Object.freeze({ id: "pending", label: "คำขอรอตรวจ", unit: "คำขอ" }),
-  cases: Object.freeze({ id: "cases", label: "เหตุที่ยังไม่ปิด", unit: "เหตุ" }),
+  pending: Object.freeze({ id: "pending", label: "ข้อมูลรอตรวจสอบ", unit: "รายการ" }),
 });
 
 function toNumber(value) {
@@ -65,7 +58,7 @@ export function getCoverage(numerator, denominator) {
  * สถิติรายหมู่ใช้ endpoint รายงานเป็นแหล่งหลัก
  * รายการ map ใช้เฉพาะสำหรับหมุดและรายละเอียด ไม่เอามาปั้นยอดทับรายงานที่มีค่า 0 จริง
  */
-export function buildVillageRows({ villages = [], items = [], requests = [], cases = [] } = {}) {
+export function buildVillageRows({ villages = [], items = [], requests = [] } = {}) {
   const reportByVillage = new Map(
     (Array.isArray(villages) ? villages : [])
       .map((row) => [normalizeVillageNo(row?.villageNo), row])
@@ -73,13 +66,11 @@ export function buildVillageRows({ villages = [], items = [], requests = [], cas
   );
   const petsByVillage = groupByVillage(items);
   const requestsByVillage = groupByVillage(requests);
-  const casesByVillage = groupByVillage(cases);
 
   return THA_PHO_VILLAGES.map((village) => {
     const report = reportByVillage.get(village.id) || null;
     const pets = petsByVillage.get(village.id) || [];
     const villageRequests = requestsByVillage.get(village.id) || [];
-    const villageCases = casesByVillage.get(village.id) || [];
 
     const totalPets = hasField(report, "totalPets") ? toNumber(report.totalPets) : pets.length;
     const dogs = hasField(report, "dogs")
@@ -97,9 +88,6 @@ export function buildVillageRows({ villages = [], items = [], requests = [], cas
     const pending = hasField(report, "pending")
       ? toNumber(report.pending)
       : villageRequests.filter((item) => ACTIVE_REGISTRATION_STATUSES.has(item?.status)).length;
-    const openCases = hasField(report, "openCases")
-      ? toNumber(report.openCases)
-      : villageCases.filter((item) => ACTIVE_CASE_STATUSES.has(item?.status)).length;
 
     return {
       ...village,
@@ -113,10 +101,8 @@ export function buildVillageRows({ villages = [], items = [], requests = [], cas
       vaccinationCoverage: getCoverage(vaccinated, totalPets),
       sterilizationCoverage: getCoverage(sterilized, totalPets),
       pending,
-      openCases,
       pets,
       requests: villageRequests,
-      cases: villageCases,
       mapRecordCount: pets.length,
       missingMapRecordCount: Math.max(0, totalPets - pets.length),
     };
@@ -130,7 +116,6 @@ export function getMetricValue(row, metric = "total") {
     case "vaccination": return toNumber(row.vaccinationCoverage);
     case "sterilization": return toNumber(row.sterilizationCoverage);
     case "pending": return toNumber(row.pending);
-    case "cases": return toNumber(row.openCases);
     case "total":
     default: return toNumber(row.totalPets);
   }
@@ -152,7 +137,6 @@ export function summarizeVillageRows(rows = []) {
       vaccinated: result.vaccinated + toNumber(row.vaccinated),
       sterilized: result.sterilized + toNumber(row.sterilized),
       pending: result.pending + toNumber(row.pending),
-      openCases: result.openCases + toNumber(row.openCases),
       mapRecordCount: result.mapRecordCount + toNumber(row.mapRecordCount),
       missingMapRecordCount: result.missingMapRecordCount + toNumber(row.missingMapRecordCount),
       pets: result.pets.concat(row.pets || []),
@@ -160,14 +144,13 @@ export function summarizeVillageRows(rows = []) {
     {
       id: null,
       name: "ทุกหมู่บ้าน",
-      villageName: "ภาพรวมตำบลท่าโพธ์",
+      villageName: "ภาพรวมเทศบาลท่าโพธ์",
       totalPets: 0,
       dogs: 0,
       cats: 0,
       vaccinated: 0,
       sterilized: 0,
       pending: 0,
-      openCases: 0,
       mapRecordCount: 0,
       missingMapRecordCount: 0,
       pets: [],

@@ -44,7 +44,6 @@ const METRIC_COLORS = {
   vaccination: ["#e6f4ef", "#0d8f69"],
   sterilization: ["#f0ebf8", "#7654a6"],
   pending: ["#fff3d9", "#b26b05"],
-  cases: ["#fde8e6", "#b43c34"],
 };
 
 function toNumber(value) {
@@ -458,7 +457,7 @@ export default function DashboardMap({
           <button type="button" onClick={() => setBaseMap((value) => value === "streets" ? "satellite" : "streets")}>
             {baseMap === "streets" ? "ดาวเทียม" : "ถนน"}
           </button>
-          <button type="button" onClick={fitMunicipality}>ดูทั้งตำบล</button>
+          <button type="button" onClick={fitMunicipality}>ดูทั้งเขตเทศบาล</button>
           <button type="button" onClick={() => setFullscreen((value) => !value)}>
             {fullscreen ? "ออกจากเต็มจอ" : "เต็มจอ"}
           </button>

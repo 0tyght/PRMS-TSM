@@ -16,15 +16,17 @@ const initialStats = {
   pending: 0,
   vaccinations: 0,
   sterilizations: 0,
-  openCases: 0,
+  noVaccination: 0,
+  overdueVaccinations: 0,
+  dueSoonVaccinations: 0,
 };
 
 const requestStatus = {
   SUBMITTED: ["รอตรวจ", "amber"],
   UNDER_REVIEW: ["กำลังตรวจ", "blue"],
-  NEED_MORE_INFO: ["ขอข้อมูลเพิ่ม", "rose"],
-  APPROVED: ["อนุมัติแล้ว", "green"],
-  REJECTED: ["ไม่อนุมัติ", "gray"],
+  NEED_MORE_INFO: ["ส่งกลับแก้ไข", "rose"],
+  APPROVED: ["รับรองแล้ว", "green"],
+  REJECTED: ["ไม่ผ่านการตรวจสอบ", "gray"],
 };
 
 function toNumber(value) {
@@ -95,17 +97,9 @@ function buildTasks(row) {
   if (row.pending > 0) {
     tasks.push({
       tone: "amber",
-      title: `คำขอรอตรวจ ${row.pending.toLocaleString("th-TH")} คำขอ`,
-      detail: "ตรวจข้อมูลเจ้าของและสัตว์ก่อนอนุมัติ",
+      title: `ข้อมูลรอตรวจสอบ ${row.pending.toLocaleString("th-TH")} รายการ`,
+      detail: "ตรวจข้อมูลจาก LINE ก่อนรับรองเข้าทะเบียน",
       route: "registrations",
-    });
-  }
-  if (row.openCases > 0) {
-    tasks.push({
-      tone: "rose",
-      title: `เหตุที่ยังไม่ปิด ${row.openCases.toLocaleString("th-TH")} เหตุ`,
-      detail: "ติดตามผู้รับผิดชอบและอัปเดตสถานะ",
-      route: "cases",
     });
   }
   if (row.totalPets > 0 && row.vaccinationCoverage < 70) {
@@ -136,15 +130,15 @@ function AreaPanel({ row, selected, onClear, navigate }) {
       <header className="production-area-panel__header">
         <div>
           <small>{selected ? "พื้นที่ที่เลือก" : "ภาพรวมพื้นที่"}</small>
-          <h2>{selected ? `หมู่ ${row.id}` : "ตำบลท่าโพธ์"}</h2>
+          <h2>{selected ? `หมู่ ${row.id}` : "เทศบาลท่าโพธ์"}</h2>
           <p>{selected ? row.villageName : "รวมข้อมูล 11 หมู่บ้าน"}</p>
         </div>
         {selected ? <button type="button" onClick={onClear}>ล้างการเลือก</button> : null}
       </header>
 
-      <section className="production-area-summary" aria-label="จำนวนสัตว์ในพื้นที่">
+      <section className="production-area-summary" aria-label="จำนวนสัตว์เลี้ยงในพื้นที่">
         <div className="is-primary">
-          <span>สัตว์ทั้งหมด</span>
+          <span>สัตว์เลี้ยงทั้งหมด</span>
           <strong>{row.totalPets.toLocaleString("th-TH")}</strong>
           <small>ตัว</small>
         </div>
@@ -255,16 +249,16 @@ function VillageComparison({ rows, metric, selectedVillage, onSelect, onHover })
   );
 }
 
-function LatestRequests({ requests, navigate }) {
-  const items = requests.slice(0, 5);
+function LatestSubmissions({ submissions, navigate }) {
+  const items = submissions.slice(0, 5);
 
   return (
     <section className="production-request-card">
       <header className="production-section-heading">
         <div>
           <small>งานล่าสุด</small>
-          <h2>คำขอขึ้นทะเบียน</h2>
-          <p>แสดงรายการล่าสุดจากระบบ ไม่ใช่ข้อมูลจำลองบนหน้าเว็บ</p>
+          <h2>ข้อมูลขึ้นทะเบียนจาก LINE</h2>
+          <p>รายการล่าสุดที่เจ้าของสัตว์เลี้ยงส่งให้เจ้าหน้าที่ตรวจสอบ</p>
         </div>
         <button type="button" onClick={() => navigate("registrations")}>ดูทั้งหมด</button>
       </header>
@@ -287,7 +281,7 @@ function LatestRequests({ requests, navigate }) {
         </div>
       ) : (
         <div className="production-empty-state">
-          <strong>ยังไม่มีคำขอ</strong>
+          <strong>ยังไม่มีข้อมูลที่ส่งเข้ามา</strong>
           <span>เมื่อมีรายการใหม่ ระบบจะแสดงที่ส่วนนี้</span>
         </div>
       )}
@@ -301,12 +295,11 @@ export default function DashboardPage({ token, navigate }) {
   const [requests, setRequests] = useState([]);
   const [villages, setVillages] = useState([]);
   const [mapItems, setMapItems] = useState([]);
-  const [cases, setCases] = useState([]);
   const [metric, setMetric] = useState("total");
   const [selectedVillage, setSelectedVillage] = useState(null);
   const [hoveredVillage, setHoveredVillage] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [apiStatus, setApiStatus] = useState({ successful: 0, total: 5 });
+  const [apiStatus, setApiStatus] = useState({ successful: 0, total: 4 });
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [villageReportLoaded, setVillageReportLoaded] = useState(false);
@@ -320,10 +313,9 @@ export default function DashboardPage({ token, navigate }) {
       api.get("/api/admin/registrations"),
       api.get("/api/admin/reports/villages"),
       api.get("/api/admin/map"),
-      api.get("/api/admin/cases"),
     ]).then((results) => {
       if (!active) return;
-      const [dashboardResult, registrationResult, villageResult, mapResult, caseResult] = results;
+      const [dashboardResult, registrationResult, villageResult, mapResult] = results;
 
       setStats(
         dashboardResult.status === "fulfilled" && dashboardResult.value && typeof dashboardResult.value === "object"
@@ -346,11 +338,6 @@ export default function DashboardPage({ token, navigate }) {
           ? mapResult.value
           : [],
       );
-      setCases(
-        caseResult.status === "fulfilled" && Array.isArray(caseResult.value)
-          ? caseResult.value
-          : [],
-      );
       setApiStatus({
         successful: results.filter((result) => result.status === "fulfilled").length,
         total: results.length,
@@ -365,8 +352,8 @@ export default function DashboardPage({ token, navigate }) {
   }, [api, refreshKey]);
 
   const villageRows = useMemo(
-    () => buildVillageRows({ villages, items: mapItems, requests, cases }),
-    [villages, mapItems, requests, cases],
+    () => buildVillageRows({ villages, items: mapItems, requests }),
+    [villages, mapItems, requests],
   );
   const summary = useMemo(() => summarizeVillageRows(villageRows), [villageRows]);
   const selectedRow = villageRows.find((row) => row.id === Number(selectedVillage)) || null;
@@ -380,7 +367,8 @@ export default function DashboardPage({ token, navigate }) {
   const vaccinationCoverage = total ? Math.round((vaccinated * 100) / total) : 0;
   const sterilizationCoverage = total ? Math.round((sterilized * 100) / total) : 0;
   const pending = villageReportLoaded ? summary.pending : toNumber(stats.pending);
-  const openCases = villageReportLoaded ? summary.openCases : toNumber(stats.openCases);
+  const overdueVaccinations = toNumber(stats.overdueVaccinations);
+  const dueSoonVaccinations = toNumber(stats.dueSoonVaccinations);
   const live = apiStatus.successful === apiStatus.total;
   const dataUnavailable = !loading && apiStatus.successful === 0;
   const buddhistYear = new Date().getFullYear() + 543;
@@ -436,7 +424,7 @@ export default function DashboardPage({ token, navigate }) {
           metric="total"
           active={metric === "total"}
           icon="pets"
-          label="สัตว์ขึ้นทะเบียน"
+          label="สัตว์เลี้ยงขึ้นทะเบียน"
           value={total}
           detail={`สุนัข ${dogs.toLocaleString("th-TH")} · แมว ${cats.toLocaleString("th-TH")}`}
           tone="green"
@@ -471,22 +459,22 @@ export default function DashboardPage({ token, navigate }) {
           metric="pending"
           active={metric === "pending"}
           icon="request"
-          label="คำขอรอตรวจ"
+          label="ข้อมูลรอตรวจสอบ"
           value={pending}
-          detail="คำขอที่ยังต้องดำเนินการ"
+          detail="ข้อมูลจาก LINE ที่ยังต้องดำเนินการ"
           tone="amber"
           onSelect={setMetric}
           unavailable={dataUnavailable}
         />
         <KpiCard
-          metric="cases"
-          active={metric === "cases"}
-          icon="case"
-          label="เหตุที่ยังไม่ปิด"
-          value={openCases}
-          detail="เหตุแจ้งที่ต้องติดตาม"
+          metric="vaccineFollowup"
+          active={false}
+          icon="vaccine"
+          label="วัคซีนต้องติดตาม"
+          value={overdueVaccinations + dueSoonVaccinations}
+          detail={`เกินกำหนด ${overdueVaccinations.toLocaleString("th-TH")} · ใกล้กำหนด ${dueSoonVaccinations.toLocaleString("th-TH")}`}
           tone="rose"
-          onSelect={setMetric}
+          onSelect={() => navigate("services")}
           unavailable={dataUnavailable}
         />
       </section>
@@ -518,7 +506,7 @@ export default function DashboardPage({ token, navigate }) {
           onSelect={setSelectedVillage}
           onHover={setHoveredVillage}
         />
-        <LatestRequests requests={requests} navigate={navigate} />
+        <LatestSubmissions submissions={requests} navigate={navigate} />
       </section>
     </main>
   );

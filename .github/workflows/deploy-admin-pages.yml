@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run API and shared tests
+        run: npm test
+
       - name: Copy runtime configuration
         run: |
           mkdir -p apps/admin-web/public

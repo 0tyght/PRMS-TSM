@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS users (
 
     locked_until DATETIME NULL,
 
+    mfa_secret_encrypted VARCHAR(255) NULL,
+
+    mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     updated_at TIMESTAMP NOT NULL

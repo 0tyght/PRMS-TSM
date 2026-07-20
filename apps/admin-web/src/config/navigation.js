@@ -1,12 +1,10 @@
 export const ADMIN_MENU = [
-  { id: "dashboard", icon: "▦", label: "ภาพรวมและแผนที่" },
-  { id: "registrations", icon: "⌁", label: "คำขอขึ้นทะเบียน" },
-  { id: "owners", icon: "◉", label: "ข้อมูลเจ้าของ" },
-  { id: "pets", icon: "●", label: "ข้อมูลสัตว์" },
+  { id: "dashboard", icon: "▦", label: "ภาพรวม" },
+  { id: "registrations", icon: "⌁", label: "ข้อมูลจาก LINE" },
+  { id: "owners", icon: "◉", label: "เจ้าของสัตว์เลี้ยง" },
+  { id: "pets", icon: "●", label: "ทะเบียนสัตว์เลี้ยง" },
   { id: "services", icon: "+", label: "วัคซีนและทำหมัน" },
-  { id: "cases", icon: "!", label: "แจ้งเหตุ" },
-  { id: "reports", icon: "▤", label: "รายงาน" },
-  { id: "audit", icon: "≣", label: "Audit Log" },
+  { id: "map", icon: "⌖", label: "แผนที่" },
   { id: "settings", icon: "⚙", label: "ตั้งค่าระบบ" },
 ];
 

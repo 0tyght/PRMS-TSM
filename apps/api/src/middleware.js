@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { ZodError } from "zod";
 import { config } from "./config.js";
@@ -29,6 +30,28 @@ export function requireRole(...roles) {
   };
 }
 
+export function requestContext(req, res, next) {
+  const incoming = String(req.headers["x-request-id"] || "").trim();
+  const requestId = /^[A-Za-z0-9._:-]{8,100}$/.test(incoming) ? incoming : crypto.randomUUID();
+  const startedAt = process.hrtime.bigint();
+  req.requestId = requestId;
+  res.setHeader("X-Request-Id", requestId);
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    console.info(JSON.stringify({
+      level: "info",
+      event: "http_request",
+      requestId,
+      method: req.method,
+      path: req.originalUrl?.split("?")[0] || req.path,
+      status: res.statusCode,
+      durationMs: Number(durationMs.toFixed(1)),
+      userId: req.user?.sub || null,
+    }));
+  });
+  next();
+}
+
 function formatValidationErrors(error) {
   return error.issues.reduce((result, issue) => {
     const field = issue.path.join(".") || "form";
@@ -41,19 +64,30 @@ function formatValidationErrors(error) {
   }, {});
 }
 
-export function errorHandler(error, _req, res, _next) {
-  console.error(error);
+export function errorHandler(error, req, res, _next) {
+  console.error(JSON.stringify({
+    level: "error",
+    event: "request_error",
+    requestId: req.requestId || null,
+    method: req.method,
+    path: req.originalUrl?.split("?")[0] || req.path,
+    code: error.code || null,
+    name: error.name,
+    message: error.expose || error instanceof ZodError ? error.message : "Internal server error",
+  }));
 
   if (error instanceof ZodError) {
     return res.status(422).json({
       message: "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง",
       errors: formatValidationErrors(error),
+      requestId: req.requestId,
     });
   }
 
   if (error.code === "ER_DUP_ENTRY") {
     return res.status(409).json({
       message: "ข้อมูลนี้มีอยู่ในระบบแล้ว",
+      requestId: req.requestId,
     });
   }
 
@@ -63,6 +97,7 @@ export function errorHandler(error, _req, res, _next) {
   ) {
     return res.status(422).json({
       message: "ไม่สามารถบันทึกข้อมูลได้ เนื่องจากข้อมูลที่เกี่ยวข้องไม่ถูกต้อง",
+      requestId: req.requestId,
     });
   }
 
@@ -70,5 +105,6 @@ export function errorHandler(error, _req, res, _next) {
     message: error.expose
       ? error.message
       : "ระบบขัดข้อง กรุณาลองใหม่อีกครั้ง",
+    requestId: req.requestId,
   });
 }

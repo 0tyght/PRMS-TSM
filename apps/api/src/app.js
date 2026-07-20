@@ -14,10 +14,11 @@ import {
 } from "@prms/shared";
 import { config } from "./config.js";
 import { pool, withTransaction } from "./db.js";
-import { authenticate, errorHandler, requireRole } from "./middleware.js";
+import { authenticate, errorHandler, requestContext, requireRole } from "./middleware.js";
 import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "./reportExports.js";
 import { openApiDocument } from "./openapi.js";
 import { deliverLineNotification, enqueueLineNotification } from "./lineNotifications.js";
+import { createMfaSecret, createOtpAuthUrl, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "./mfa.js";
 
 const registrationSchema = z.object({
   ownerName: z.string().trim().min(2).max(150),
@@ -385,6 +386,14 @@ function createCitizenToken(lineProfile, ownerId = null) {
     { sub: lineProfile.sub, name: lineProfile.name || "ผู้ใช้ LINE", role: "CITIZEN", lineUserId: lineProfile.sub, ownerId },
     config.jwtSecret,
     { expiresIn: "2h" },
+  );
+}
+
+function createStaffToken(user) {
+  return jwt.sign(
+    { sub: user.id, name: user.full_name, role: user.role, villageId: user.villageId || null },
+    config.jwtSecret,
+    { expiresIn: "30m" },
   );
 }
 
@@ -762,16 +771,19 @@ async function loadVillageReport(cutoffDate, villageId = null) {
             COUNT(DISTINCT CASE WHEN p.species = 'CAT' THEN p.id END) AS cats,
             COUNT(DISTINCT CASE WHEN vr.pet_id IS NOT NULL THEN p.id END) AS vaccinated,
             COUNT(DISTINCT CASE WHEN sr.pet_id IS NOT NULL THEN p.id END) AS sterilized,
-            (SELECT COUNT(*) FROM registrations pending_registration
-             INNER JOIN owners pending_owner ON pending_owner.id = pending_registration.owner_id AND pending_owner.deleted_at IS NULL
-             INNER JOIN households pending_household ON pending_household.id = pending_owner.household_id AND pending_household.deleted_at IS NULL
-             WHERE pending_household.village_id = v.id
-               AND pending_registration.submitted_at < DATE_ADD(?, INTERVAL 1 DAY)
-               AND pending_registration.status IN ('SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO')) AS pending,
-            (SELECT COUNT(*) FROM cases village_case
-             WHERE village_case.village_id = v.id
-               AND village_case.created_at < DATE_ADD(?, INTERVAL 1 DAY)
-               AND village_case.status NOT IN ('RESOLVED','CLOSED')) AS openCases
+            ((SELECT COUNT(*) FROM registrations pending_registration
+              INNER JOIN owners pending_owner ON pending_owner.id = pending_registration.owner_id AND pending_owner.deleted_at IS NULL
+              INNER JOIN households pending_household ON pending_household.id = pending_owner.household_id AND pending_household.deleted_at IS NULL
+              WHERE pending_household.village_id = v.id
+                AND pending_registration.submitted_at < DATE_ADD(?, INTERVAL 1 DAY)
+                AND pending_registration.status IN ('SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO'))
+             +
+             (SELECT COUNT(*) FROM citizen_submissions pending_submission
+              INNER JOIN owners submission_owner ON submission_owner.id = pending_submission.owner_id AND submission_owner.deleted_at IS NULL
+              INNER JOIN households submission_household ON submission_household.id = submission_owner.household_id AND submission_household.deleted_at IS NULL
+              WHERE submission_household.village_id = v.id
+                AND pending_submission.submitted_at < DATE_ADD(?, INTERVAL 1 DAY)
+                AND pending_submission.status IN ('SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO'))) AS pending
      FROM villages v
      LEFT JOIN households h ON h.village_id = v.id AND h.deleted_at IS NULL
      LEFT JOIN owners o ON o.household_id = h.id AND o.deleted_at IS NULL
@@ -894,6 +906,7 @@ export function createApp() {
   app.set("trust proxy", 1);
 
   app.use(helmet());
+  app.use(requestContext);
   app.use(
     cors({
       origin: config.origins,
@@ -1393,7 +1406,9 @@ export function createApp() {
             role,
             scope_village_id AS villageId,
             failed_login_attempts AS failedLoginAttempts,
-            locked_until AS lockedUntil
+            locked_until AS lockedUntil,
+            mfa_secret_encrypted AS mfaSecretEncrypted,
+            mfa_enabled AS mfaEnabled
           FROM users
           WHERE email = ?
             AND is_active = 1
@@ -1427,21 +1442,17 @@ export function createApp() {
           .json({ message: "อีเมลหรือรหัสผ่านไม่ถูกต้อง" });
       }
 
-      await pool.execute(
-        "UPDATE users SET last_login_at = NOW(), failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
-        [user.id],
-      );
+      if (Boolean(Number(user.mfaEnabled))) {
+        const challengeToken = jwt.sign(
+          { sub: user.id, purpose: "MFA_LOGIN" },
+          config.jwtSecret,
+          { expiresIn: "5m" },
+        );
+        return res.json({ data: { mfaRequired: true, challengeToken } });
+      }
 
-      const token = jwt.sign(
-        {
-          sub: user.id,
-          name: user.full_name,
-          role: user.role,
-          villageId: user.villageId || null,
-        },
-        config.jwtSecret,
-        { expiresIn: "30m" },
-      );
+      await pool.execute("UPDATE users SET last_login_at = NOW(), failed_login_attempts = 0, locked_until = NULL WHERE id = ?", [user.id]);
+      const token = createStaffToken(user);
 
       return res.json({
         data: {
@@ -1459,54 +1470,39 @@ export function createApp() {
     }
   });
 
-  app.post("/api/auth/dev-login", async (_req, res, next) => {
-    if (config.nodeEnv === "production") {
-      return res.status(404).json({ message: "ไม่พบหน้าที่ร้องขอ" });
-    }
-
+  app.post("/api/auth/mfa/verify", loginRateLimit, async (req, res, next) => {
     try {
-      const [rows] = await pool.query(
-        `
-          SELECT id, full_name, email, role, scope_village_id AS villageId
-          FROM users
-          WHERE is_active = 1
-            AND role = 'ADMIN'
-          ORDER BY created_at
-          LIMIT 1
-        `,
-      );
-
-      const user = rows[0];
-
-      if (!user) {
-        return res
-          .status(503)
-          .json({ message: "ยังไม่มีบัญชีผู้ดูแลระบบ" });
+      const input = z.object({ challengeToken: z.string().min(20), code: z.string().regex(/^\d{6}$/) }).parse(req.body);
+      let challenge;
+      try {
+        challenge = jwt.verify(input.challengeToken, config.jwtSecret);
+      } catch {
+        throw createHttpError(401, "คำขอยืนยันตัวตนหมดอายุ กรุณาเข้าสู่ระบบใหม่");
       }
-
-      const token = jwt.sign(
-        {
-          sub: user.id,
-          name: user.full_name,
-          role: user.role,
-          villageId: user.villageId || null,
-        },
-        config.jwtSecret,
-        { expiresIn: "30m" },
+      if (challenge.purpose !== "MFA_LOGIN") throw createHttpError(401, "คำขอยืนยันตัวตนไม่ถูกต้อง");
+      const [rows] = await pool.execute(
+        `SELECT id, full_name, email, role, scope_village_id AS villageId,
+                mfa_secret_encrypted AS mfaSecretEncrypted, mfa_enabled AS mfaEnabled
+         FROM users WHERE id = ? AND is_active = 1 LIMIT 1`,
+        [challenge.sub],
       );
-
-      return res.json({
-        data: {
-          token,
-          user: {
-            id: user.id,
-            name: user.full_name,
-            email: user.email,
-            role: user.role,
-          },
-          developmentMode: true,
-        },
-      });
+      const user = rows[0];
+      if (!user || !Boolean(Number(user.mfaEnabled)) || !user.mfaSecretEncrypted) throw createHttpError(401, "ไม่สามารถยืนยัน MFA ได้");
+      if (!verifyTotp(decryptMfaSecret(user.mfaSecretEncrypted), input.code)) {
+        await pool.execute(
+          `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+           VALUES (?, ?, 'MFA_FAILED', 'USER', ?, ?, ?)`,
+          [crypto.randomUUID(), user.id, user.id, JSON.stringify({ requestId: req.requestId }), req.ip],
+        );
+        throw createHttpError(401, "รหัสยืนยันไม่ถูกต้องหรือหมดอายุ");
+      }
+      await pool.execute("UPDATE users SET last_login_at = NOW(), failed_login_attempts = 0, locked_until = NULL WHERE id = ?", [user.id]);
+      await pool.execute(
+        `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, ip_address)
+         VALUES (?, ?, 'MFA_LOGIN_SUCCESS', 'USER', ?, ?)`,
+        [crypto.randomUUID(), user.id, user.id, req.ip],
+      );
+      return res.json({ data: { token: createStaffToken(user), user: { id: user.id, name: user.full_name, email: user.email, role: user.role } } });
     } catch (error) {
       next(error);
     }
@@ -1515,7 +1511,7 @@ export function createApp() {
   app.get("/api/admin/dashboard", authenticate, async (req, res, next) => {
     try {
       const villageId = getAreaScope(req);
-      const [[pets], [pending], [services], [cases]] = await Promise.all([
+      const [[pets], [pending], [services]] = await Promise.all([
         pool.execute(
           `
             SELECT
@@ -1541,46 +1537,58 @@ export function createApp() {
         ),
         pool.execute(
           `
-            SELECT COUNT(*) AS pending
-            FROM registrations r
-            INNER JOIN owners o ON o.id = r.owner_id
-            INNER JOIN households h ON h.id = o.household_id
-            WHERE r.status IN (
-              'SUBMITTED',
-              'UNDER_REVIEW',
-              'NEED_MORE_INFO'
-            )
-              AND (? IS NULL OR h.village_id = ?)
+            SELECT
+              SUM(queue.source = 'REGISTRATION') AS pendingRegistrations,
+              SUM(queue.source = 'CITIZEN_SUBMISSION') AS pendingChanges,
+              COUNT(*) AS pending
+            FROM (
+              SELECT 'REGISTRATION' AS source, h.village_id AS villageId
+              FROM registrations r
+              INNER JOIN owners o ON o.id = r.owner_id AND o.deleted_at IS NULL
+              INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
+              WHERE r.status IN ('SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO')
+              UNION ALL
+              SELECT 'CITIZEN_SUBMISSION' AS source, h.village_id AS villageId
+              FROM citizen_submissions s
+              INNER JOIN owners o ON o.id = s.owner_id AND o.deleted_at IS NULL
+              INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
+              WHERE s.status IN ('SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO')
+            ) queue
+            WHERE (? IS NULL OR queue.villageId = ?)
           `, [villageId, villageId],
         ),
         pool.execute(
           `
             SELECT
-              (
-                SELECT COUNT(*)
-                FROM vaccination_records vr
-                INNER JOIN pets p ON p.id = vr.pet_id
-                INNER JOIN owners o ON o.id = p.owner_id
-                INNER JOIN households h ON h.id = o.household_id
-                WHERE vr.vaccinated_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
-                  AND (? IS NULL OR h.village_id = ?)
-              ) AS vaccinations,
-              (
-                SELECT COUNT(*)
-                FROM sterilization_records sr
-                INNER JOIN pets p ON p.id = sr.pet_id
-                INNER JOIN owners o ON o.id = p.owner_id
-                INNER JOIN households h ON h.id = o.household_id
-                WHERE (? IS NULL OR h.village_id = ?)
-              ) AS sterilizations
-          `, [villageId, villageId, villageId, villageId],
-        ),
-        pool.execute(
-          `
-            SELECT COUNT(*) AS openCases
-            FROM cases
-            WHERE status NOT IN ('RESOLVED', 'CLOSED')
-              AND (? IS NULL OR village_id = ?)
+              COUNT(DISTINCT CASE WHEN EXISTS (
+                SELECT 1 FROM vaccination_records vr
+                WHERE vr.pet_id = p.id
+                  AND vr.vaccinated_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+              ) THEN p.id END) AS vaccinations,
+              COUNT(DISTINCT CASE WHEN EXISTS (
+                SELECT 1 FROM sterilization_records sr WHERE sr.pet_id = p.id
+              ) THEN p.id END) AS sterilizations,
+              COUNT(DISTINCT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM vaccination_records vr WHERE vr.pet_id = p.id
+              ) THEN p.id END) AS noVaccination,
+              COUNT(DISTINCT CASE WHEN (
+                SELECT vr.next_due_at FROM vaccination_records vr
+                WHERE vr.pet_id = p.id ORDER BY vr.vaccinated_at DESC LIMIT 1
+              ) < CURDATE() THEN p.id END) AS overdueVaccinations,
+              COUNT(DISTINCT CASE WHEN (
+                SELECT vr.next_due_at FROM vaccination_records vr
+                WHERE vr.pet_id = p.id ORDER BY vr.vaccinated_at DESC LIMIT 1
+              ) BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN p.id END) AS dueSoonVaccinations
+            FROM pets p
+            INNER JOIN owners o ON o.id = p.owner_id AND o.deleted_at IS NULL
+            INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
+            WHERE p.deleted_at IS NULL
+              AND p.status = 'ACTIVE'
+              AND (? IS NULL OR h.village_id = ?)
+              AND EXISTS (
+                SELECT 1 FROM registrations r
+                WHERE r.pet_id = p.id AND r.status = 'APPROVED'
+              )
           `, [villageId, villageId],
         ),
       ]);
@@ -1590,7 +1598,6 @@ export function createApp() {
           ...pets[0],
           ...pending[0],
           ...services[0],
-          ...cases[0],
         },
       });
     } catch (error) {
@@ -1905,6 +1912,36 @@ export function createApp() {
     },
   );
 
+  app.get("/api/auth/mfa/status", authenticate, async (req, res, next) => {
+    try {
+      const [rows] = await pool.execute("SELECT mfa_enabled AS enabled FROM users WHERE id = ? LIMIT 1", [req.user.sub]);
+      if (!rows[0]) throw createHttpError(404, "ไม่พบบัญชีเจ้าหน้าที่");
+      return res.json({ data: { enabled: Boolean(Number(rows[0].enabled)) } });
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/auth/mfa/setup", authenticate, async (req, res, next) => {
+    try {
+      const [rows] = await pool.execute("SELECT email, mfa_enabled AS enabled FROM users WHERE id = ? AND is_active = 1 LIMIT 1", [req.user.sub]);
+      if (!rows[0]) throw createHttpError(404, "ไม่พบบัญชีเจ้าหน้าที่");
+      if (Boolean(Number(rows[0].enabled))) throw createHttpError(409, "บัญชีนี้เปิด MFA อยู่แล้ว");
+      const secret = createMfaSecret();
+      await pool.execute("UPDATE users SET mfa_secret_encrypted = ? WHERE id = ?", [encryptMfaSecret(secret), req.user.sub]);
+      return res.json({ data: { secret, otpAuthUrl: createOtpAuthUrl({ secret, email: rows[0].email }) } });
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/auth/mfa/enable", authenticate, async (req, res, next) => {
+    try {
+      const code = z.string().regex(/^\d{6}$/).parse(req.body?.code);
+      const [rows] = await pool.execute("SELECT mfa_secret_encrypted AS secret FROM users WHERE id = ? LIMIT 1", [req.user.sub]);
+      if (!rows[0]?.secret) throw createHttpError(409, "กรุณาเริ่มตั้งค่า MFA ก่อน");
+      if (!verifyTotp(decryptMfaSecret(rows[0].secret), code)) throw createHttpError(422, "รหัสยืนยันไม่ถูกต้องหรือหมดอายุ");
+      await pool.execute("UPDATE users SET mfa_enabled = TRUE WHERE id = ?", [req.user.sub]);
+      return res.json({ data: { enabled: true } });
+    } catch (error) { next(error); }
+  });
+
   app.get(
     "/api/admin/users",
     authenticate,
@@ -1913,11 +1950,12 @@ export function createApp() {
       try {
         const [rows] = await pool.query(
           `SELECT users.id, users.full_name AS fullName, users.email, users.role,
-                  is_active AS isActive, last_login_at AS lastLoginAt,
+                  users.is_active AS isActive, users.last_login_at AS lastLoginAt,
+                  users.mfa_enabled AS mfaEnabled,
                   users.created_at AS createdAt, users.scope_village_id AS villageId,
                   villages.name_th AS villageName
            FROM users LEFT JOIN villages ON villages.id = users.scope_village_id
-           ORDER BY is_active DESC, full_name`,
+           ORDER BY users.is_active DESC, users.full_name`,
         );
         return res.json({ data: rows });
       } catch (error) {

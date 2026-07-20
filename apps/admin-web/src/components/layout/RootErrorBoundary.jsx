@@ -139,13 +139,12 @@ export default class RootErrorBoundary extends Component {
           <div style={iconStyle}>!</div>
 
           <h1 style={titleStyle}>
-            ระบบหยุดแสดงผลชั่วคราว
+            ไม่สามารถแสดงหน้าระบบได้
           </h1>
 
           <p style={detailStyle}>
-            เกิดข้อผิดพลาดระหว่างเปลี่ยนหน้า
-            ระบบป้องกันไม่ให้เว็บไซต์แสดงเป็นหน้าว่างแล้ว
-            กรุณาเปิดระบบใหม่
+            พบข้อผิดพลาดที่ไม่สามารถกู้คืนได้
+            กรุณาโหลดหน้าอีกครั้ง หากยังพบปัญหาให้แจ้งรหัสอ้างอิงแก่ผู้ดูแลระบบ
           </p>
 
           <p
@@ -164,7 +163,7 @@ export default class RootErrorBoundary extends Component {
               style={primaryButtonStyle}
               onClick={this.handleReload}
             >
-              เปิดระบบใหม่
+              โหลดหน้าอีกครั้ง
             </button>
 
             <button

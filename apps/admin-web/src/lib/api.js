@@ -1,9 +1,5 @@
 import { getApiBase } from "./runtimeConfig.js";
 
-export const IS_TEMPORARY_PASSWORD_BYPASS =
-  import.meta.env.DEV ||
-  (typeof window !== "undefined" && window.location.hostname.endsWith("github.io"));
-
 const REQUEST_TIMEOUT_MS = 12000;
 
 function normalizeApiPath(path) {
