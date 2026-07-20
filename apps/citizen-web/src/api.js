@@ -52,5 +52,6 @@ export function createCitizenApi(token = "") {
   return {
     get: (path) => request(path),
     post: (path, data, headers = {}) => request(path, { method: "POST", body: JSON.stringify(data), headers }),
+    patch: (path, data, headers = {}) => request(path, { method: "PATCH", body: JSON.stringify(data), headers }),
   };
 }

@@ -107,6 +107,50 @@ const citizenLinkSchema = z.object({
   phone: z.string().regex(/^0\d{9}$/),
 });
 
+const citizenSubmissionSchema = z.discriminatedUnion("subjectType", [
+  z.object({
+    subjectType: z.literal("PET_UPDATE"),
+    petName: z.string().trim().min(1).max(100),
+    species: z.enum(["DOG", "CAT"]),
+    sex: z.enum(["MALE", "FEMALE", "UNKNOWN"]),
+    breed: z.string().trim().max(100).optional().default(""),
+    color: z.string().trim().max(100).optional().default(""),
+    birthDate: z.string().date().optional().or(z.literal("")),
+    microchipNo: z.string().trim().max(50).optional().default(""),
+    reason: z.string().trim().min(2).max(500),
+  }),
+  z.object({
+    subjectType: z.literal("VACCINATION"),
+    vaccineName: z.string().trim().min(2).max(150),
+    vaccinatedAt: z.string().date(),
+    nextDueAt: z.string().date().optional().or(z.literal("")),
+    lotNo: z.string().trim().max(100).optional().default(""),
+    providerName: z.string().trim().max(150).optional().default(""),
+  }),
+  z.object({
+    subjectType: z.literal("STERILIZATION"),
+    sterilizedAt: z.string().date(),
+    providerName: z.string().trim().max(150).optional().default(""),
+    note: z.string().trim().max(500).optional().default(""),
+  }),
+  z.object({
+    subjectType: z.literal("PET_STATUS"),
+    status: z.enum(["ACTIVE", "MISSING", "TRANSFERRED", "DECEASED"]),
+    effectiveAt: z.string().date(),
+    reason: z.string().trim().min(2).max(500),
+  }),
+]);
+
+const citizenSubmissionDecisionSchema = z.object({
+  status: z.enum(["UNDER_REVIEW", "NEED_MORE_INFO", "APPROVED", "REJECTED"]),
+  note: z.string().trim().max(500).optional().default(""),
+  version: z.coerce.number().int().positive(),
+}).superRefine((input, context) => {
+  if (["NEED_MORE_INFO", "REJECTED"].includes(input.status) && !input.note) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["note"], message: "กรุณาระบุเหตุผลหรือข้อมูลที่ต้องแก้ไข" });
+  }
+});
+
 function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
@@ -222,6 +266,61 @@ function createReferenceNo() {
   const randomPart = crypto.randomInt(1000, 10000);
 
   return `TSM-${buddhistYear}-${datePart}-${randomPart}`;
+}
+
+function createChangeReferenceNo() {
+  return createReferenceNo().replace("TSM-", "TSM-C-");
+}
+
+function parseJsonObject(value) {
+  if (!value) return null;
+  return typeof value === "string" ? JSON.parse(value) : value;
+}
+
+function ensureOccurredDate(value, fieldLabel) {
+  if (!value) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (value > today) throw createHttpError(422, `${fieldLabel}ต้องไม่เป็นวันที่ในอนาคต`);
+}
+
+async function applyCitizenSubmission(db, submission, reviewerId) {
+  const proposed = parseJsonObject(submission.proposedPayload);
+  const current = parseJsonObject(submission.currentPayload);
+  if (submission.subjectType === "PET_UPDATE") {
+    await db.execute(
+      `UPDATE pets SET name = ?, species = ?, sex = ?, breed = NULLIF(?, ''), color = NULLIF(?, ''),
+                        birth_date = NULLIF(?, ''), microchip_no = NULLIF(?, '')
+       WHERE id = ? AND deleted_at IS NULL`,
+      [proposed.petName, proposed.species, proposed.sex, proposed.breed, proposed.color, proposed.birthDate || "", proposed.microchipNo, submission.petId],
+    );
+    return;
+  }
+  if (submission.subjectType === "VACCINATION") {
+    await db.execute(
+      `INSERT INTO vaccination_records
+        (id, pet_id, vaccine_name, lot_no, vaccinated_at, next_due_at, provider_name, recorded_by)
+       VALUES (?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), ?)`,
+      [crypto.randomUUID(), submission.petId, proposed.vaccineName, proposed.lotNo, proposed.vaccinatedAt, proposed.nextDueAt || "", proposed.providerName, reviewerId],
+    );
+    return;
+  }
+  if (submission.subjectType === "STERILIZATION") {
+    await db.execute(
+      `INSERT INTO sterilization_records (id, pet_id, sterilized_at, provider_name, note, recorded_by)
+       VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)`,
+      [crypto.randomUUID(), submission.petId, proposed.sterilizedAt, proposed.providerName, proposed.note, reviewerId],
+    );
+    return;
+  }
+  if (submission.subjectType === "PET_STATUS") {
+    await db.execute("UPDATE pets SET status = ? WHERE id = ? AND deleted_at IS NULL", [proposed.status, submission.petId]);
+    await db.execute(
+      `INSERT INTO pet_status_history
+        (id, pet_id, old_status, new_status, effective_at, note, recorded_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), submission.petId, current?.status || null, proposed.status, proposed.effectiveAt, proposed.reason, reviewerId],
+    );
+  }
 }
 
 function createRegistrationNo(referenceNo) {
@@ -704,17 +803,21 @@ export function createApp() {
   app.get("/api/health/ready", async (_req, res) => {
     try {
       const [rows] = await pool.query(
-        `SELECT COUNT(*) AS present
-         FROM information_schema.tables
-         WHERE table_schema = DATABASE()
-           AND table_name IN ('users','owners','pets','registrations','audit_logs','idempotency_keys')`,
+        `SELECT
+           (SELECT COUNT(*) FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name IN ('users','owners','pets','registrations','citizen_submissions','audit_logs','idempotency_keys')) AS present,
+           EXISTS(SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = DATABASE() AND table_name = 'attachments' AND column_name = 'checksum_sha256') AS secureAttachments`,
       );
       const presentTables = Number(rows[0]?.present || 0);
-      const ready = presentTables === 6;
+      const secureAttachments = Boolean(Number(rows[0]?.secureAttachments || 0));
+      const ready = presentTables === 7 && secureAttachments;
       return res.status(ready ? 200 : 503).json({
         status: ready ? "ready" : "not_ready",
-        requiredTables: 6,
+        requiredTables: 7,
         presentTables,
+        secureAttachments,
         timestamp: new Date().toISOString(),
       });
     } catch {
@@ -926,10 +1029,11 @@ export function createApp() {
           [req.user.ownerId, req.user.lineUserId],
         );
         if (!ownerRows[0]) throw createHttpError(403, "ไม่สามารถเข้าถึงทะเบียนเจ้าของนี้ได้");
-        const [pets, registrations] = await Promise.all([
+        const [pets, registrations, submissions] = await Promise.all([
           pool.execute(
             `SELECT p.id, p.registration_no AS registrationNo, p.name AS petName,
-                    p.species, p.sex, p.breed, p.color, p.status,
+                    p.species, p.sex, p.breed, p.color, p.birth_date AS birthDate,
+                    p.microchip_no AS microchipNo, p.status,
                     (SELECT MAX(vaccinated_at) FROM vaccination_records vr WHERE vr.pet_id = p.id) AS lastVaccinatedAt,
                     EXISTS(SELECT 1 FROM sterilization_records sr WHERE sr.pet_id = p.id) AS sterilized
              FROM pets p WHERE p.owner_id = ? AND p.deleted_at IS NULL ORDER BY p.created_at DESC`,
@@ -941,8 +1045,114 @@ export function createApp() {
              FROM registrations WHERE owner_id = ? ORDER BY created_at DESC`,
             [req.user.ownerId],
           ).then(([rows]) => rows),
+          pool.execute(
+            `SELECT id, reference_no AS referenceNo, pet_id AS petId, subject_type AS subjectType,
+                    status, review_note AS reviewNote, version, submitted_at AS submittedAt, reviewed_at AS reviewedAt
+             FROM citizen_submissions WHERE owner_id = ? ORDER BY created_at DESC`,
+            [req.user.ownerId],
+          ).then(([rows]) => rows),
         ]);
-        return res.json({ data: { linked: true, owner: ownerRows[0], pets, registrations } });
+        return res.json({ data: { linked: true, owner: ownerRows[0], pets, registrations, submissions } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/api/citizen/pets/:id/submissions",
+    authenticate,
+    requireRole("CITIZEN"),
+    async (req, res, next) => {
+      try {
+        if (!req.user.ownerId) throw createHttpError(403, "กรุณาเชื่อมทะเบียนเจ้าของกับ LINE ก่อนส่งคำขอ");
+        const input = citizenSubmissionSchema.parse(req.body);
+        if (input.subjectType === "VACCINATION") {
+          ensureOccurredDate(input.vaccinatedAt, "วันที่ฉีดวัคซีน");
+          if (input.nextDueAt && input.nextDueAt < input.vaccinatedAt) throw createHttpError(422, "วันครบกำหนดครั้งถัดไปต้องไม่ก่อนวันที่ฉีดวัคซีน");
+        }
+        if (input.subjectType === "STERILIZATION") ensureOccurredDate(input.sterilizedAt, "วันที่ทำหมัน");
+        if (input.subjectType === "PET_STATUS") ensureOccurredDate(input.effectiveAt, "วันที่มีผล");
+
+        const data = await withTransaction(async (db) => {
+          const [petRows] = await db.execute(
+            `SELECT p.id, p.name AS petName, p.species, p.sex, p.breed, p.color,
+                    p.birth_date AS birthDate, p.microchip_no AS microchipNo, p.status
+             FROM pets p
+             WHERE p.id = ? AND p.owner_id = ? AND p.deleted_at IS NULL
+               AND EXISTS (SELECT 1 FROM registrations r WHERE r.pet_id = p.id AND r.status = 'APPROVED')
+             LIMIT 1 FOR UPDATE`,
+            [req.params.id, req.user.ownerId],
+          );
+          const pet = petRows[0];
+          if (!pet) throw createHttpError(404, "ไม่พบสัตว์ที่อนุมัติแล้วในบัญชีของคุณ");
+          const [pendingRows] = await db.execute(
+            `SELECT reference_no AS referenceNo FROM citizen_submissions
+             WHERE pet_id = ? AND subject_type = ? AND status IN ('SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO')
+             LIMIT 1 FOR UPDATE`,
+            [pet.id, input.subjectType],
+          );
+          if (pendingRows[0]) throw createHttpError(409, `มีคำขอประเภทนี้อยู่ระหว่างดำเนินการแล้ว (${pendingRows[0].referenceNo})`);
+
+          let current = null;
+          if (input.subjectType === "PET_UPDATE") {
+            current = { petName: pet.petName, species: pet.species, sex: pet.sex, breed: pet.breed || "", color: pet.color || "", birthDate: pet.birthDate || "", microchipNo: pet.microchipNo || "" };
+          } else if (input.subjectType === "PET_STATUS") {
+            if (pet.status === input.status) throw createHttpError(422, "สถานะที่แจ้งตรงกับสถานะปัจจุบันแล้ว");
+            current = { status: pet.status };
+          } else if (input.subjectType === "VACCINATION") {
+            const [latest] = await db.execute(
+              `SELECT vaccine_name AS vaccineName, vaccinated_at AS vaccinatedAt, next_due_at AS nextDueAt
+               FROM vaccination_records WHERE pet_id = ? ORDER BY vaccinated_at DESC LIMIT 1`,
+              [pet.id],
+            );
+            current = latest[0] || null;
+          } else {
+            const [latest] = await db.execute(
+              `SELECT sterilized_at AS sterilizedAt, provider_name AS providerName
+               FROM sterilization_records WHERE pet_id = ? ORDER BY sterilized_at DESC LIMIT 1`,
+              [pet.id],
+            );
+            current = latest[0] || null;
+            if (current) throw createHttpError(409, "สัตว์ตัวนี้มีประวัติทำหมันที่รับรองแล้ว");
+          }
+
+          const id = crypto.randomUUID();
+          const referenceNo = createChangeReferenceNo();
+          await db.execute(
+            `INSERT INTO citizen_submissions
+              (id, reference_no, owner_id, pet_id, subject_type, current_payload, proposed_payload, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'SUBMITTED')`,
+            [id, referenceNo, req.user.ownerId, pet.id, input.subjectType, current ? JSON.stringify(current) : null, JSON.stringify(input)],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+             VALUES (?, NULL, 'SUBMIT_CITIZEN_CHANGE', 'CITIZEN_SUBMISSION', ?, ?, ?)`,
+            [crypto.randomUUID(), id, JSON.stringify({ referenceNo, ownerId: req.user.ownerId, petId: pet.id, subjectType: input.subjectType }), req.ip],
+          );
+          return { id, referenceNo, status: "SUBMITTED", subjectType: input.subjectType, version: 1 };
+        });
+        return res.status(201).json({ data });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/citizen/submissions/:id/cancel",
+    authenticate,
+    requireRole("CITIZEN"),
+    async (req, res, next) => {
+      try {
+        const version = z.coerce.number().int().positive().parse(req.body?.version);
+        const result = await pool.execute(
+          `UPDATE citizen_submissions SET status = 'CANCELLED', version = version + 1
+           WHERE id = ? AND owner_id = ? AND version = ? AND status IN ('SUBMITTED','NEED_MORE_INFO')`,
+          [req.params.id, req.user.ownerId, version],
+        );
+        if (!result[0].affectedRows) throw createHttpError(409, "คำขอถูกดำเนินการหรือมีการเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลล่าสุด");
+        return res.json({ data: { id: req.params.id, status: "CANCELLED", version: version + 1 } });
       } catch (error) {
         next(error);
       }
@@ -1301,6 +1511,122 @@ export function createApp() {
       } catch (error) {
         if (error?.code === "ENOENT") return next(createHttpError(404, "ไฟล์หลักฐานสูญหายจากพื้นที่จัดเก็บ"));
         return next(error);
+      }
+    },
+  );
+
+  app.get("/api/admin/citizen-submissions", authenticate, async (req, res, next) => {
+    try {
+      const pagination = getPagination(req.query);
+      const status = String(req.query.status || "").trim();
+      const subjectType = String(req.query.subjectType || "").trim();
+      const villageId = getAreaScope(req);
+      const [rows] = await pool.execute(
+        `SELECT s.id, s.reference_no AS referenceNo, s.subject_type AS subjectType,
+                s.status, s.version, s.submitted_at AS submittedAt,
+                o.full_name AS ownerName, p.name AS petName, p.species,
+                v.village_no AS villageNo
+         FROM citizen_submissions s
+         INNER JOIN owners o ON o.id = s.owner_id
+         INNER JOIN households h ON h.id = o.household_id
+         INNER JOIN villages v ON v.id = h.village_id
+         INNER JOIN pets p ON p.id = s.pet_id
+         WHERE (? = '' OR s.status = ?) AND (? = '' OR s.subject_type = ?)
+           AND (? IS NULL OR v.id = ?)
+         ORDER BY s.submitted_at DESC
+         LIMIT ${pagination.fetchSize} OFFSET ${pagination.offset}`,
+        [status, status, subjectType, subjectType, villageId, villageId],
+      );
+      return res.json(createPage(rows, pagination));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get(
+    "/api/admin/citizen-submissions/:id",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const villageId = getAreaScope(req);
+        const [rows] = await pool.execute(
+          `SELECT s.id, s.reference_no AS referenceNo, s.subject_type AS subjectType,
+                  s.current_payload AS currentPayload, s.proposed_payload AS proposedPayload,
+                  s.status, s.review_note AS reviewNote, s.version,
+                  s.submitted_at AS submittedAt, s.reviewed_at AS reviewedAt,
+                  o.full_name AS ownerName, p.name AS petName, p.registration_no AS registrationNo,
+                  p.species, v.village_no AS villageNo, reviewer.full_name AS reviewerName
+           FROM citizen_submissions s
+           INNER JOIN owners o ON o.id = s.owner_id
+           INNER JOIN households h ON h.id = o.household_id
+           INNER JOIN villages v ON v.id = h.village_id
+           INNER JOIN pets p ON p.id = s.pet_id
+           LEFT JOIN users reviewer ON reviewer.id = s.reviewed_by
+           WHERE s.id = ? AND (? IS NULL OR v.id = ?) LIMIT 1`,
+          [req.params.id, villageId, villageId],
+        );
+        if (!rows[0]) throw createHttpError(404, "ไม่พบคำขอหรือไม่มีสิทธิ์เข้าถึง");
+        return res.json({ data: { ...rows[0], current: parseJsonObject(rows[0].currentPayload), proposed: parseJsonObject(rows[0].proposedPayload), currentPayload: undefined, proposedPayload: undefined } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/admin/citizen-submissions/:id/status",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const input = citizenSubmissionDecisionSchema.parse(req.body);
+        const villageId = getAreaScope(req);
+        const data = await withTransaction(async (db) => {
+          const [rows] = await db.execute(
+            `SELECT s.id, s.reference_no AS referenceNo, s.owner_id AS ownerId, s.pet_id AS petId,
+                    s.subject_type AS subjectType, s.current_payload AS currentPayload,
+                    s.proposed_payload AS proposedPayload, s.status, s.version,
+                    o.line_user_id AS lineUserId
+             FROM citizen_submissions s
+             INNER JOIN owners o ON o.id = s.owner_id
+             INNER JOIN households h ON h.id = o.household_id
+             WHERE s.id = ? AND (? IS NULL OR h.village_id = ?) LIMIT 1 FOR UPDATE`,
+            [req.params.id, villageId, villageId],
+          );
+          const submission = rows[0];
+          if (!submission) throw createHttpError(404, "ไม่พบคำขอหรือไม่มีสิทธิ์เข้าถึง");
+          if (Number(submission.version) !== input.version) throw createHttpError(409, "คำขอถูกแก้ไขโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุด");
+          const allowed = {
+            SUBMITTED: ["UNDER_REVIEW", "NEED_MORE_INFO", "APPROVED", "REJECTED"],
+            UNDER_REVIEW: ["NEED_MORE_INFO", "APPROVED", "REJECTED"],
+            NEED_MORE_INFO: ["UNDER_REVIEW", "APPROVED", "REJECTED"],
+          };
+          if (!(allowed[submission.status] || []).includes(input.status)) throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะคำขอตามลำดับนี้ได้");
+          if (input.status === "APPROVED") await applyCitizenSubmission(db, submission, req.user.sub);
+          await db.execute(
+            `UPDATE citizen_submissions
+             SET status = ?, review_note = NULLIF(?, ''), reviewed_by = ?, reviewed_at = NOW(), version = version + 1
+             WHERE id = ? AND version = ?`,
+            [input.status, input.note, req.user.sub, submission.id, input.version],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, 'REVIEW_CITIZEN_SUBMISSION', 'CITIZEN_SUBMISSION', ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, submission.id, JSON.stringify({ status: submission.status, version: submission.version }), JSON.stringify({ status: input.status, note: input.note, version: input.version + 1 }), req.ip],
+          );
+          return { ...submission, status: input.status, version: input.version + 1 };
+        });
+        const labels = { UNDER_REVIEW: "เจ้าหน้าที่รับตรวจสอบคำขอแล้ว", NEED_MORE_INFO: "กรุณาแก้ไขหรือส่งข้อมูลเพิ่มเติม", APPROVED: "คำขอได้รับอนุมัติแล้ว", REJECTED: "คำขอไม่ได้รับอนุมัติ" };
+        const notification = await pushLineText(data.lineUserId, `PRMS-TSM เทศบาลท่าโพธ์\n${labels[data.status]}\nเลขที่คำขอ ${data.referenceNo}${input.note ? `\nหมายเหตุ: ${input.note}` : ""}`);
+        await pool.execute(
+          `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+           VALUES (?, ?, ?, 'CITIZEN_SUBMISSION', ?, ?, ?)`,
+          [crypto.randomUUID(), req.user.sub, `LINE_NOTIFICATION_${notification.status}`, data.id, JSON.stringify({ status: data.status, httpStatus: notification.httpStatus || null }), req.ip],
+        ).catch((auditError) => console.error("Unable to record LINE notification audit", auditError));
+        return res.json({ data: { id: data.id, status: data.status, version: data.version, notification: notification.status } });
+      } catch (error) {
+        next(error);
       }
     },
   );

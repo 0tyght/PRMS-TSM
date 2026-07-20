@@ -18,10 +18,13 @@ const REGISTRATION_LABELS = {
   NEED_MORE_INFO: "ขอข้อมูลเพิ่ม",
   APPROVED: "อนุมัติแล้ว",
   REJECTED: "ไม่อนุมัติ",
+  CANCELLED: "ยกเลิกแล้ว",
 };
 
 const SPECIES_LABELS = { DOG: "สุนัข", CAT: "แมว" };
 const SEX_LABELS = { MALE: "เพศผู้", FEMALE: "เพศเมีย", UNKNOWN: "ไม่ระบุ" };
+const SUBJECT_LABELS = { PET_UPDATE: "แก้ไขข้อมูลสัตว์", VACCINATION: "แจ้งวัคซีน", STERILIZATION: "แจ้งทำหมัน", PET_STATUS: "แจ้งสถานะสัตว์" };
+const FIELD_LABELS = { petName: "ชื่อสัตว์", species: "ชนิด", sex: "เพศ", breed: "สายพันธุ์", color: "สี/ตำหนิ", birthDate: "วันเกิด", microchipNo: "ไมโครชิป", reason: "เหตุผล", vaccineName: "วัคซีน", vaccinatedAt: "วันที่ฉีด", nextDueAt: "กำหนดครั้งถัดไป", lotNo: "เลขล็อต", providerName: "ผู้ให้บริการ", sterilizedAt: "วันที่ทำหมัน", note: "หมายเหตุ", status: "สถานะ", effectiveAt: "วันที่มีผล" };
 
 function maskNationalId(value) {
   if (!value) return "ไม่ระบุ";
@@ -67,6 +70,8 @@ export default function RegistrationsPage({ token }) {
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [detail, setDetail] = useState(null);
+  const [changeRows, setChangeRows] = useState([]);
+  const [changeDetail, setChangeDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [decision, setDecision] = useState("");
   const [note, setNote] = useState("");
@@ -106,6 +111,17 @@ export default function RegistrationsPage({ token }) {
     }
   }, [api, filter]);
 
+  const loadChanges = useCallback(async () => {
+    try {
+      const query = filter ? `?status=${encodeURIComponent(filter)}` : "";
+      const data = await api.get(`/api/admin/citizen-submissions${query}`);
+      setChangeRows(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setChangeRows([]);
+      setMessage(error instanceof Error ? error.message : "ไม่สามารถโหลดคำขอเปลี่ยนแปลงได้");
+    }
+  }, [api, filter]);
+
   /*
    * ห้ามเขียน useEffect(load, ...)
    * เพราะ load เป็น async และคืนค่า Promise
@@ -115,11 +131,12 @@ export default function RegistrationsPage({ token }) {
    */
   useEffect(() => {
     void load();
+    void loadChanges();
 
     return () => {
       requestSequence.current += 1;
     };
-  }, [load]);
+  }, [load, loadChanges]);
 
   async function openDetail(id) {
     setDetailLoading(true);
@@ -171,6 +188,23 @@ export default function RegistrationsPage({ token }) {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "ไม่สามารถดาวน์โหลดไฟล์หลักฐานได้");
     }
+  }
+
+  async function openChangeDetail(id) {
+    setDetailLoading(true); setMessage("");
+    try { setChangeDetail(await api.get(`/api/admin/citizen-submissions/${id}`)); setDecision(""); setNote(""); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "ไม่สามารถโหลดรายละเอียดคำขอได้"); }
+    finally { setDetailLoading(false); }
+  }
+
+  async function changeCitizenStatus(status) {
+    if (!changeDetail) return;
+    setBusy(`${changeDetail.id}:${status}`); setMessage("");
+    try {
+      await api.patch(`/api/admin/citizen-submissions/${changeDetail.id}/status`, { status, note, version: changeDetail.version });
+      setChangeDetail(null); setDecision(""); setNote(""); await loadChanges();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "ไม่สามารถบันทึกผลการตรวจได้"); }
+    finally { setBusy(""); }
   }
 
   return (
@@ -314,6 +348,11 @@ export default function RegistrationsPage({ token }) {
         )}
       </article>
 
+      <article className="panel module-panel">
+        <div className="panel-head"><div><h2>คำขอเปลี่ยนแปลงจาก LINE</h2><p>ข้อมูลเดิมยังคงอยู่จนกว่าเจ้าหน้าที่อนุมัติคำขอ</p></div><span className="badge amber">{changeRows.length} รายการ</span></div>
+        {changeRows.length ? <div className="table-wrap"><table><thead><tr><th>เลขที่คำขอ</th><th>ประเภท</th><th>เจ้าของ / สัตว์</th><th>หมู่</th><th>สถานะ</th><th>ดำเนินการ</th></tr></thead><tbody>{changeRows.map((item)=><tr key={item.id}><td><b>{item.referenceNo}</b></td><td>{SUBJECT_LABELS[item.subjectType]||item.subjectType}</td><td><div className="pet-cell"><i>{item.species==='DOG'?'ส':'ม'}</i><span><b>{item.petName}</b><small>{item.ownerName}</small></span></div></td><td>{item.villageNo}</td><td><span className={`badge ${getStatusTone(item.status)}`}>{REGISTRATION_LABELS[item.status]||item.status}</span></td><td><button type="button" onClick={()=>openChangeDetail(item.id)} disabled={detailLoading}>ตรวจรายละเอียด</button></td></tr>)}</tbody></table></div>:<EmptyState text="ไม่มีคำขอเปลี่ยนแปลงในสถานะที่เลือก"/>}
+      </article>
+
       {detail ? (
         <div className="modal-backdrop registration-backdrop" role="presentation">
           <section className="registration-dialog" role="dialog" aria-modal="true" aria-labelledby="registration-detail-title">
@@ -335,6 +374,13 @@ export default function RegistrationsPage({ token }) {
           </section>
         </div>
       ) : null}
+
+      {changeDetail ? <div className="modal-backdrop registration-backdrop" role="presentation"><section className="registration-dialog" role="dialog" aria-modal="true" aria-labelledby="change-detail-title"><header className="registration-dialog-head"><div><p className="eyebrow">คำขอ {changeDetail.referenceNo}</p><h2 id="change-detail-title">{SUBJECT_LABELS[changeDetail.subjectType]}</h2><span className={`badge ${getStatusTone(changeDetail.status)}`}>{REGISTRATION_LABELS[changeDetail.status]||changeDetail.status}</span></div><button type="button" aria-label="ปิด" onClick={()=>setChangeDetail(null)}>×</button></header><div className="registration-review-grid"><ValueCard title="ข้อมูลปัจจุบัน" values={changeDetail.current}/><ValueCard title="ข้อมูลที่เสนอ" values={changeDetail.proposed}/></div>{changeDetail.reviewNote?<div className="registration-previous-note"><b>หมายเหตุจากการตรวจครั้งก่อน</b><span>{changeDetail.reviewNote}</span></div>:null}{!['APPROVED','REJECTED','CANCELLED'].includes(changeDetail.status)?<form className="registration-decision" onSubmit={(event)=>{event.preventDefault();if(decision)void changeCitizenStatus(decision)}}><label>ผลการตรวจ<select value={decision} onChange={(event)=>setDecision(event.target.value)} required><option value="">เลือกผลการตรวจ</option>{changeDetail.status!=='UNDER_REVIEW'?<option value="UNDER_REVIEW">รับตรวจสอบ</option>:null}<option value="NEED_MORE_INFO">ส่งกลับให้แก้ไข/ขอข้อมูลเพิ่ม</option><option value="APPROVED">อนุมัติและอัปเดตทะเบียน</option><option value="REJECTED">ไม่อนุมัติ</option></select></label><label>หมายเหตุ<textarea value={note} onChange={(event)=>setNote(event.target.value)} maxLength="500" required={['NEED_MORE_INFO','REJECTED'].includes(decision)} placeholder="ระบุเหตุผลหรือข้อมูลที่ต้องแก้ไข"/></label><div className="dialog-actions"><button type="button" onClick={()=>setChangeDetail(null)}>ยกเลิก</button><button type="submit" className="approve" disabled={!decision||Boolean(busy)}>{busy?'กำลังบันทึก…':'ยืนยันผลการตรวจ'}</button></div></form>:<div className="registration-closed"><b>ดำเนินการเสร็จสิ้น</b><span>{changeDetail.reviewerName?`ตรวจโดย ${changeDetail.reviewerName}`:'—'} · {formatThaiDate(changeDetail.reviewedAt)}</span></div>}</section></div>:null}
     </>
   );
+}
+
+function ValueCard({ title, values }) {
+  const entries = Object.entries(values || {}).filter(([key]) => key !== "subjectType");
+  return <article><h3>{title}</h3>{entries.length?<dl>{entries.map(([key,value])=><div key={key}><dt>{FIELD_LABELS[key]||key}</dt><dd>{key==='species'?(SPECIES_LABELS[value]||value):key==='sex'?(SEX_LABELS[value]||value):['birthDate','vaccinatedAt','nextDueAt','sterilizedAt','effectiveAt'].includes(key)?formatThaiDate(value):String(value||'—')}</dd></div>)}</dl>:<p>ยังไม่มีข้อมูลเดิม</p>}</article>;
 }

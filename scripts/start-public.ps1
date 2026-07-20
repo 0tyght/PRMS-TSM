@@ -162,6 +162,40 @@ function Get-PublicHealth {
     )
 }
 
+function Get-DotEnvValue {
+    param([string]$Path, [string]$Name, [string]$Fallback = "")
+    if (-not (Test-Path $Path)) { return $Fallback }
+    $line = Get-Content $Path | Where-Object { $_ -match ("^\s*{0}\s*=" -f [regex]::Escape($Name)) } | Select-Object -Last 1
+    if ($null -eq $line) { return $Fallback }
+    $value = ($line -split "=", 2)[1].Trim()
+    return $value.Trim('"').Trim("'")
+}
+
+function Invoke-DatabaseMigrations {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $mysql = "C:\xampp\mysql\bin\mysql.exe"
+    if (-not (Test-Path $mysql)) { throw "mysql.exe was not found at C:\xampp\mysql\bin\mysql.exe" }
+    $envPath = Join-Path $Root "server\.env"
+    if (-not (Test-Path $envPath)) { $envPath = Join-Path $Root ".env" }
+    $hostName = Get-DotEnvValue $envPath "DB_HOST" "127.0.0.1"
+    $port = Get-DotEnvValue $envPath "DB_PORT" "3306"
+    $user = Get-DotEnvValue $envPath "DB_USER" "root"
+    $password = Get-DotEnvValue $envPath "DB_PASSWORD" ""
+    $database = Get-DotEnvValue $envPath "DB_NAME" "prms_tsm"
+    $previousPassword = $env:MYSQL_PWD
+    try {
+        $env:MYSQL_PWD = $password
+        foreach ($migration in Get-ChildItem (Join-Path $Root "database\migrations") -Filter "*.sql" | Sort-Object Name) {
+            $sourcePath = $migration.FullName.Replace("\", "/")
+            & $mysql "--host=$hostName" "--port=$port" "--user=$user" "--database=$database" "--execute=source $sourcePath"
+            if ($LASTEXITCODE -ne 0) { throw ("Database migration failed: {0}" -f $migration.Name) }
+        }
+    }
+    finally {
+        $env:MYSQL_PWD = $previousPassword
+    }
+}
+
 $root = (
     Resolve-Path (
         Join-Path $PSScriptRoot ".."
@@ -198,6 +232,9 @@ Out-Null
 Write-Host `
     "Checking API and MySQL..." `
     -ForegroundColor Cyan
+
+Invoke-DatabaseMigrations -Root $root
+Write-Host "Database migrations ready." -ForegroundColor Green
 
 $localHealth = Get-LocalHealth
 
