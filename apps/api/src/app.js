@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -29,6 +31,11 @@ const registrationSchema = z.object({
   breed: z.string().trim().max(100).optional().default("ไม่ระบุ"),
   color: z.string().trim().max(100).optional().default("ไม่ระบุ"),
   birthDate: z.string().date().optional().or(z.literal("")),
+  attachment: z.object({
+    fileName: z.string().trim().min(1).max(255),
+    mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+    base64: z.string().min(4).max(14_000_000),
+  }).optional(),
 });
 
 const registrationStatusSchema = z.object({
@@ -105,6 +112,72 @@ function createHttpError(status, message) {
   error.status = status;
   error.expose = true;
   return error;
+}
+
+function getPagination(query, { defaultPageSize = 50, maxPageSize = 100 } = {}) {
+  const page = Math.max(1, Number.parseInt(String(query.page || "1"), 10) || 1);
+  const requestedPageSize = Number.parseInt(String(query.pageSize || defaultPageSize), 10) || defaultPageSize;
+  const pageSize = Math.min(maxPageSize, Math.max(1, requestedPageSize));
+  return { page, pageSize, offset: (page - 1) * pageSize, fetchSize: pageSize + 1 };
+}
+
+function createPage(rows, pagination) {
+  const hasNext = rows.length > pagination.pageSize;
+  return {
+    data: hasNext ? rows.slice(0, pagination.pageSize) : rows,
+    meta: {
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      hasNext,
+      nextPage: hasNext ? pagination.page + 1 : null,
+    },
+  };
+}
+
+export function prepareRegistrationAttachment(input) {
+  if (!input) return null;
+  const bytes = Buffer.from(input.base64, "base64");
+  if (!bytes.length || bytes.length > 10 * 1024 * 1024) {
+    throw createHttpError(422, "ไฟล์หลักฐานต้องมีขนาดไม่เกิน 10 MB");
+  }
+  const signatures = {
+    "image/jpeg": bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
+    "image/png": bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    "image/webp": bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP",
+  };
+  if (!signatures[input.mimeType]) throw createHttpError(422, "ชนิดไฟล์จริงไม่ตรงกับ JPEG, PNG หรือ WebP");
+  const extension = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp" }[input.mimeType];
+  const storageName = `${crypto.randomUUID()}${extension}`;
+  return {
+    id: crypto.randomUUID(),
+    fileName: path.basename(input.fileName),
+    mimeType: input.mimeType,
+    bytes,
+    checksum: crypto.createHash("sha256").update(bytes).digest("hex"),
+    storageName,
+    absolutePath: path.join(config.privateStorageDir, storageName),
+    written: false,
+  };
+}
+
+async function saveRegistrationAttachment(db, registrationId, attachment) {
+  if (!attachment) return null;
+  const [existing] = await db.execute(
+    `SELECT id FROM attachments
+     WHERE entity_type = 'REGISTRATION' AND entity_id = ? AND checksum_sha256 = ? LIMIT 1`,
+    [registrationId, attachment.checksum],
+  );
+  if (existing[0]) return existing[0].id;
+  await fs.mkdir(config.privateStorageDir, { recursive: true });
+  await fs.writeFile(attachment.absolutePath, attachment.bytes, { flag: "wx" });
+  attachment.written = true;
+  await db.execute(
+    `INSERT INTO attachments
+      (id, entity_type, entity_id, file_name, storage_path, mime_type, file_size, checksum_sha256)
+     VALUES (?, 'REGISTRATION', ?, ?, ?, ?, ?, ?)`,
+    [attachment.id, registrationId, attachment.fileName, attachment.storageName, attachment.mimeType, attachment.bytes.length, attachment.checksum],
+  );
+  return attachment.id;
 }
 
 function getAreaScope(req) {
@@ -391,7 +464,7 @@ async function findRecentDuplicateRegistration(db, ownerId, input) {
   return rows[0] || null;
 }
 
-async function createPublicRegistration(db, input) {
+async function createPublicRegistration(db, input, attachment = null) {
   await ensureVillageExists(db, input.villageId);
 
   const owner = await findOrCreateOwner(db, input);
@@ -402,6 +475,7 @@ async function createPublicRegistration(db, input) {
   );
 
   if (duplicate) {
+    await saveRegistrationAttachment(db, duplicate.id, attachment);
     return {
       id: duplicate.id,
       referenceNo: duplicate.referenceNo,
@@ -472,6 +546,8 @@ async function createPublicRegistration(db, input) {
       REGISTRATION_STATUS.SUBMITTED,
     ],
   );
+
+  await saveRegistrationAttachment(db, registrationId, attachment);
 
   await db.execute(
     `
@@ -605,7 +681,15 @@ export function createApp() {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({ limit: "15mb" }));
+
+  // Keep the original /api routes compatible while making /api/v1 the stable contract.
+  app.use((req, _res, next) => {
+    if (req.url === "/api/v1" || req.url.startsWith("/api/v1/")) {
+      req.url = req.url.replace(/^\/api\/v1(?=\/|$)/, "/api");
+    }
+    next();
+  });
 
   app.get("/api/openapi.json", (_req, res) => res.json(openApiDocument));
 
@@ -683,6 +767,7 @@ export function createApp() {
   });
 
   app.post("/api/public/registrations", async (req, res, next) => {
+    let attachment = null;
     try {
       const basic = validatePetRegistration(req.body);
 
@@ -694,11 +779,12 @@ export function createApp() {
       }
 
       const input = registrationSchema.parse(req.body);
+      attachment = prepareRegistrationAttachment(input.attachment);
       const idempotencyKey = String(req.get("Idempotency-Key") || "").trim();
       if (idempotencyKey.length > 128) throw createHttpError(422, "Idempotency-Key ยาวเกินกำหนด");
       const keyHash = idempotencyKey ? crypto.createHash("sha256").update(idempotencyKey).digest("hex") : null;
       const result = await withTransaction(async (db) => {
-        if (!keyHash) return createPublicRegistration(db, input);
+        if (!keyHash) return createPublicRegistration(db, input, attachment);
         await db.execute(
           `INSERT INTO idempotency_keys (key_hash, scope, expires_at)
            VALUES (?, 'PUBLIC_REGISTRATION', DATE_ADD(NOW(), INTERVAL 24 HOUR))
@@ -715,7 +801,7 @@ export function createApp() {
           const responseBody = typeof saved.responseBody === "string" ? JSON.parse(saved.responseBody) : saved.responseBody;
           return { ...responseBody, idempotentReplay: true, responseStatus: saved.responseStatus };
         }
-        const created = await createPublicRegistration(db, input);
+        const created = await createPublicRegistration(db, input, attachment);
         const responseStatus = created.duplicate ? 200 : 201;
         await db.execute(
           `UPDATE idempotency_keys SET response_status = ?, response_body = ?, expires_at = DATE_ADD(NOW(), INTERVAL 24 HOUR)
@@ -727,6 +813,7 @@ export function createApp() {
 
       return res.status(result.responseStatus || (result.duplicate ? 200 : 201)).json({ data: result });
     } catch (error) {
+      if (attachment?.written) await fs.rm(attachment.absolutePath, { force: true }).catch(() => {});
       next(error);
     }
   });
@@ -1088,6 +1175,7 @@ export function createApp() {
 
   app.get("/api/admin/owners", authenticate, async (req, res, next) => {
     try {
+      const pagination = getPagination(req.query);
       const searchText = String(req.query.search || "").trim();
       const search = `%${searchText}%`;
       const villageId = resolveAreaVillage(req, req.query.villageId || null);
@@ -1132,11 +1220,11 @@ export function createApp() {
             )
           GROUP BY o.id, h.id, v.id
           ORDER BY o.updated_at DESC, o.full_name
-          LIMIT 300
+          LIMIT ${pagination.fetchSize} OFFSET ${pagination.offset}
         `,
         [villageId, villageId, searchText, search, search, search, search],
       );
-      return res.json({ data: rows });
+      return res.json(createPage(rows, pagination));
     } catch (error) {
       next(error);
     }
@@ -1178,6 +1266,44 @@ export function createApp() {
       next(error);
     }
   });
+
+  app.get(
+    "/api/admin/attachments/:id",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const villageId = getAreaScope(req);
+        const [rows] = await pool.execute(
+          `SELECT a.id, a.file_name AS fileName, a.storage_path AS storagePath,
+                  a.mime_type AS mimeType, a.entity_id AS entityId
+           FROM attachments a
+           INNER JOIN registrations r ON a.entity_type = 'REGISTRATION' AND r.id = a.entity_id
+           INNER JOIN owners o ON o.id = r.owner_id
+           INNER JOIN households h ON h.id = o.household_id
+           WHERE a.id = ? AND (? IS NULL OR h.village_id = ?)
+           LIMIT 1`,
+          [req.params.id, villageId, villageId],
+        );
+        const attachment = rows[0];
+        if (!attachment) throw createHttpError(404, "ไม่พบไฟล์หลักฐานหรือไม่มีสิทธิ์เข้าถึง");
+        const absolutePath = path.resolve(config.privateStorageDir, attachment.storagePath);
+        const storagePrefix = `${path.resolve(config.privateStorageDir)}${path.sep}`;
+        if (!absolutePath.startsWith(storagePrefix)) throw createHttpError(404, "ไม่พบไฟล์หลักฐาน");
+        await fs.access(absolutePath);
+        await pool.execute(
+          `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+           VALUES (?, ?, 'DOWNLOAD_ATTACHMENT', 'REGISTRATION', ?, JSON_OBJECT('attachmentId', ?), ?)`,
+          [crypto.randomUUID(), req.user.sub, attachment.entityId, attachment.id, req.ip],
+        );
+        res.type(attachment.mimeType);
+        return res.download(absolutePath, attachment.fileName);
+      } catch (error) {
+        if (error?.code === "ENOENT") return next(createHttpError(404, "ไฟล์หลักฐานสูญหายจากพื้นที่จัดเก็บ"));
+        return next(error);
+      }
+    },
+  );
 
   app.patch(
     "/api/admin/owners/:id",
@@ -1297,6 +1423,7 @@ export function createApp() {
     requireRole("ADMIN", "VIEWER"),
     async (req, res, next) => {
       try {
+        const pagination = getPagination(req.query, { defaultPageSize: 100, maxPageSize: 200 });
         const entityType = String(req.query.entityType || "").trim();
         const [rows] = await pool.execute(
           `SELECT a.id, a.action, a.entity_type AS entityType,
@@ -1307,10 +1434,10 @@ export function createApp() {
            LEFT JOIN users u ON u.id = a.user_id
            WHERE (? = '' OR a.entity_type = ?)
            ORDER BY a.created_at DESC
-           LIMIT 500`,
+           LIMIT ${pagination.fetchSize} OFFSET ${pagination.offset}`,
           [entityType, entityType],
         );
-        return res.json({ data: rows });
+        return res.json(createPage(rows, pagination));
       } catch (error) {
         next(error);
       }
@@ -1347,6 +1474,7 @@ export function createApp() {
     authenticate,
     async (req, res, next) => {
       try {
+        const pagination = getPagination(req.query);
         const status = req.query.status || null;
         const villageId = getAreaScope(req);
         const [rows] = await pool.execute(
@@ -1372,12 +1500,12 @@ export function createApp() {
             WHERE (? IS NULL OR r.status = ?)
               AND (? IS NULL OR v.id = ?)
             ORDER BY r.submitted_at DESC
-            LIMIT 200
+            LIMIT ${pagination.fetchSize} OFFSET ${pagination.offset}
           `,
           [status, status, villageId, villageId],
         );
 
-        return res.json({ data: rows });
+        return res.json(createPage(rows, pagination));
       } catch (error) {
         next(error);
       }
@@ -1669,6 +1797,7 @@ export function createApp() {
 
   app.get("/api/admin/pets", authenticate, async (req, res, next) => {
     try {
+      const pagination = getPagination(req.query);
       const search = `%${String(req.query.search || "").trim()}%`;
       const species = req.query.species || null;
       const villageId = getAreaScope(req);
@@ -1731,7 +1860,7 @@ export function createApp() {
               OR COALESCE(p.registration_no, '') LIKE ?
             )
           ORDER BY COALESCE(p.registered_at, p.created_at) DESC
-          LIMIT 300
+          LIMIT ${pagination.fetchSize} OFFSET ${pagination.offset}
         `,
         [species, species, villageId, villageId, search, search, search, search],
       );
@@ -1739,7 +1868,8 @@ export function createApp() {
       const data = req.user.role === "VIEWER"
         ? rows.map((row) => ({ ...row, phone: row.phone ? `${row.phone.slice(0, 3)}xxx${row.phone.slice(-4)}` : null }))
         : rows;
-      return res.json({ data });
+      const page = createPage(data, pagination);
+      return res.json(page);
     } catch (error) {
       next(error);
     }
@@ -2181,6 +2311,7 @@ export function createApp() {
 
   app.get("/api/admin/cases", authenticate, async (req, res, next) => {
     try {
+      const pagination = getPagination(req.query);
       const villageId = getAreaScope(req);
       const [rows] = await pool.execute(
         `
@@ -2211,7 +2342,7 @@ export function createApp() {
               'CLOSED'
             ),
             c.created_at DESC
-          LIMIT 300
+          LIMIT ${pagination.fetchSize} OFFSET ${pagination.offset}
         `,
         [villageId, villageId],
       );
@@ -2219,7 +2350,7 @@ export function createApp() {
       const data = req.user.role === "VIEWER"
         ? rows.map((row) => ({ ...row, reporterPhone: row.reporterPhone ? `${row.reporterPhone.slice(0, 3)}xxx${row.reporterPhone.slice(-4)}` : null }))
         : rows;
-      return res.json({ data });
+      return res.json(createPage(data, pagination));
     } catch (error) {
       next(error);
     }

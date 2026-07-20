@@ -8,6 +8,7 @@ const documentedPaths = [
   "/citizen/line/session", "/citizen/line/link", "/citizen/me", "/auth/login",
   "/admin/dashboard", "/admin/owners", "/admin/owners/{id}", "/admin/users", "/admin/users/{id}",
   "/admin/system-status", "/admin/registrations", "/admin/registrations/{id}", "/admin/registrations/{id}/status",
+  "/admin/attachments/{id}",
   "/admin/pets", "/admin/pets/{id}", "/admin/pets/{id}/status", "/admin/pets/{id}/owner", "/admin/map",
   "/admin/pets/{petId}/vaccinations", "/admin/vaccinations/{id}",
   "/admin/pets/{petId}/sterilizations", "/admin/sterilizations/{id}",

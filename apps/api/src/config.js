@@ -1,4 +1,5 @@
 import "dotenv/config";
+import path from "node:path";
 
 const DEVELOPMENT_SECRET = "development-only-change-me";
 
@@ -115,6 +116,8 @@ export const config = Object.freeze({
     readText(process.env.LINE_CHANNEL_ACCESS_TOKEN) &&
     readText(process.env.LINE_LIFF_ID)
   ),
+
+  privateStorageDir: path.resolve(readText(process.env.PRIVATE_STORAGE_DIR, "./storage/uploads")),
 
   origins: Object.freeze([...new Set(origins)]),
 

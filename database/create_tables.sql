@@ -563,6 +563,8 @@ CREATE TABLE IF NOT EXISTS attachments (
 
     file_size INT UNSIGNED NOT NULL,
 
+    checksum_sha256 CHAR(64) NULL,
+
     uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
@@ -570,6 +572,12 @@ CREATE TABLE IF NOT EXISTS attachments (
     INDEX idx_attachment_entity (
         entity_type,
         entity_id
+    ),
+
+    UNIQUE KEY uk_attachment_entity_checksum (
+        entity_type,
+        entity_id,
+        checksum_sha256
     )
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4

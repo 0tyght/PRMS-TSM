@@ -14,7 +14,7 @@ function normalizeApiPath(path) {
   }
 
   if (value.startsWith("/api/")) {
-    return value.slice(4);
+    return `/v1${value.slice(4)}`;
   }
 
   if (value.startsWith("/")) {

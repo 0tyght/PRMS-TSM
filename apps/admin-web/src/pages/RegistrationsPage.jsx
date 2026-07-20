@@ -164,6 +164,15 @@ export default function RegistrationsPage({ token }) {
     }
   }
 
+  async function downloadAttachment(file) {
+    setMessage("");
+    try {
+      await api.download(`/api/admin/attachments/${file.id}`, file.fileName);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "ไม่สามารถดาวน์โหลดไฟล์หลักฐานได้");
+    }
+  }
+
   return (
     <>
       <PageHead
@@ -318,7 +327,7 @@ export default function RegistrationsPage({ token }) {
               <article><h3>ข้อมูลสัตว์ที่เสนอ</h3><dl><div><dt>ชื่อสัตว์</dt><dd>{detail.proposed.petName}</dd></div><div><dt>ชนิด / เพศ</dt><dd>{SPECIES_LABELS[detail.proposed.species]} · {SEX_LABELS[detail.proposed.sex]}</dd></div><div><dt>พันธุ์</dt><dd>{detail.proposed.breed || "ไม่ระบุ"}</dd></div><div><dt>สี</dt><dd>{detail.proposed.color || "ไม่ระบุ"}</dd></div><div><dt>วันเกิด</dt><dd>{formatThaiDate(detail.proposed.birthDate)}</dd></div></dl></article>
             </div>
 
-            <article className="registration-evidence"><div><h3>หลักฐานประกอบ</h3><p>{detail.attachments.length ? `${detail.attachments.length} ไฟล์` : "ยังไม่มีไฟล์แนบในคำขอนี้"}</p></div>{detail.attachments.length ? <ul>{detail.attachments.map((file) => <li key={file.id}><b>{file.fileName}</b><span>{file.mimeType} · {Math.ceil(Number(file.fileSize || 0) / 1024).toLocaleString("th-TH")} KB</span></li>)}</ul> : <span className="registration-warning">ควรตรวจเอกสารยืนยันเจ้าของและภาพสัตว์ก่อนอนุมัติ</span>}</article>
+            <article className="registration-evidence"><div><h3>หลักฐานประกอบ</h3><p>{detail.attachments.length ? `${detail.attachments.length} ไฟล์` : "ยังไม่มีไฟล์แนบในคำขอนี้"}</p></div>{detail.attachments.length ? <ul>{detail.attachments.map((file) => <li key={file.id}><div><b>{file.fileName}</b><span>{file.mimeType} · {Math.ceil(Number(file.fileSize || 0) / 1024).toLocaleString("th-TH")} KB</span></div><button type="button" onClick={() => downloadAttachment(file)}>เปิดไฟล์</button></li>)}</ul> : <span className="registration-warning">ควรตรวจเอกสารยืนยันเจ้าของและภาพสัตว์ก่อนอนุมัติ</span>}</article>
 
             {detail.reviewNote ? <div className="registration-previous-note"><b>หมายเหตุจากการตรวจครั้งก่อน</b><span>{detail.reviewNote}</span></div> : null}
 

@@ -28,7 +28,7 @@ export function createCitizenApi(token = "") {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 12000);
     try {
-      const response = await fetch(`${base}${path}`, {
+      const response = await fetch(`${base}/v1${path.startsWith('/') ? path : `/${path}`}`, {
         ...options,
         signal: controller.signal,
         cache: "no-store",

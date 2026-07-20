@@ -5,7 +5,10 @@ export const openApiDocument = {
     version: "1.0.0",
     description: "API ระบบขึ้นทะเบียนและบริหารจัดการข้อมูลสุนัขและแมว เทศบาลท่าโพธ์",
   },
-  servers: [{ url: "/api", description: "เซิร์ฟเวอร์ปัจจุบัน" }],
+  servers: [
+    { url: "/api/v1", description: "API contract เวอร์ชัน 1" },
+    { url: "/api", description: "เส้นทางเดิมเพื่อความเข้ากันได้" },
+  ],
   tags: [
     { name: "Public" }, { name: "Citizen" }, { name: "Authentication" },
     { name: "Admin" }, { name: "Reports" }, { name: "Monitoring" },
@@ -38,6 +41,7 @@ export const openApiDocument = {
     "/admin/system-status": { get: { tags: ["Admin"], summary: "สถานะองค์ประกอบระบบ", security: [{ bearerAuth: [] }], responses: { 200: { description: "System status" } } } },
     "/admin/registrations": { get: { tags: ["Admin"], summary: "รายการคำขอ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Registrations" } } } },
     "/admin/registrations/{id}": { get: { tags: ["Admin"], summary: "รายละเอียดคำขอและหลักฐาน", security: [{ bearerAuth: [] }], parameters: [{ in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }], responses: { 200: { description: "Registration detail" } } } },
+    "/admin/attachments/{id}": { get: { tags: ["Admin"], summary: "ดาวน์โหลดไฟล์หลักฐานส่วนตัว", security: [{ bearerAuth: [] }], parameters: [{ in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }], responses: { 200: { description: "Private attachment" }, 404: { description: "Not found or out of scope" } } } },
     "/admin/registrations/{id}/status": { patch: { tags: ["Admin"], summary: "บันทึกผลตรวจคำขอ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Status updated and LINE notification attempted" } } } },
     "/admin/pets": { get: { tags: ["Admin"], summary: "ทะเบียนสัตว์", security: [{ bearerAuth: [] }], responses: { 200: { description: "Pets" } } } },
     "/admin/pets/{id}": { get: { tags: ["Admin"], summary: "รายละเอียดและประวัติสัตว์", security: [{ bearerAuth: [] }], parameters: [{ in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }], responses: { 200: { description: "Pet detail" } } } },
