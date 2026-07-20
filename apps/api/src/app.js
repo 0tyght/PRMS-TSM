@@ -14,6 +14,7 @@ import { config } from "./config.js";
 import { pool, withTransaction } from "./db.js";
 import { authenticate, errorHandler, requireRole } from "./middleware.js";
 import { createVillageReportPdf, createVillageReportXlsx } from "./reportExports.js";
+import { openApiDocument } from "./openapi.js";
 
 const registrationSchema = z.object({
   ownerName: z.string().trim().min(2).max(150),
@@ -606,6 +607,41 @@ export function createApp() {
   );
   app.use(express.json({ limit: "1mb" }));
 
+  app.get("/api/openapi.json", (_req, res) => res.json(openApiDocument));
+
+  app.get("/api/health/live", (_req, res) => {
+    res.json({
+      status: "alive",
+      uptimeSeconds: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get("/api/health/ready", async (_req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `SELECT COUNT(*) AS present
+         FROM information_schema.tables
+         WHERE table_schema = DATABASE()
+           AND table_name IN ('users','owners','pets','registrations','audit_logs','idempotency_keys')`,
+      );
+      const presentTables = Number(rows[0]?.present || 0);
+      const ready = presentTables === 6;
+      return res.status(ready ? 200 : 503).json({
+        status: ready ? "ready" : "not_ready",
+        requiredTables: 6,
+        presentTables,
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      return res.status(503).json({
+        status: "not_ready",
+        database: "unavailable",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
   app.get("/api/health", async (_req, res) => {
     let database = "unavailable";
 
@@ -618,9 +654,11 @@ export function createApp() {
 
     res.json({
       service: ORGANIZATION.productName,
+      version: "1.0.0",
       organization: ORGANIZATION.shortName,
       status: "ok",
       database,
+      timestamp: new Date().toISOString(),
     });
   });
 
