@@ -1739,6 +1739,177 @@ export function createApp() {
     },
   );
 
+  app.get("/api/admin/review-queue", authenticate, async (req, res, next) => {
+    try {
+      const pagination = getPagination(req.query);
+      const status = String(req.query.status || "PENDING").trim().toUpperCase();
+      const requestType = String(req.query.requestType || "").trim().toUpperCase();
+      const searchText = String(req.query.search || "").trim().slice(0, 100);
+      const search = `%${searchText}%`;
+      const sort = String(req.query.sort || "urgent").trim().toLowerCase();
+      const dateFrom = String(req.query.dateFrom || "").trim();
+      const dateTo = String(req.query.dateTo || "").trim();
+      const villageId = resolveAreaVillage(req, req.query.villageId || null);
+      const allowedStatuses = new Set([
+        "",
+        "PENDING",
+        "CLOSED",
+        "SUBMITTED",
+        "UNDER_REVIEW",
+        "NEED_MORE_INFO",
+        "APPROVED",
+        "REJECTED",
+        "CANCELLED",
+      ]);
+      const allowedRequestTypes = new Set([
+        "",
+        "REGISTER_PET",
+        "PET_UPDATE",
+        "VACCINATION",
+        "STERILIZATION",
+        "PET_STATUS",
+      ]);
+      if (!allowedStatuses.has(status)) throw createHttpError(422, "สถานะคิวตรวจสอบไม่ถูกต้อง");
+      if (!allowedRequestTypes.has(requestType)) throw createHttpError(422, "ประเภทข้อมูลที่รอตรวจสอบไม่ถูกต้อง");
+      if (!new Set(["urgent", "oldest", "newest"]).has(sort)) throw createHttpError(422, "รูปแบบการเรียงคิวไม่ถูกต้อง");
+      if (dateFrom && !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) throw createHttpError(422, "วันที่เริ่มต้นไม่ถูกต้อง");
+      if (dateTo && !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) throw createHttpError(422, "วันที่สิ้นสุดไม่ถูกต้อง");
+      if (dateFrom && dateTo && dateFrom > dateTo) throw createHttpError(422, "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด");
+
+      const queueSource = `
+        (
+          SELECT
+            r.id,
+            r.reference_no AS referenceNo,
+            'REGISTRATION' AS sourceType,
+            'REGISTER_PET' AS requestType,
+            r.status,
+            1 AS version,
+            r.submitted_at AS submittedAt,
+            r.reviewed_at AS reviewedAt,
+            o.full_name AS ownerName,
+            p.name AS petName,
+            p.species,
+            v.id AS villageId,
+            v.village_no AS villageNo,
+            v.name_th AS villageName
+          FROM registrations r
+          INNER JOIN owners o ON o.id = r.owner_id AND o.deleted_at IS NULL
+          INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
+          INNER JOIN villages v ON v.id = h.village_id
+          INNER JOIN pets p ON p.id = r.pet_id AND p.deleted_at IS NULL
+          WHERE r.status <> 'DRAFT'
+
+          UNION ALL
+
+          SELECT
+            s.id,
+            s.reference_no AS referenceNo,
+            'CITIZEN_SUBMISSION' AS sourceType,
+            s.subject_type AS requestType,
+            s.status,
+            s.version,
+            s.submitted_at AS submittedAt,
+            s.reviewed_at AS reviewedAt,
+            o.full_name AS ownerName,
+            p.name AS petName,
+            p.species,
+            v.id AS villageId,
+            v.village_no AS villageNo,
+            v.name_th AS villageName
+          FROM citizen_submissions s
+          INNER JOIN owners o ON o.id = s.owner_id AND o.deleted_at IS NULL
+          INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
+          INNER JOIN villages v ON v.id = h.village_id
+          INNER JOIN pets p ON p.id = s.pet_id AND p.deleted_at IS NULL
+        ) queue
+      `;
+      const conditions = [];
+      const parameters = [];
+      if (status === "PENDING") {
+        conditions.push("queue.status IN ('SUBMITTED', 'UNDER_REVIEW', 'NEED_MORE_INFO')");
+      } else if (status === "CLOSED") {
+        conditions.push("queue.status IN ('APPROVED', 'REJECTED', 'CANCELLED')");
+      } else if (status) {
+        conditions.push("queue.status = ?");
+        parameters.push(status);
+      }
+      if (requestType) {
+        conditions.push("queue.requestType = ?");
+        parameters.push(requestType);
+      }
+      if (villageId) {
+        conditions.push("queue.villageId = ?");
+        parameters.push(villageId);
+      }
+      if (searchText) {
+        conditions.push("(queue.referenceNo LIKE ? OR queue.ownerName LIKE ? OR queue.petName LIKE ?)");
+        parameters.push(search, search, search);
+      }
+      if (dateFrom) {
+        conditions.push("DATE(queue.submittedAt) >= ?");
+        parameters.push(dateFrom);
+      }
+      if (dateTo) {
+        conditions.push("DATE(queue.submittedAt) <= ?");
+        parameters.push(dateTo);
+      }
+      const whereSql = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const orderSql = {
+        urgent: `
+          ORDER BY
+            CASE
+              WHEN queue.status = 'SUBMITTED' AND queue.submittedAt < DATE_SUB(NOW(), INTERVAL 3 DAY) THEN 0
+              WHEN queue.status = 'SUBMITTED' THEN 1
+              WHEN queue.status = 'UNDER_REVIEW' THEN 2
+              WHEN queue.status = 'NEED_MORE_INFO' THEN 3
+              ELSE 4
+            END,
+            queue.submittedAt ASC
+        `,
+        oldest: "ORDER BY queue.submittedAt ASC",
+        newest: "ORDER BY queue.submittedAt DESC",
+      }[sort];
+      const [rows] = await pool.execute(
+        `
+          SELECT
+            queue.*,
+            GREATEST(0, COALESCE(TIMESTAMPDIFF(DAY, queue.submittedAt, NOW()), 0)) AS ageDays
+          FROM ${queueSource}
+          ${whereSql}
+          ${orderSql}
+          LIMIT ${pagination.fetchSize} OFFSET ${pagination.offset}
+        `,
+        parameters,
+      );
+      const [summaryRows] = await pool.execute(
+        `
+          SELECT
+            COUNT(*) AS total,
+            COALESCE(SUM(queue.status = 'SUBMITTED'), 0) AS submitted,
+            COALESCE(SUM(queue.status = 'UNDER_REVIEW'), 0) AS underReview,
+            COALESCE(SUM(queue.status = 'NEED_MORE_INFO'), 0) AS needMoreInfo,
+            COALESCE(SUM(queue.status = 'APPROVED'), 0) AS approved,
+            COALESCE(SUM(queue.status = 'REJECTED'), 0) AS rejected,
+            COALESCE(SUM(queue.status = 'CANCELLED'), 0) AS cancelled,
+            COALESCE(SUM(
+              queue.status = 'SUBMITTED'
+              AND queue.submittedAt < DATE_SUB(NOW(), INTERVAL 3 DAY)
+            ), 0) AS urgent
+          FROM ${queueSource}
+          ${whereSql}
+        `,
+        parameters,
+      );
+      const pageResult = createPage(rows, pagination);
+      const summary = Object.fromEntries(
+        Object.entries(summaryRows[0] || {}).map(([key, value]) => [key, Number(value || 0)]),
+      );
+      return res.json({ ...pageResult, summary });
+    } catch (error) {
+      next(error);
+    }
+  });
   app.get("/api/admin/citizen-submissions", authenticate, async (req, res, next) => {
     try {
       const pagination = getPagination(req.query);
