@@ -4,6 +4,7 @@ import App from "./App.jsx";
 import RootErrorBoundary from "./components/layout/RootErrorBoundary.jsx";
 import "./styles.css";
 import "./ux-foundation-v7.css";
+import "./admin-sections-v8.css";
 const rootElement = document.getElementById("root");
 const fatalElement = document.getElementById("fatal-root");
 
