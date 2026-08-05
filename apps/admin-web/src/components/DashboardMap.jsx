@@ -27,6 +27,13 @@ const SPECIES = {
   CAT: "แมว",
 };
 
+const HEALTH_FILTERS = {
+  ALL: { label: "ทุกสถานะ", className: "" },
+  critical: { label: "แดง", className: "is-critical" },
+  partial: { label: "ส้ม", className: "is-partial" },
+  complete: { label: "เขียว", className: "is-complete" },
+};
+
 const METRIC_COLORS = {
   total: ["#e8f3ee", "#187a5a"],
   vaccination: ["#e6f4ef", "#0d8f69"],
@@ -222,7 +229,7 @@ function villageTooltip(row, metric) {
   `;
 }
 
-function DataQualityBar({ diagnostics, householdCount, households }) {
+function DataQualityBar({ diagnostics, visibleCount, householdCount, households }) {
   const statusCounts = households.reduce(
     (accumulator, item) => {
       accumulator[item.healthStatus] += 1;
@@ -239,7 +246,10 @@ function DataQualityBar({ diagnostics, householdCount, households }) {
         <span className="is-complete"><i />เรียบร้อย {statusCounts.complete.toLocaleString("th-TH")}</span>
       </div>
       <div className="v6-map-footer__quality">
-        <span>{householdCount.toLocaleString("th-TH")} จุดพิกัดจริง</span>
+        <span>{visibleCount === householdCount
+          ? `${householdCount.toLocaleString("th-TH")} จุดพิกัดจริง`
+          : `แสดง ${visibleCount.toLocaleString("th-TH")} จาก ${householdCount.toLocaleString("th-TH")} จุด`}
+        </span>
         {diagnostics.missingCoordinates > 0 ? <span>{diagnostics.missingCoordinates.toLocaleString("th-TH")} ไม่มีพิกัด</span> : null}
         {diagnostics.outsideBoundary > 0 ? <span className="is-danger">{diagnostics.outsideBoundary.toLocaleString("th-TH")} นอกเขต</span> : null}
         {diagnostics.villageMismatch > 0 ? <span className="is-warning">{diagnostics.villageMismatch.toLocaleString("th-TH")} หมู่ไม่ตรง</span> : null}
@@ -265,6 +275,7 @@ export default function DashboardMap({
   const villageLayersRef = useRef(new Map());
   const initialFitDoneRef = useRef(false);
   const [species, setSpecies] = useState("ALL");
+  const [healthFilter, setHealthFilter] = useState("ALL");
   const [fullscreen, setFullscreen] = useState(false);
 
   const normalized = useMemo(
@@ -279,6 +290,11 @@ export default function DashboardMap({
   }), [normalized.pets, selectedVillage, species]);
 
   const households = useMemo(() => groupRealHouseholds(filteredPets), [filteredPets]);
+  const visibleHouseholds = useMemo(() => (
+    healthFilter === "ALL"
+      ? households
+      : households.filter((household) => household.healthStatus === healthFilter)
+  ), [healthFilter, households]);
 
   const applyMunicipalityLimits = useCallback((fit = false) => {
     const map = mapRef.current;
@@ -420,7 +436,7 @@ export default function DashboardMap({
     if (markerLayerRef.current) map.removeLayer(markerLayerRef.current);
     const layerGroup = L.layerGroup();
 
-    households.forEach((household) => {
+    visibleHouseholds.forEach((household) => {
       const marker = L.marker([household.latitude, household.longitude], {
         icon: markerIcon(household, Boolean(selectedVillage)),
         keyboard: true,
@@ -435,7 +451,7 @@ export default function DashboardMap({
     });
 
     markerLayerRef.current = layerGroup.addTo(map);
-  }, [households, selectedVillage]);
+  }, [selectedVillage, visibleHouseholds]);
 
   useEffect(() => {
     window.requestAnimationFrame(() => applyMunicipalityLimits(false));
@@ -482,6 +498,21 @@ export default function DashboardMap({
           ))}
         </div>
 
+        <div className="v7-map-health-filter" aria-label="กรองสถานะสุขภาพ">
+          {Object.entries(HEALTH_FILTERS).map(([value, item]) => (
+            <button
+              type="button"
+              key={value}
+              className={`${healthFilter === value ? "is-active" : ""} ${item.className}`}
+              onClick={() => setHealthFilter(value)}
+              aria-pressed={healthFilter === value}
+            >
+              {value !== "ALL" ? <i /> : null}
+              {item.label}
+            </button>
+          ))}
+        </div>
+
         <div className="v6-map-actions">
           <button type="button" onClick={fitMunicipality}>ดูทั้งเขต</button>
           <button type="button" onClick={() => setFullscreen((value) => !value)}>
@@ -492,7 +523,7 @@ export default function DashboardMap({
 
       <div className="v6-map-stage">
         <div ref={mapElementRef} className="v6-map-canvas" />
-        {!households.length ? (
+        {!visibleHouseholds.length ? (
           <div className="v6-map-empty">
             <strong>ไม่พบจุดพิกัดในตัวกรองนี้</strong>
             <span>รายการที่ไม่มี latitude และ longitude จะไม่ถูกสร้างเป็นหมุดจำลอง</span>
@@ -509,6 +540,7 @@ export default function DashboardMap({
 
       <DataQualityBar
         diagnostics={normalized.diagnostics}
+        visibleCount={visibleHouseholds.length}
         householdCount={households.length}
         households={households}
       />

@@ -278,57 +278,114 @@ function LatestCitizenData({ items, navigate }) {
 
 function buildVillageHealth(mapItems) {
   const rows = new Map();
+
   mapItems.forEach((pet) => {
     const villageNo = toNumber(pet.villageNo);
     if (!villageNo) return;
-    const current = rows.get(villageNo) || { villageNo, critical: 0, partial: 0, complete: 0, total: 0 };
+
+    const current = rows.get(villageNo) || {
+      villageNo,
+      critical: 0,
+      partial: 0,
+      complete: 0,
+      total: 0,
+    };
     const vaccinated = Boolean(pet.vaccinated);
     const sterilized = Boolean(pet.sterilized);
+
     if (vaccinated && sterilized) current.complete += 1;
     else if (vaccinated || sterilized) current.partial += 1;
     else current.critical += 1;
+
     current.total += 1;
     rows.set(villageNo, current);
   });
+
   return [...rows.values()].sort((a, b) => {
-    const riskA = (a.critical * 2) + a.partial;
-    const riskB = (b.critical * 2) + b.partial;
-    return riskB - riskA || b.total - a.total;
+    const riskRatioA = a.total ? ((a.critical * 2) + a.partial) / (a.total * 2) : 0;
+    const riskRatioB = b.total ? ((b.critical * 2) + b.partial) / (b.total * 2) : 0;
+    return riskRatioB - riskRatioA || b.critical - a.critical || b.total - a.total;
   });
 }
 
 function VillageAttention({ mapItems, selectedVillage, onSelect }) {
   const rows = useMemo(() => buildVillageHealth(mapItems).slice(0, 6), [mapItems]);
+
   return (
     <section className="v6-card v6-village-attention">
-      <header className="v6-card-head">
+      <header className="v6-card-head v7-village-head">
         <div>
           <span>พื้นที่ควรติดตาม</span>
-          <h2>หมู่บ้านตามสถานะสุขภาพ</h2>
-          <p>จัดลำดับจากสัตว์ที่ยังไม่มีวัคซีนและยังไม่ทำหมัน</p>
+          <h2>หมู่บ้านตามสัดส่วนสุขภาพ</h2>
+          <p>เรียงจากสัดส่วนสัตว์ที่ต้องติดตาม ไม่ใช่จากจำนวนสัตว์รวมเพียงอย่างเดียว</p>
+        </div>
+        <div className="v7-health-legend" aria-label="คำอธิบายสีสถานะ">
+          <span className="is-critical"><i />แดง</span>
+          <span className="is-partial"><i />ส้ม</span>
+          <span className="is-complete"><i />เขียว</span>
         </div>
       </header>
 
       {rows.length ? (
-        <div className="v6-village-health-list">
+        <div className="v7-village-distribution-list">
           {rows.map((row) => {
             const active = Number(selectedVillage) === row.villageNo;
+            const total = Math.max(1, row.total);
+            const criticalPercent = (row.critical / total) * 100;
+            const partialPercent = (row.partial / total) * 100;
+            const completePercent = (row.complete / total) * 100;
+            const followUp = row.critical + row.partial;
+
             return (
               <button
                 type="button"
                 key={row.villageNo}
                 className={active ? "is-active" : ""}
                 onClick={() => onSelect(active ? null : row.villageNo)}
+                aria-label={`หมู่ ${row.villageNo} สัตว์ ${row.total} ตัว แดง ${row.critical} ส้ม ${row.partial} เขียว ${row.complete}`}
               >
                 <span className="v6-village-number">{row.villageNo}</span>
-                <span className="v6-village-health-copy">
+                <span className="v7-village-summary">
                   <strong>หมู่ {row.villageNo}</strong>
-                  <small>สัตว์ในพิกัด {row.total.toLocaleString("th-TH")} ตัว</small>
+                  <small>ต้องติดตาม {followUp.toLocaleString("th-TH")} จาก {row.total.toLocaleString("th-TH")} ตัว</small>
                 </span>
-                <span className="v6-health-counts">
-                  <em className="is-critical">แดง {row.critical}</em>
-                  <em className="is-partial">ส้ม {row.partial}</em>
-                  <em className="is-complete">เขียว {row.complete}</em>
+                <span className="v7-health-distribution">
+                  <span
+                    className="v7-health-bar"
+                    role="img"
+                    aria-label={`แดง ${Math.round(criticalPercent)} เปอร์เซ็นต์ ส้ม ${Math.round(partialPercent)} เปอร์เซ็นต์ เขียว ${Math.round(completePercent)} เปอร์เซ็นต์`}
+                  >
+                    {row.critical > 0 ? (
+                      <i
+                        className="is-critical"
+                        style={{ width: `${criticalPercent}%` }}
+                        title={`แดง ${row.critical} ตัว (${Math.round(criticalPercent)}%)`}
+                      />
+                    ) : null}
+                    {row.partial > 0 ? (
+                      <i
+                        className="is-partial"
+                        style={{ width: `${partialPercent}%` }}
+                        title={`ส้ม ${row.partial} ตัว (${Math.round(partialPercent)}%)`}
+                      />
+                    ) : null}
+                    {row.complete > 0 ? (
+                      <i
+                        className="is-complete"
+                        style={{ width: `${completePercent}%` }}
+                        title={`เขียว ${row.complete} ตัว (${Math.round(completePercent)}%)`}
+                      />
+                    ) : null}
+                  </span>
+                  <span className="v7-health-values" aria-hidden="true">
+                    <em className="is-critical">แดง {row.critical}</em>
+                    <em className="is-partial">ส้ม {row.partial}</em>
+                    <em className="is-complete">เขียว {row.complete}</em>
+                  </span>
+                </span>
+                <span className="v7-village-total">
+                  <strong>{row.total.toLocaleString("th-TH")}</strong>
+                  <small>ตัว</small>
                 </span>
               </button>
             );
