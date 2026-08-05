@@ -87,7 +87,7 @@ function isUrgent(item) {
 
 function SummaryCard({ label, value, detail }) {
   return (
-    <article className="panel" style={{ padding: "18px", minHeight: "112px" }}>
+    <article className="panel review-summary-card">
       <span style={{ color: "var(--muted, #6d817a)", fontSize: "13px" }}>{label}</span>
       <strong style={{ display: "block", marginTop: "8px", fontSize: "28px" }}>
         {Number(value || 0).toLocaleString("th-TH")}
@@ -286,7 +286,7 @@ export default function RegistrationsPage({ token }) {
         <SummaryCard label="เร่งด่วน" value={summary.urgent} detail="รอตรวจตั้งแต่ 3 วันขึ้นไป" />
       </section>
 
-      <article className="panel module-panel" style={{ marginBottom: "16px" }}>
+      <article className="panel module-panel review-filter-panel">
         <form
           onSubmit={applySearch}
           style={{
