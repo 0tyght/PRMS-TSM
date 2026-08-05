@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import RootErrorBoundary from "./components/layout/RootErrorBoundary.jsx";
 import "./styles.css";
-import "./redesign-v5.css";
+import "./ux-foundation-v6.css";
 const rootElement = document.getElementById("root");
 const fatalElement = document.getElementById("fatal-root");
 
