@@ -18,6 +18,8 @@ import { authenticate, errorHandler, requestContext, requireRole } from "./middl
 import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "./reportExports.js";
 import { openApiDocument } from "./openapi.js";
 import { deliverLineNotification, enqueueLineNotification } from "./lineNotifications.js";
+import { registerCitizenExperienceRoutes } from "./citizenExperience.js";
+import { handleLineWebhook } from "./lineBot.js";
 import { createMfaSecret, createOtpAuthUrl, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "./mfa.js";
 
 const registrationSchema = z.object({
@@ -27,6 +29,8 @@ const registrationSchema = z.object({
   houseNo: z.string().trim().min(1).max(30),
   villageId: z.coerce.number().int().positive(),
   addressDetail: z.string().trim().max(255).optional().default(""),
+  latitude: z.coerce.number().min(-90).max(90).nullable().optional().default(null),
+  longitude: z.coerce.number().min(-180).max(180).nullable().optional().default(null),
   petName: z.string().trim().min(1).max(100),
   species: z.enum(["DOG", "CAT"]),
   sex: z.enum(["MALE", "FEMALE", "UNKNOWN"]).default("UNKNOWN"),
@@ -451,7 +455,11 @@ async function findOwner(db, input) {
 async function findOrCreateHousehold(db, input) {
   const [rows] = await db.execute(
     `
-      SELECT id, address_detail AS addressDetail
+      SELECT
+        id,
+        address_detail AS addressDetail,
+        latitude,
+        longitude
       FROM households
       WHERE deleted_at IS NULL
         AND village_id = ?
@@ -463,19 +471,31 @@ async function findOrCreateHousehold(db, input) {
     [input.villageId, input.houseNo],
   );
 
+  const latitude = Number.isFinite(Number(input.latitude))
+    ? Number(input.latitude)
+    : null;
+  const longitude = Number.isFinite(Number(input.longitude))
+    ? Number(input.longitude)
+    : null;
+
   const existing = rows[0];
 
   if (existing) {
-    if (!existing.addressDetail && input.addressDetail) {
-      await db.execute(
-        `
-          UPDATE households
-          SET address_detail = ?
-          WHERE id = ?
-        `,
-        [input.addressDetail, existing.id],
-      );
-    }
+    await db.execute(
+      `
+        UPDATE households
+        SET address_detail = COALESCE(NULLIF(?, ''), address_detail),
+            latitude = COALESCE(?, latitude),
+            longitude = COALESCE(?, longitude)
+        WHERE id = ?
+      `,
+      [
+        input.addressDetail || "",
+        latitude,
+        longitude,
+        existing.id,
+      ],
+    );
 
     return existing.id;
   }
@@ -488,11 +508,20 @@ async function findOrCreateHousehold(db, input) {
         id,
         house_no,
         village_id,
-        address_detail
+        address_detail,
+        latitude,
+        longitude
       )
-      VALUES (?, ?, ?, NULLIF(?, ''))
+      VALUES (?, ?, ?, NULLIF(?, ''), ?, ?)
     `,
-    [householdId, input.houseNo, input.villageId, input.addressDetail],
+    [
+      householdId,
+      input.houseNo,
+      input.villageId,
+      input.addressDetail,
+      latitude,
+      longitude,
+    ],
   );
 
   return householdId;
@@ -500,6 +529,12 @@ async function findOrCreateHousehold(db, input) {
 
 async function findOrCreateOwner(db, input) {
   const existingOwner = await findOwner(db, input);
+  const latitude = Number.isFinite(Number(input.latitude))
+    ? Number(input.latitude)
+    : null;
+  const longitude = Number.isFinite(Number(input.longitude))
+    ? Number(input.longitude)
+    : null;
 
   if (existingOwner) {
     await db.execute(
@@ -512,6 +547,27 @@ async function findOrCreateOwner(db, input) {
         WHERE id = ?
       `,
       [input.ownerName, input.phone, existingOwner.id],
+    );
+
+    await db.execute(
+      `
+        UPDATE households
+        SET house_no = ?,
+            village_id = ?,
+            address_detail = COALESCE(NULLIF(?, ''), address_detail),
+            latitude = COALESCE(?, latitude),
+            longitude = COALESCE(?, longitude)
+        WHERE id = ?
+          AND deleted_at IS NULL
+      `,
+      [
+        input.houseNo,
+        input.villageId,
+        input.addressDetail || "",
+        latitude,
+        longitude,
+        existingOwner.householdId,
+      ],
     );
 
     return {
@@ -913,6 +969,14 @@ export function createApp() {
       credentials: true,
     }),
   );
+  app.post(
+    ["/api/line/webhook", "/api/v1/line/webhook"],
+    express.raw({
+      type: "application/json",
+      limit: "1mb",
+    }),
+    handleLineWebhook,
+  );
   app.use(express.json({ limit: "15mb" }));
 
   // Keep the original /api routes compatible while making /api/v1 the stable contract.
@@ -1091,6 +1155,8 @@ export function createApp() {
   app.get("/api/public/line-config", (_req, res) => {
     res.json({ data: { enabled: Boolean(config.lineLiffId), liffId: config.lineLiffId || null } });
   });
+
+  registerCitizenExperienceRoutes(app);
 
   app.post("/api/citizen/line/session", lineSessionRateLimit, async (req, res, next) => {
     try {

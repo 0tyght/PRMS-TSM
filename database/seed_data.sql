@@ -1,5 +1,8 @@
 USE prms_tsm;
 
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+
 INSERT INTO villages (village_no, name_th) VALUES
   (1, 'หมู่ที่ 1'), (2, 'หมู่ที่ 2'), (3, 'หมู่ที่ 3'),
   (4, 'หมู่ที่ 4'), (5, 'หมู่ที่ 5'), (6, 'หมู่ที่ 6'),

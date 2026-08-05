@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { config } from "./config.js";
 import { pool } from "./db.js";
+import { syncRichMenuForLineUser } from "./citizenExperience.js";
 
 export async function enqueueLineNotification(db, { ownerId, entityType, entityId, lineUserId, templateCode, message }) {
   const id = crypto.randomUUID();
@@ -50,6 +51,12 @@ export async function deliverLineNotification(id) {
         `UPDATE notifications SET delivery_status = 'SENT', sent_at = NOW(), last_http_status = ?, last_error = NULL WHERE id = ?`,
         [response.status, id],
       );
+      await syncRichMenuForLineUser(notification.lineUserId).catch((error) => {
+        console.error(
+          "[line-notification] rich menu sync failed",
+          String(error?.message || error),
+        );
+      });
       return { status: "SENT", httpStatus: response.status };
     }
     const errorText = (await response.text().catch(() => "")).slice(0, 500);
@@ -102,7 +109,7 @@ export async function enqueueVaccinationReminders() {
            THEN 'เกินกำหนดฉีดวัคซีนตั้งแต่วันที่ '
            ELSE 'ใกล้ถึงกำหนดฉีดวัคซีนวันที่ ' END,
          DATE_FORMAT(vr.next_due_at, '%d/%m/%Y'),
-         ' กรุณาติดต่อเทศบาลท่าโพธ์หรือบันทึกข้อมูลวัคซีนล่าสุดผ่าน LINE'
+         ' กรุณาติดต่อเทศบาลเมืองท่าโพธิ์หรือบันทึกข้อมูลวัคซีนล่าสุดผ่าน LINE'
        ),
        'PENDING', NULL
      FROM pets p

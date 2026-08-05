@@ -6,7 +6,7 @@ export const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   namedPlaceholders: true,
-  timezone: "+07:00",
+  timezone: "+07:00", charset: "utf8mb4",
 });
 
 export async function withTransaction(work) {

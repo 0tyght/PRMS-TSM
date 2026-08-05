@@ -1,28 +1,92 @@
 import { createApp } from "./app.js";
 import { config } from "./config.js";
-import { enqueueVaccinationReminders, processPendingLineNotifications } from "./lineNotifications.js";
+import {
+  enqueueVaccinationReminders,
+  processPendingLineNotifications,
+} from "./lineNotifications.js";
 
-const server = createApp().listen(config.port, () => {
+const app = createApp();
+const server = app.listen(config.port, () => {
   console.log(`PRMS-TSM API listening on http://localhost:${config.port}`);
-  void enqueueVaccinationReminders()
-    .then(() => processPendingLineNotifications())
-    .catch((error) => console.error("Initial notification processing failed", error));
 });
 
-const notificationTimer = setInterval(() => {
-  void processPendingLineNotifications().catch((error) => console.error("Notification retry failed", error));
-}, 60_000);
-notificationTimer.unref();
+let queueRunning = false;
+let reminderRunning = false;
 
-const reminderTimer = setInterval(() => {
-  void enqueueVaccinationReminders().catch((error) => console.error("Vaccination reminder queue failed", error));
-}, 60 * 60_000);
+async function processNotificationQueue() {
+  if (queueRunning) return;
+  queueRunning = true;
+
+  try {
+    const results = await processPendingLineNotifications(30);
+    const sent = results.filter((item) => item.status === "SENT").length;
+
+    if (results.length) {
+      console.log(
+        `[line-notification] processed=${results.length} sent=${sent}`,
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[line-notification] queue failed",
+      String(error?.message || error),
+    );
+  } finally {
+    queueRunning = false;
+  }
+}
+
+async function scanVaccinationReminders() {
+  if (reminderRunning) return;
+  reminderRunning = true;
+
+  try {
+    const result = await enqueueVaccinationReminders();
+
+    if (result.queued) {
+      console.log(
+        `[line-notification] vaccination reminders queued=${result.queued}`,
+      );
+      await processNotificationQueue();
+    }
+  } catch (error) {
+    console.error(
+      "[line-notification] reminder scan failed",
+      String(error?.message || error),
+    );
+  } finally {
+    reminderRunning = false;
+  }
+}
+
+void processNotificationQueue();
+void scanVaccinationReminders();
+
+const queueTimer = setInterval(
+  () => void processNotificationQueue(),
+  60_000,
+);
+const reminderTimer = setInterval(
+  () => void scanVaccinationReminders(),
+  6 * 60 * 60 * 1000,
+);
+
+queueTimer.unref();
 reminderTimer.unref();
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.once(signal, () => {
-    clearInterval(notificationTimer);
-    clearInterval(reminderTimer);
-    server.close(() => process.exit(0));
+function shutdown(signal) {
+  console.log(`[server] received ${signal}; shutting down`);
+  clearInterval(queueTimer);
+  clearInterval(reminderTimer);
+
+  server.close(() => {
+    process.exit(0);
   });
+
+  setTimeout(() => {
+    process.exit(1);
+  }, 10_000).unref();
 }
+
+process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("SIGTERM", () => shutdown("SIGTERM"));

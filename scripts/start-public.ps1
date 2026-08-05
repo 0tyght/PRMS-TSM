@@ -187,7 +187,7 @@ function Invoke-DatabaseMigrations {
         $env:MYSQL_PWD = $password
         foreach ($migration in Get-ChildItem (Join-Path $Root "database\migrations") -Filter "*.sql" | Sort-Object Name) {
             $sourcePath = $migration.FullName.Replace("\", "/")
-            & $mysql "--host=$hostName" "--port=$port" "--user=$user" "--database=$database" "--execute=source $sourcePath"
+            & $mysql "--default-character-set=utf8mb4" "--host=$hostName" "--port=$port" "--user=$user" "--database=$database" "--execute=source $sourcePath"
             if ($LASTEXITCODE -ne 0) { throw ("Database migration failed: {0}" -f $migration.Name) }
         }
     }

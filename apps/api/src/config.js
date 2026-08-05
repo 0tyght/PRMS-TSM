@@ -108,9 +108,17 @@ export const config = Object.freeze({
 
   lineChannelId: readText(process.env.LINE_CHANNEL_ID),
 
+  lineChannelSecret: readText(process.env.LINE_CHANNEL_SECRET),
+
   lineLiffId: readText(process.env.LINE_LIFF_ID),
 
   lineChannelAccessToken: readText(process.env.LINE_CHANNEL_ACCESS_TOKEN),
+
+  lineRichMenuGuestId: readText(process.env.LINE_RICH_MENU_GUEST_ID),
+
+  lineRichMenuOwnerId: readText(process.env.LINE_RICH_MENU_OWNER_ID),
+
+  lineRichMenuActionId: readText(process.env.LINE_RICH_MENU_ACTION_ID),
 
   lineConfigured: Boolean(
     readText(process.env.LINE_CHANNEL_ID) &&
