@@ -85,10 +85,17 @@ function Invoke-LineJson {
     }
 
     if ($null -ne $Body) {
-        $Arguments["ContentType"] = "application/json"
-        $Arguments["Body"] = (
+        $JsonBody = (
             $Body |
             ConvertTo-Json -Depth 20 -Compress
+        )
+
+        # Windows PowerShell 5.1 may encode string request bodies with
+        # the active ANSI code page. Send UTF-8 bytes explicitly so
+        # LINE stores Thai label, displayText, and chatBarText correctly.
+        $Arguments["ContentType"] = "application/json; charset=utf-8"
+        $Arguments["Body"] = [System.Text.Encoding]::UTF8.GetBytes(
+            $JsonBody
         )
     }
 
@@ -105,7 +112,7 @@ function Invoke-LineJson {
     }
 }
 
-function New-UriAction {
+function New-UriArea {
     param(
         [int]$X,
         [int]$Y,
@@ -126,31 +133,6 @@ function New-UriAction {
             type = "uri"
             label = $Label
             uri = $Uri
-        }
-    }
-}
-
-function New-MessageAction {
-    param(
-        [int]$X,
-        [int]$Y,
-        [int]$Width,
-        [int]$Height,
-        [string]$Label,
-        [string]$Text
-    )
-
-    return @{
-        bounds = @{
-            x = $X
-            y = $Y
-            width = $Width
-            height = $Height
-        }
-        action = @{
-            type = "message"
-            label = $Label
-            text = $Text
         }
     }
 }
@@ -224,13 +206,13 @@ $script:AccessToken = Get-DotEnvValue `
     -Path $EnvPath `
     -Name "LINE_CHANNEL_ACCESS_TOKEN"
 
-$LiffId = Get-DotEnvValue `
-    -Path $EnvPath `
-    -Name "LINE_LIFF_ID"
-
 if (-not $script:AccessToken) {
     throw "LINE_CHANNEL_ACCESS_TOKEN ยังว่างอยู่"
 }
+
+$LiffId = Get-DotEnvValue `
+    -Path $EnvPath `
+    -Name "LINE_LIFF_ID"
 
 if (-not $LiffId) {
     throw "LINE_LIFF_ID ยังว่างอยู่"
@@ -251,6 +233,29 @@ foreach ($Image in @($GuestImage, $OwnerImage, $ActionImage)) {
 }
 
 $LiffBase = "https://liff.line.me/$LiffId"
+
+function Get-LiffUrl {
+    param(
+        [string]$View = "home",
+        [string]$Section = "",
+        [string]$Action = ""
+    )
+
+    $Pairs = @(
+        "view=$([Uri]::EscapeDataString($View))"
+    )
+
+    if ($Section) {
+        $Pairs += "section=$([Uri]::EscapeDataString($Section))"
+    }
+
+    if ($Action) {
+        $Pairs += "action=$([Uri]::EscapeDataString($Action))"
+    }
+
+    return "$LiffBase`?$($Pairs -join '&')"
+}
+
 $TopY = 95
 $CellWidth = 833
 $LastWidth = 834
@@ -258,85 +263,99 @@ $TopHeight = 795
 $BottomY = 890
 $BottomHeight = 796
 
-function Liff-Url {
-    param([string]$Query)
-    return "$LiffBase`?$Query"
-}
-
 $GuestAreas = @(
-    (New-UriAction 0 $TopY $CellWidth $TopHeight "ลงทะเบียนสัตว์" (Liff-Url "view=register")),
-    (New-UriAction $CellWidth $TopY $CellWidth $TopHeight "ติดตามคำขอ" (Liff-Url "view=track")),
-    (New-UriAction 1666 $TopY $LastWidth $TopHeight "เชื่อมทะเบียน" (Liff-Url "view=account")),
-    (New-UriAction 0 $BottomY $CellWidth $BottomHeight "ข้อมูลบริการ" (Liff-Url "view=home")),
-    (New-MessageAction $CellWidth $BottomY $CellWidth $BottomHeight "ติดต่อเทศบาล" "ติดต่อเทศบาล"),
-    (New-MessageAction 1666 $BottomY $LastWidth $BottomHeight "เมนูช่วยเหลือ" "เมนู")
+    (New-UriArea 0 $TopY $CellWidth $TopHeight "ลงทะเบียนสัตว์" (Get-LiffUrl -View "register")),
+    (New-UriArea $CellWidth $TopY $CellWidth $TopHeight "ติดตามคำขอ" (Get-LiffUrl -View "track")),
+    (New-UriArea 1666 $TopY $LastWidth $TopHeight "เชื่อมทะเบียนเดิม" (Get-LiffUrl -View "account" -Section "profile")),
+    (New-UriArea 0 $BottomY $CellWidth $BottomHeight "วิธีใช้งาน" (Get-LiffUrl -View "home")),
+    (New-UriArea $CellWidth $BottomY $CellWidth $BottomHeight "ติดต่อเทศบาล" (Get-LiffUrl -View "home" -Section "contact")),
+    (New-UriArea 1666 $BottomY $LastWidth $BottomHeight "เมนูหลัก" (Get-LiffUrl -View "home"))
 )
 
 $OwnerAreas = @(
-    (New-UriAction 0 $TopY $CellWidth $TopHeight "สัตว์ของฉัน" (Liff-Url "view=account&section=pets")),
-    (New-UriAction $CellWidth $TopY $CellWidth $TopHeight "เพิ่มสัตว์" (Liff-Url "view=register")),
-    (New-UriAction 1666 $TopY $LastWidth $TopHeight "แจ้งวัคซีน" (Liff-Url "view=account&action=vaccination")),
-    (New-UriAction 0 $BottomY $CellWidth $BottomHeight "แจ้งทำหมัน" (Liff-Url "view=account&action=sterilization")),
-    (New-UriAction $CellWidth $BottomY $CellWidth $BottomHeight "แจ้งสถานะ" (Liff-Url "view=account&action=status")),
-    (New-UriAction 1666 $BottomY $LastWidth $BottomHeight "ตำแหน่งบ้าน" (Liff-Url "view=account&section=location"))
+    (New-UriArea 0 $TopY $CellWidth $TopHeight "สัตว์ของฉัน" (Get-LiffUrl -View "account" -Section "pets")),
+    (New-UriArea $CellWidth $TopY $CellWidth $TopHeight "เพิ่มสัตว์" (Get-LiffUrl -View "register")),
+    (New-UriArea 1666 $TopY $LastWidth $TopHeight "สุขภาพสัตว์" (Get-LiffUrl -View "account" -Action "vaccination")),
+    (New-UriArea 0 $BottomY $CellWidth $BottomHeight "แจ้งสถานะสัตว์" (Get-LiffUrl -View "account" -Action "status")),
+    (New-UriArea $CellWidth $BottomY $CellWidth $BottomHeight "คำขอของฉัน" (Get-LiffUrl -View "account" -Section "requests")),
+    (New-UriArea 1666 $BottomY $LastWidth $BottomHeight "ข้อมูลเจ้าของ" (Get-LiffUrl -View "account" -Section "profile"))
 )
 
 $ActionAreas = @(
-    (New-UriAction 0 $TopY $CellWidth $TopHeight "สถานะคำขอ" (Liff-Url "view=account&section=attention")),
-    (New-UriAction $CellWidth $TopY $CellWidth $TopHeight "วัคซีนถึงกำหนด" (Liff-Url "view=account&action=vaccination")),
-    (New-UriAction 1666 $TopY $LastWidth $TopHeight "แจ้งสัตว์สูญหาย" (Liff-Url "view=account&action=status")),
-    (New-UriAction 0 $BottomY $CellWidth $BottomHeight "คำขอของฉัน" (Liff-Url "view=account&section=requests")),
-    (New-UriAction $CellWidth $BottomY $CellWidth $BottomHeight "ตำแหน่งบ้าน" (Liff-Url "view=account&section=location")),
-    (New-UriAction 1666 $BottomY $LastWidth $BottomHeight "ข้อมูลของฉัน" (Liff-Url "view=account"))
+    (New-UriArea 0 $TopY $CellWidth $TopHeight "รายการต้องทำ" (Get-LiffUrl -View "account" -Section "attention")),
+    (New-UriArea $CellWidth $TopY $CellWidth $TopHeight "สุขภาพสัตว์" (Get-LiffUrl -View "account" -Action "vaccination")),
+    (New-UriArea 1666 $TopY $LastWidth $TopHeight "แจ้งสถานะสัตว์" (Get-LiffUrl -View "account" -Action "status")),
+    (New-UriArea 0 $BottomY $CellWidth $BottomHeight "คำขอของฉัน" (Get-LiffUrl -View "account" -Section "requests")),
+    (New-UriArea $CellWidth $BottomY $CellWidth $BottomHeight "ตำแหน่งบ้าน" (Get-LiffUrl -View "account" -Section "location")),
+    (New-UriArea 1666 $BottomY $LastWidth $BottomHeight "ข้อมูลเจ้าของ" (Get-LiffUrl -View "account" -Section "profile"))
 )
 
 $MenuNames = @(
-    "PRMS-TSM Guest Dynamic V2",
-    "PRMS-TSM Owner Dynamic V2",
-    "PRMS-TSM Action Dynamic V2"
+    "PRMS-TSM Guest LIFF First V6",
+    "PRMS-TSM Owner LIFF First V6",
+    "PRMS-TSM Action LIFF First V6"
 )
 
-if (-not $KeepPreviousMenus) {
-    Write-Host "กำลังตรวจ Rich Menu รุ่นเดิม..."
+$ObsoleteMenuNames = @(
+    "PRMS-TSM Guest Dynamic V2",
+    "PRMS-TSM Owner Dynamic V2",
+    "PRMS-TSM Action Dynamic V2",
+    "PRMS-TSM Guest Dynamic V3",
+    "PRMS-TSM Owner Dynamic V3",
+    "PRMS-TSM Action Dynamic V3",
+    "PRMS-TSM Guest Native V4",
+    "PRMS-TSM Owner Native V4",
+    "PRMS-TSM Action Native V4",
+    "PRMS-TSM Guest Native V5",
+    "PRMS-TSM Owner Native V5",
+    "PRMS-TSM Action Native V5",
+    "PRMS-TSM Guest LIFF First V6",
+    "PRMS-TSM Owner LIFF First V6",
+    "PRMS-TSM Action LIFF First V6"
+)
 
-    try {
-        Invoke-LineJson `
-            -Method DELETE `
-            -Uri "https://api.line.me/v2/bot/user/all/richmenu" |
-            Out-Null
-    } catch {
-        Write-Host "ยังไม่มี Default Rich Menu เดิม หรือไม่จำเป็นต้องยกเลิก"
-    }
+Write-Host "กำลังอ่านรายการ Rich Menu เดิม..."
+$Existing = Invoke-LineJson `
+    -Method GET `
+    -Uri "https://api.line.me/v2/bot/richmenu/list"
 
-    $Existing = Invoke-LineJson `
-        -Method GET `
-        -Uri "https://api.line.me/v2/bot/richmenu/list"
-
-    foreach ($Menu in @($Existing.richmenus)) {
-        if ($MenuNames -contains [string]$Menu.name) {
-            Write-Host "ลบรุ่นเดิม: $($Menu.name)"
-            Invoke-LineJson `
-                -Method DELETE `
-                -Uri "https://api.line.me/v2/bot/richmenu/$($Menu.richMenuId)" |
-                Out-Null
-        }
-    }
+$OldMenus = @($Existing.richmenus) | Where-Object {
+    $ObsoleteMenuNames -contains [string]$_.name
 }
 
+# สร้างครบทั้งสามชุดก่อนเปลี่ยน Default เพื่อไม่ให้บริการเดิมหายเมื่อ API ขัดข้อง
+$OwnerId = ""
+$ActionId = ""
 $GuestId = New-RichMenu `
     -Name $MenuNames[0] `
     -Areas $GuestAreas `
     -ImagePath $GuestImage
 
-$OwnerId = New-RichMenu `
-    -Name $MenuNames[1] `
-    -Areas $OwnerAreas `
-    -ImagePath $OwnerImage
+try {
+    $OwnerId = New-RichMenu `
+        -Name $MenuNames[1] `
+        -Areas $OwnerAreas `
+        -ImagePath $OwnerImage
 
-$ActionId = New-RichMenu `
-    -Name $MenuNames[2] `
-    -Areas $ActionAreas `
-    -ImagePath $ActionImage
+    $ActionId = New-RichMenu `
+        -Name $MenuNames[2] `
+        -Areas $ActionAreas `
+        -ImagePath $ActionImage
+} catch {
+    foreach ($CreatedId in @($GuestId, $OwnerId, $ActionId)) {
+        if ($CreatedId) {
+            try {
+                Invoke-LineJson `
+                    -Method DELETE `
+                    -Uri "https://api.line.me/v2/bot/richmenu/$CreatedId" |
+                    Out-Null
+            } catch {
+                Write-Warning "ลบ Rich Menu ที่สร้างค้างไว้ไม่สำเร็จ: $CreatedId"
+            }
+        }
+    }
+    throw
+}
 
 Write-Host "กำลังตั้งเมนูเริ่มต้น..."
 Invoke-LineJson `
@@ -349,15 +368,34 @@ Set-DotEnvValue $EnvPath "LINE_RICH_MENU_OWNER_ID" $OwnerId
 Set-DotEnvValue $EnvPath "LINE_RICH_MENU_ACTION_ID" $ActionId
 
 Write-Host ""
-Write-Host "กำลังซิงก์ Rich Menu ให้บัญชี LINE ที่เชื่อมทะเบียนแล้ว..."
+Write-Host "กำลังซิงก์ Rich Menu ให้บัญชี LINE จริงที่เชื่อมทะเบียนแล้ว..."
 & node (Join-Path $RepoRoot "scripts\sync-line-rich-menus.mjs")
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Warning "สร้างเมนูสำเร็จ แต่บางบัญชียังซิงก์ไม่ครบ ระบบจะลองใหม่เมื่อผู้ใช้เปิด LIFF หรือส่งข้อความหา Bot"
+    Write-Warning "สร้างเมนูสำเร็จ แต่บางบัญชียังซิงก์ไม่ครบ ระบบจะลองใหม่เมื่อผู้ใช้ส่งข้อความหา Bot"
+}
+
+if (-not $KeepPreviousMenus) {
+    Write-Host "กำลังลบ Rich Menu รุ่นเดิมหลังเปิดรุ่นใหม่สำเร็จ..."
+    $NewIds = @($GuestId, $OwnerId, $ActionId)
+
+    foreach ($Menu in $OldMenus) {
+        if ($NewIds -notcontains [string]$Menu.richMenuId) {
+            try {
+                Write-Host "ลบรุ่นเดิม: $($Menu.name)"
+                Invoke-LineJson `
+                    -Method DELETE `
+                    -Uri "https://api.line.me/v2/bot/richmenu/$($Menu.richMenuId)" |
+                    Out-Null
+            } catch {
+                Write-Warning "ลบเมนูเดิมไม่สำเร็จ แต่เมนูใหม่ใช้งานได้แล้ว: $($Menu.richMenuId)"
+            }
+        }
+    }
 }
 
 Write-Host ""
-Write-Host "สร้าง Dynamic Rich Menu สำเร็จ" -ForegroundColor Green
+Write-Host "สร้าง LINE LIFF-first Rich Menu สำเร็จ" -ForegroundColor Green
 Write-Host ""
 Write-Host "Guest : $GuestId"
 Write-Host "Owner : $OwnerId"
@@ -365,9 +403,4 @@ Write-Host "Action: $ActionId"
 Write-Host ""
 Write-Host "บันทึก ID ลง .env แล้ว"
 Write-Host "ตั้ง Guest เป็น Default Rich Menu แล้ว"
-Write-Host ""
-Write-Host "ให้รีสตาร์ตเฉพาะ API เพื่อโหลด Rich Menu ID โดยคง Tunnel เดิมไว้"
-Write-Host "ดูคำสั่งที่ตัวติดตั้งแสดงหลังทำงานเสร็จ"
-Write-Host ""
-Write-Host "เมื่อผู้ใช้เปิด LIFF หรือส่งข้อความหา Bot"
-Write-Host "ระบบจะเลือก Guest / Owner / Action จากข้อมูลจริงของผู้ใช้นั้น"
+Write-Host "ทุกปุ่มเปิด LIFF ไปยังหน้าที่เกี่ยวข้องโดยตรง และเมนูเปลี่ยนตามข้อมูลจริง"

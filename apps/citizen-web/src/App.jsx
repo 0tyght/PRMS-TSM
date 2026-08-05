@@ -60,7 +60,7 @@ function routeFromUrl() {
   };
 }
 
-function setRoute(view, extras = {}) {
+function setRoute(view, extras = {}, options = {}) {
   const url = new URL(window.location.href);
   url.search = "";
   url.searchParams.set("view", view);
@@ -69,7 +69,21 @@ function setRoute(view, extras = {}) {
     if (value) url.searchParams.set(key, value);
   });
 
-  window.history.replaceState({}, "", url);
+  const state = { view, ...extras };
+  if (options.replace) {
+    window.history.replaceState(state, "", url);
+  } else {
+    window.history.pushState(state, "", url);
+  }
+}
+
+function formatTime(value) {
+  if (!value) return "ยังไม่อัปเดต";
+  return new Intl.DateTimeFormat("th-TH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(value);
 }
 
 function formatDate(value) {
@@ -101,38 +115,106 @@ function pickVaccinationPet(pets = []) {
     })[0] || null;
 }
 
-function Shell({ children, onNavigate, activeView }) {
+function Shell({
+  children,
+  onNavigate,
+  onBack,
+  onClose,
+  onRefresh,
+  activeView,
+  activeSection,
+  experience,
+  refreshing,
+  lastUpdatedAt,
+  toast,
+}) {
+  const linked = Boolean(experience?.linked);
+  const actionCount = Number(experience?.counts?.needsAttention || 0) +
+    Number(experience?.counts?.vaccinationDue || 0) +
+    Number(experience?.counts?.missingPets || 0) +
+    (experience?.location?.missing ? 1 : 0);
+  const showBack = activeView !== "home";
+  const activeKey = activeView === "home"
+    ? "home"
+    : activeView === "account" && activeSection === "requests"
+      ? "requests"
+      : activeView === "account" && activeSection === "profile"
+        ? "profile"
+        : activeView === "account"
+          ? "pets"
+          : activeView;
+
   return (
-    <div className="citizen-shell">
-      <header className="citizen-header">
-        <button
-          type="button"
-          className="brand-button"
-          onClick={() => onNavigate("home")}
-          aria-label="กลับหน้าหลัก"
-        >
-          <span className="brand-mark">TP</span>
-          <span>
-            <strong>ThaPho PET</strong>
-            <small>ทะเบียนและติดตามสัตว์เลี้ยง</small>
-          </span>
-        </button>
-        <button
-          type="button"
-          className="account-shortcut"
-          onClick={() => onNavigate("account")}
-        >
-          <span aria-hidden="true">●</span>
-          ข้อมูลของฉัน
-        </button>
+    <div className="citizen-shell liff-first-shell">
+      <header className="citizen-header liff-header">
+        <div className="liff-header-left">
+          {showBack ? (
+            <button
+              type="button"
+              className="liff-icon-button liff-back-button"
+              onClick={onBack}
+              aria-label="ย้อนกลับ"
+            >
+              ←
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="brand-button compact-brand"
+              onClick={() => onNavigate("home")}
+              aria-label="หน้าหลัก"
+            >
+              <span className="brand-mark">TP</span>
+              <span>
+                <strong>ThaPho PET</strong>
+                <small>บริการประชาชนผ่าน LINE</small>
+              </span>
+            </button>
+          )}
+        </div>
+
+        <div className="liff-header-actions">
+          <button
+            type="button"
+            className="liff-icon-button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label="อัปเดตข้อมูล"
+            title={`อัปเดตล่าสุด ${formatTime(lastUpdatedAt)}`}
+          >
+            {refreshing ? "…" : "↻"}
+          </button>
+          <button
+            type="button"
+            className="liff-icon-button"
+            onClick={onClose}
+            aria-label="ปิดหน้าบริการ"
+          >
+            ×
+          </button>
+        </div>
       </header>
+
+      {linked && actionCount > 0 && (
+        <button
+          type="button"
+          className="live-status-strip"
+          onClick={() => onNavigate("account", { section: "attention" })}
+        >
+          <span className="live-dot" />
+          มี {actionCount} รายการที่ควรตรวจสอบ
+          <strong>ดูเลย →</strong>
+        </button>
+      )}
 
       <main>{children}</main>
 
-      <nav className="bottom-nav" aria-label="เมนูหลัก">
+      {toast && <div className="liff-toast" role="status">{toast}</div>}
+
+      <nav className="bottom-nav liff-bottom-nav" aria-label="เมนูหลัก LIFF">
         <button
           type="button"
-          className={activeView === "home" ? "active" : ""}
+          className={activeKey === "home" ? "active" : ""}
           onClick={() => onNavigate("home")}
         >
           <span>⌂</span>
@@ -140,27 +222,27 @@ function Shell({ children, onNavigate, activeView }) {
         </button>
         <button
           type="button"
-          className={activeView === "register" ? "active" : ""}
-          onClick={() => onNavigate("register")}
+          className={activeKey === "pets" || activeKey === "register" ? "active" : ""}
+          onClick={() => onNavigate("account", { section: "pets" })}
         >
-          <span>＋</span>
-          ลงทะเบียน
+          <span>🐾</span>
+          สัตว์
         </button>
         <button
           type="button"
-          className={activeView === "track" ? "active" : ""}
-          onClick={() => onNavigate("track")}
+          className={activeKey === "requests" || activeKey === "track" ? "active" : ""}
+          onClick={() => onNavigate("account", { section: "requests" })}
         >
           <span>⌕</span>
-          ติดตาม
+          คำขอ
         </button>
         <button
           type="button"
-          className={activeView === "account" ? "active" : ""}
-          onClick={() => onNavigate("account")}
+          className={activeKey === "profile" ? "active" : ""}
+          onClick={() => onNavigate("account", { section: "profile" })}
         >
           <span>◎</span>
-          ของฉัน
+          ข้อมูลฉัน
         </button>
       </nav>
     </div>
@@ -180,85 +262,212 @@ function PageHeading({ eyebrow, title, description, action }) {
   );
 }
 
-function HomePage({ onNavigate }) {
+function DashboardMetric({ value, label, tone = "default" }) {
   return (
-    <div className="page">
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">บริการประชาชนตำบลท่าโพธิ์</p>
-          <h1>ดูแลสัตว์เลี้ยงให้ครบในที่เดียว</h1>
+    <div className={`dashboard-metric metric-${tone}`}>
+      <strong>{Number(value || 0).toLocaleString("th-TH")}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function HomePage({
+  lineBusy,
+  lineSession,
+  myData,
+  experience,
+  message,
+  lastUpdatedAt,
+  onNavigate,
+  onConnectLine,
+  onOpenRequest,
+}) {
+  const counts = experience?.counts || {};
+  const linked = Boolean(experience?.linked && myData?.linked);
+  const actionCount = Number(counts.needsAttention || 0) +
+    Number(counts.vaccinationDue || 0) +
+    Number(counts.missingPets || 0) +
+    (experience?.location?.missing ? 1 : 0);
+
+  let priority = {
+    title: "ข้อมูลของคุณเป็นปัจจุบัน",
+    description: "เลือกบริการที่ต้องการได้จากเมนูด้านล่าง",
+    label: "ดูสัตว์ของฉัน",
+    action: () => onNavigate("account", { section: "pets" }),
+    tone: "success",
+  };
+
+  if (Number(counts.needsAttention || 0) > 0) {
+    priority = {
+      title: "เจ้าหน้าที่ขอข้อมูลเพิ่มเติม",
+      description: `${counts.needsAttention} คำขอต้องแก้ไขก่อนดำเนินการต่อ`,
+      label: "แก้ไขคำขอ",
+      action: () => onNavigate("account", { section: "requests" }),
+      tone: "danger",
+    };
+  } else if (Number(counts.missingPets || 0) > 0) {
+    priority = {
+      title: "มีสัตว์อยู่ในสถานะสูญหาย",
+      description: `${counts.missingPets} ตัว กดเพื่อตรวจสอบหรือแจ้งพบแล้ว`,
+      label: "ดูสถานะสัตว์",
+      action: () => onNavigate("account", { action: "status" }),
+      tone: "warning",
+    };
+  } else if (Number(counts.vaccinationDue || 0) > 0) {
+    priority = {
+      title: "มีวัคซีนใกล้ถึงกำหนด",
+      description: `${counts.vaccinationDue} ตัว ควรตรวจสอบข้อมูลวัคซีน`,
+      label: "แจ้งวัคซีน",
+      action: () => onNavigate("account", { action: "vaccination" }),
+      tone: "warning",
+    };
+  } else if (experience?.location?.missing) {
+    priority = {
+      title: "ยังไม่มีตำแหน่งบ้าน",
+      description: "เพิ่มพิกัดเพื่อให้เจ้าหน้าที่วางแผนบริการในพื้นที่ได้ถูกต้อง",
+      label: "เพิ่มตำแหน่งบ้าน",
+      action: () => onNavigate("account", { section: "location" }),
+      tone: "warning",
+    };
+  } else if (Number(counts.pending || 0) > 0) {
+    priority = {
+      title: "คำขอกำลังดำเนินการ",
+      description: `${counts.pending} รายการอยู่ระหว่างตรวจสอบ`,
+      label: "ติดตามคำขอ",
+      action: () => onNavigate("account", { section: "requests" }),
+      tone: "info",
+    };
+  }
+
+  if (!lineSession) {
+    return (
+      <div className="page liff-dashboard-page">
+        <section className="dashboard-welcome guest-welcome">
+          <div className="dashboard-seal">TP</div>
+          <p className="eyebrow">บริการประชาชนเทศบาลท่าโพธิ์</p>
+          <h1>เมนูหลัก ThaPho PET</h1>
+          <p>เข้าสู่ระบบด้วย LINE เพียงครั้งเดียว แล้วระบบจะแสดงเมนูตามข้อมูลจริงของคุณ</p>
+          <button
+            type="button"
+            className="button button-line dashboard-main-button"
+            onClick={onConnectLine}
+            disabled={lineBusy}
+          >
+            {lineBusy ? "กำลังเชื่อมต่อ…" : "เริ่มใช้งานด้วย LINE"}
+          </button>
+        </section>
+        {message && <div className="notice notice-error">{message}</div>}
+      </div>
+    );
+  }
+
+  if (!linked) {
+    return (
+      <div className="page liff-dashboard-page">
+        <section className="dashboard-welcome guest-welcome">
+          <div className="dashboard-seal">TP</div>
+          <p className="eyebrow">เมนูหลักสำหรับประชาชน</p>
+          <h1>เริ่มต้นใช้งานได้ทันที</h1>
+          <p>ลงทะเบียนสัตว์ใหม่ หรือเชื่อมทะเบียนเดิมกับบัญชี LINE ของคุณ</p>
+        </section>
+
+        <section className="liff-primary-grid">
+          <button
+            type="button"
+            className="liff-primary-card primary-card-main"
+            onClick={() => onNavigate("register")}
+          >
+            <span>＋</span>
+            <strong>ลงทะเบียนสัตว์เลี้ยง</strong>
+            <small>กรอกข้อมูลและเลือกตำแหน่งบ้าน</small>
+          </button>
+          <button
+            type="button"
+            className="liff-primary-card"
+            onClick={() => onNavigate("account")}
+          >
+            <span>🔗</span>
+            <strong>เชื่อมทะเบียนเดิม</strong>
+            <small>ใช้เลขอ้างอิงและเบอร์โทรศัพท์</small>
+          </button>
+          <button
+            type="button"
+            className="liff-primary-card"
+            onClick={() => onNavigate("track")}
+          >
+            <span>⌕</span>
+            <strong>ติดตามคำขอ</strong>
+            <small>ตรวจสถานะด้วยเลขอ้างอิง</small>
+          </button>
+        </section>
+        {message && <div className="notice notice-error">{message}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="page liff-dashboard-page">
+      <section className="dashboard-owner-card">
+        <div>
+          <p className="eyebrow">เมนูหลักของฉัน</p>
+          <h1>สวัสดี {myData.owner.fullName}</h1>
           <p>
-            ลงทะเบียนสุนัขและแมว เลือกตำแหน่งบ้านบนแผนที่
-            แจ้งวัคซีน ทำหมัน สถานะสัตว์ และติดตามผลผ่าน LINE
+            บ้านเลขที่ {myData.owner.houseNo} {myData.owner.villageName}
           </p>
-          <div className="hero-actions">
-            <button
-              type="button"
-              className="button button-primary"
-              onClick={() => onNavigate("register")}
-            >
-              ลงทะเบียนสัตว์เลี้ยง
-            </button>
-            <button
-              type="button"
-              className="button button-secondary"
-              onClick={() => onNavigate("account")}
-            >
-              เปิดข้อมูลของฉัน
-            </button>
-          </div>
         </div>
-        <div className="hero-visual" aria-hidden="true">
-          <span className="pet-orbit pet-orbit-one">🐕</span>
-          <span className="pet-orbit pet-orbit-two">🐈</span>
-          <div className="hero-badge">
-            <strong>THAPHO</strong>
-            <span>PET CARE</span>
-          </div>
+        <div className="dashboard-live-time">
+          <span className="live-dot" />
+          อัปเดต {formatTime(lastUpdatedAt)}
         </div>
       </section>
 
-      <section className="service-grid">
-        <button type="button" className="service-card" onClick={() => onNavigate("register")}>
-          <span className="service-icon">＋</span>
-          <strong>ลงทะเบียนสัตว์</strong>
-          <small>กรอกข้อมูลและปักหมุดบ้านบนแผนที่</small>
-        </button>
-        <button type="button" className="service-card" onClick={() => onNavigate("track")}>
-          <span className="service-icon">⌕</span>
-          <strong>ติดตามคำขอ</strong>
-          <small>ตรวจสถานะด้วยเลขอ้างอิง</small>
-        </button>
-        <button type="button" className="service-card" onClick={() => onNavigate("account")}>
-          <span className="service-icon">◎</span>
-          <strong>สัตว์ของฉัน</strong>
-          <small>ดูทะเบียนและแจ้งข้อมูลล่าสุด</small>
-        </button>
-        <button
-          type="button"
-          className="service-card"
-          onClick={() => onNavigate("account", { section: "attention" })}
-        >
-          <span className="service-icon">!</span>
-          <strong>สิ่งที่ต้องทำ</strong>
-          <small>วัคซีน คำขอแก้ไข และตำแหน่งบ้าน</small>
-        </button>
+      <section className="dashboard-metrics" aria-label="สรุปข้อมูลปัจจุบัน">
+        <DashboardMetric value={counts.pets} label="สัตว์ทั้งหมด" />
+        <DashboardMetric value={counts.pending} label="กำลังตรวจ" tone="info" />
+        <DashboardMetric value={counts.needsAttention} label="ต้องแก้ไข" tone="danger" />
+        <DashboardMetric value={actionCount} label="รายการสำคัญ" tone="warning" />
       </section>
 
-      <section className="trust-strip">
+      <section className={`priority-card priority-${priority.tone}`}>
         <div>
-          <strong>ข้อมูลจริงจากระบบเทศบาล</strong>
-          <span>สถานะและเมนูเปลี่ยนตามข้อมูลทะเบียนล่าสุด</span>
+          <p className="eyebrow">สิ่งที่ควรทำตอนนี้</p>
+          <h2>{priority.title}</h2>
+          <p>{priority.description}</p>
         </div>
-        <div>
-          <strong>เชื่อม LINE อย่างปลอดภัย</strong>
-          <span>ใช้ LIFF เพื่อยืนยันตัวตนและเข้าถึงเฉพาะข้อมูลของคุณ</span>
+        <button type="button" onClick={priority.action}>{priority.label} →</button>
+      </section>
+
+      <section className="simple-menu-section">
+        <div className="section-heading-row compact-section-heading">
+          <div>
+            <p className="eyebrow">บริการของฉัน</p>
+            <h2>เลือกเมนูที่ต้องการ</h2>
+          </div>
         </div>
-        <div>
-          <strong>ระบุตำแหน่งได้แม่นยำ</strong>
-          <span>เลือกบน OpenStreetMap หรือใช้ตำแหน่งปัจจุบัน</span>
+
+        <div className="liff-service-menu">
+          <button type="button" onClick={() => onNavigate("account", { section: "pets" })}>
+            <span>🐾</span><strong>สัตว์ของฉัน</strong><small>ดูรายละเอียดและประวัติ</small>
+          </button>
+          <button type="button" onClick={() => onNavigate("register") }>
+            <span>＋</span><strong>เพิ่มสัตว์</strong><small>ลงทะเบียนสัตว์ตัวใหม่</small>
+          </button>
+          <button type="button" onClick={() => onNavigate("account", { action: "vaccination" })}>
+            <span>💉</span><strong>สุขภาพสัตว์</strong><small>วัคซีนและทำหมัน</small>
+          </button>
+          <button type="button" onClick={() => onNavigate("account", { action: "status" })}>
+            <span>📍</span><strong>แจ้งสถานะสัตว์</strong><small>สูญหาย พบแล้ว หรือเสียชีวิต</small>
+          </button>
+          <button type="button" onClick={() => onNavigate("account", { section: "requests" })}>
+            <span>📄</span><strong>คำขอของฉัน</strong><small>ติดตามและแก้ไขคำขอ</small>
+          </button>
+          <button type="button" onClick={() => onNavigate("account", { section: "profile" })}>
+            <span>◎</span><strong>ข้อมูลเจ้าของ</strong><small>ที่อยู่และตำแหน่งบ้าน</small>
+          </button>
         </div>
       </section>
+
+      {message && <div className="notice notice-error sticky-notice">{message}</div>}
     </div>
   );
 }
@@ -1047,7 +1256,7 @@ function AccountPage({
 
   return (
     <div className="page account-page">
-      <section className="account-hero">
+      <section className="account-hero" id="profile-section">
         <div>
           <p className="eyebrow">บัญชีเจ้าของสัตว์เลี้ยง</p>
           <h1>{myData.owner.fullName}</h1>
@@ -1359,7 +1568,7 @@ function initialRequestForm(pet, type) {
 export default function App() {
   const initialRoute = useMemo(routeFromUrl, []);
   const [view, setView] = useState(
-    ["home", "register", "track", "account"].includes(initialRoute.view)
+    ["home", "register", "track", "account", "success"].includes(initialRoute.view)
       ? initialRoute.view
       : "home",
   );
@@ -1397,7 +1606,12 @@ export default function App() {
   const [requestForm, setRequestForm] = useState({});
   const [requestSaving, setRequestSaving] = useState(false);
   const [editingSubmission, setEditingSubmission] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+  const [toast, setToast] = useState("");
   const handledDeepLink = useRef("");
+  const autoConnectStarted = useRef(false);
+  const refreshInFlight = useRef(false);
 
   useEffect(() => {
     publicApi
@@ -1409,10 +1623,56 @@ export default function App() {
   }, [publicApi]);
 
   useEffect(() => {
-    if (view === "account") {
-      void connectToLine();
-    }
-  }, [view]);
+    if (autoConnectStarted.current) return;
+    autoConnectStarted.current = true;
+    void connectToLine();
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const route = routeFromUrl();
+      setView(["home", "register", "track", "account", "success"].includes(route.view) ? route.view : "home");
+      setRouteAction(route.action);
+      setRouteSection(route.section);
+      setMessage("");
+      window.scrollTo({ top: 0, behavior: "auto" });
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = window.setTimeout(() => setToast(""), 4200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!citizenToken || !lineSession) return undefined;
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshAccountData({ silent: true });
+      }
+    };
+    const refreshOnFocus = () => void refreshAccountData({ silent: true });
+    const interval = window.setInterval(
+      () => void refreshAccountData({ silent: true }),
+      20000,
+    );
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("pageshow", refreshOnFocus);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("pageshow", refreshOnFocus);
+    };
+  }, [citizenToken, lineSession]);
 
   useEffect(() => {
     if (!myData?.linked || !routeAction) return;
@@ -1449,6 +1709,7 @@ export default function App() {
       requests: "requests-section",
       pets: "pets-section",
       location: "location-section",
+      profile: "profile-section",
     }[routeSection];
 
     if (!id) return;
@@ -1460,15 +1721,33 @@ export default function App() {
     }, 180);
   }, [myData, routeSection, view]);
 
-  function navigate(nextView, extras = {}) {
+  function navigate(nextView, extras = {}, options = {}) {
+    handledDeepLink.current = "";
     setView(nextView);
     setRouteAction(extras.action || "");
     setRouteSection(extras.section || "");
     setMessage("");
 
     if (extras.reference) setReference(extras.reference);
-    setRoute(nextView, extras);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setRoute(nextView, extras, options);
+    window.scrollTo({ top: 0, behavior: options.instant ? "auto" : "smooth" });
+  }
+
+  function goBack() {
+    if (view === "home") return;
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    navigate("home", {}, { replace: true, instant: true });
+  }
+
+  function closeLiff() {
+    if (window.liff?.isInClient?.()) {
+      window.liff.closeWindow();
+      return;
+    }
+    if (window.history.length > 1) window.history.back();
   }
 
   async function chooseAttachment(event) {
@@ -1542,8 +1821,36 @@ export default function App() {
       );
 
       setResult(data);
-      setView("success");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+
+      if (lineSession && citizenToken) {
+        let activeToken = citizenToken;
+        try {
+          if (!myData?.linked) {
+            const linked = await createCitizenApi(activeToken).post(
+              "/citizen/line/link",
+              {
+                referenceNo: data.referenceNo,
+                phone: normalizeThaiPhone(form.phone),
+              },
+            );
+            activeToken = linked.token || activeToken;
+            setCitizenToken(activeToken);
+            sessionStorage.setItem("prms_citizen_token", activeToken);
+            setLineSession((current) => ({ ...current, linked: true, token: activeToken }));
+          }
+          await loadAccountData(activeToken);
+          setToast(`ส่งข้อมูล ${data.referenceNo} เรียบร้อยแล้ว`);
+          navigate("home", {}, { replace: true });
+        } catch {
+          setView("success");
+          setRoute("success", {}, { replace: true });
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      } else {
+        setView("success");
+        setRoute("success", {}, { replace: true });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     } catch (error) {
       setMessage(error.message || "ไม่สามารถส่งข้อมูลได้");
     } finally {
@@ -1592,12 +1899,28 @@ export default function App() {
 
     setMyData(account);
     setExperience(state);
+    setLastUpdatedAt(new Date());
 
     if (syncMenu) {
       api.post("/citizen/line/sync-rich-menu", {}).catch(() => {});
     }
 
     return { account, state };
+  }
+
+  async function refreshAccountData({ silent = false } = {}) {
+    if (!citizenToken || refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    if (!silent) setRefreshing(true);
+
+    try {
+      await loadAccountData(citizenToken);
+    } catch (error) {
+      if (!silent) setMessage(error.message || "ไม่สามารถอัปเดตข้อมูลได้");
+    } finally {
+      refreshInFlight.current = false;
+      if (!silent) setRefreshing(false);
+    }
   }
 
   async function connectToLine() {
@@ -1613,24 +1936,7 @@ export default function App() {
       setCitizenToken(session.token);
       sessionStorage.setItem("prms_citizen_token", session.token);
 
-      if (session.linked) {
-        await loadAccountData(session.token);
-      } else {
-        setMyData({ linked: false, pets: [], registrations: [], submissions: [] });
-        setExperience({
-          linked: false,
-          menuKey: "guest",
-          counts: {
-            pets: 0,
-            pending: 0,
-            needsAttention: 0,
-            vaccinationDue: 0,
-            unsterilized: 0,
-            missingPets: 0,
-          },
-          location: { latitude: null, longitude: null, missing: true },
-        });
-      }
+      await loadAccountData(session.token);
     } catch (error) {
       setMessage(error.message || "ไม่สามารถเชื่อมต่อ LINE ได้");
     } finally {
@@ -1649,6 +1955,8 @@ export default function App() {
       sessionStorage.setItem("prms_citizen_token", data.token);
       setLineSession((current) => ({ ...current, linked: true, token: data.token }));
       await loadAccountData(data.token);
+      setToast("เชื่อมทะเบียนกับ LINE เรียบร้อยแล้ว");
+      navigate("home", {}, { replace: true });
     } catch (error) {
       setMessage(error.message || "ไม่สามารถเชื่อมทะเบียนได้");
     } finally {
@@ -1702,7 +2010,8 @@ export default function App() {
 
       closeRequest(true);
       await loadAccountData(citizenToken);
-      setMessage(`ส่งคำขอ ${data.referenceNo} เรียบร้อยแล้ว`);
+      setToast(`ส่งคำขอ ${data.referenceNo} เรียบร้อยแล้ว`);
+      navigate("home", {}, { replace: true });
     } catch (error) {
       setMessage(error.message || "ไม่สามารถส่งคำขอได้");
     } finally {
@@ -1762,7 +2071,8 @@ export default function App() {
         addressDetail: location.addressDetail || "",
       });
       await loadAccountData(citizenToken);
-      setMessage("บันทึกตำแหน่งบ้านเรียบร้อยแล้ว");
+      setToast("บันทึกตำแหน่งบ้านเรียบร้อยแล้ว");
+      navigate("home", {}, { replace: true });
     } catch (error) {
       setMessage(error.message || "ไม่สามารถบันทึกตำแหน่งได้");
     } finally {
@@ -1826,13 +2136,33 @@ export default function App() {
       />
     );
   } else {
-    content = <HomePage onNavigate={navigate} />;
+    content = (
+      <HomePage
+        lineBusy={lineBusy}
+        lineSession={lineSession}
+        myData={myData}
+        experience={experience}
+        message={message}
+        lastUpdatedAt={lastUpdatedAt}
+        onNavigate={navigate}
+        onConnectLine={connectToLine}
+        onOpenRequest={openRequest}
+      />
+    );
   }
 
   return (
     <Shell
       onNavigate={navigate}
+      onBack={goBack}
+      onClose={closeLiff}
+      onRefresh={() => refreshAccountData()}
+      refreshing={refreshing}
+      lastUpdatedAt={lastUpdatedAt}
+      experience={experience}
+      toast={toast}
       activeView={view === "success" ? "register" : view}
+      activeSection={routeSection}
     >
       {content}
       <RequestDialog
