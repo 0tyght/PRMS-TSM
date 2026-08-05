@@ -158,15 +158,15 @@ function householdPopup(household) {
       <header>
         <div>
           <small>จุดพิกัดจากฐานข้อมูล</small>
-          <strong>${household.houseNo ? `บ้านเลขที่ ${escapeHtml(household.houseNo)}` : "จุดเลี้ยงสัตว์"}</strong>
+          <strong>${household.houseNo ? `บ้านเลขที่ ${escapeHtml(household.houseNo)}` : "จุดเลี้ยงสัตว์เลี้ยง"}</strong>
         </div>
         <span>หมู่ ${household.villageNo}</span>
       </header>
       <dl>
         <div><dt>เจ้าของ</dt><dd>${owners}</dd></div>
-        <div><dt>สัตว์</dt><dd>${household.pets.length} ตัว · สุนัข ${dogs} · แมว ${cats}</dd></div>
+        <div><dt>สัตว์เลี้ยง</dt><dd>${household.pets.length} ตัว · สุนัข ${dogs} · แมว ${cats}</dd></div>
         <div><dt>วัคซีน / ทำหมัน</dt><dd>${vaccinated} / ${sterilized} ตัว</dd></div>
-        <div><dt>รายชื่อสัตว์</dt><dd>${names || "ไม่ระบุ"}</dd></div>
+        <div><dt>รายชื่อสัตว์เลี้ยง</dt><dd>${names || "ไม่ระบุ"}</dd></div>
         <div><dt>พิกัดจริง</dt><dd>${household.latitude.toFixed(7)}, ${household.longitude.toFixed(7)}</dd></div>
       </dl>
       ${household.mismatchCount > 0 ? `
@@ -192,7 +192,7 @@ function DataQualityBar({ diagnostics, householdCount }) {
   return (
     <div className="map-data-quality" aria-label="คุณภาพข้อมูลแผนที่">
       <span className="is-good"><b>{householdCount.toLocaleString("th-TH")}</b> จุดพิกัดจริง</span>
-      <span><b>{diagnostics.renderedPets.toLocaleString("th-TH")}</b> สัตว์ที่แสดงได้</span>
+      <span><b>{diagnostics.renderedPets.toLocaleString("th-TH")}</b> สัตว์เลี้ยงที่แสดงได้</span>
       {diagnostics.missingCoordinates > 0 ? (
         <span className="is-muted"><b>{diagnostics.missingCoordinates.toLocaleString("th-TH")}</b> ไม่มีพิกัด</span>
       ) : null}
@@ -395,7 +395,7 @@ export default function DashboardMap({
       const marker = L.marker([household.latitude, household.longitude], {
         icon: markerIcon(household, Boolean(selectedVillage)),
         keyboard: true,
-        title: household.houseNo ? `บ้านเลขที่ ${household.houseNo}` : "จุดเลี้ยงสัตว์",
+        title: household.houseNo ? `บ้านเลขที่ ${household.houseNo}` : "จุดเลี้ยงสัตว์เลี้ยง",
       });
       marker.bindPopup(householdPopup(household), {
         className: "real-location-popup-shell",
@@ -439,7 +439,7 @@ export default function DashboardMap({
           </select>
         </label>
 
-        <div className="production-segmented" aria-label="กรองชนิดสัตว์">
+        <div className="production-segmented" aria-label="กรองชนิดสัตว์เลี้ยง">
           {Object.entries(SPECIES).map(([value, label]) => (
             <button
               type="button"

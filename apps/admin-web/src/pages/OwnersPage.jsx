@@ -93,7 +93,7 @@ export default function OwnersPage({ token }) {
 
   return (
     <>
-      <PageHead eyebrow="ทะเบียนเจ้าของ" title="เจ้าของและครัวเรือน" detail="ค้นหา ตรวจสอบ และปรับปรุงข้อมูลเจ้าของสัตว์ตามสิทธิ์" />
+      <PageHead eyebrow="ทะเบียนเจ้าของสัตว์เลี้ยง" title="เจ้าของสัตว์เลี้ยงและครัวเรือน" detail="ค้นหา ตรวจสอบ และปรับปรุงข้อมูลเจ้าของสัตว์เลี้ยงตามสิทธิ์" />
       <Notice message={message} />
       <form className="core-toolbar" onSubmit={(event) => { event.preventDefault(); if (page === 1) load(); else setPage(1); }}>
         <label className="core-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ เบอร์โทร เลขบัตร หรือเลขที่บ้าน" /></label>
@@ -103,8 +103,8 @@ export default function OwnersPage({ token }) {
 
       {loading ? <LoadingPanel text="กำลังโหลดทะเบียนเจ้าของ…" /> : (
         <article className="panel core-panel">
-          <div className="panel-head"><div><h2>รายชื่อเจ้าของสัตว์</h2><p>พบ {owners.length.toLocaleString("th-TH")} รายการ · ข้อมูลส่วนบุคคลในรายการถูกปิดบังบางส่วน</p></div></div>
-          {owners.length ? <><div className="core-table-wrap"><table className="core-table"><thead><tr><th>เจ้าของ</th><th>ติดต่อ</th><th>ที่อยู่</th><th>สัตว์</th><th>LINE/Consent</th><th>วันที่สร้าง</th><th></th></tr></thead><tbody>{owners.map((owner) => <tr key={owner.id}><td><strong>{owner.fullName}</strong><small>{owner.nationalId || "ไม่ระบุเลขบัตร"}</small></td><td>{owner.phone}</td><td>บ้านเลขที่ {owner.houseNo}<small>หมู่ {owner.villageNo} · {owner.villageName}</small></td><td><b>{Number(owner.petCount || 0).toLocaleString("th-TH")}</b> ตัว</td><td><span className={`core-status ${owner.linkedLine ? "ready" : "muted"}`}>{owner.linkedLine ? "เชื่อม LINE" : "ยังไม่เชื่อม"}</span><small>{owner.consentAt ? `ยินยอม ${formatDate(owner.consentAt)}` : "ยังไม่มีเวลายินยอม"}</small></td><td>{formatDate(owner.createdAt)}</td><td><button type="button" className="core-row-button" onClick={() => openEditor(owner)}>ดูและแก้ไข</button></td></tr>)}</tbody></table></div><Pagination page={Number(pageMeta.page || page)} hasNext={Boolean(pageMeta.hasNext)} onChange={setPage} disabled={loading}/></> : <EmptyState text="ไม่พบเจ้าของสัตว์" detail="ลองเปลี่ยนคำค้นหาหรือตัวกรองหมู่บ้าน" />}
+          <div className="panel-head"><div><h2>รายชื่อเจ้าของสัตว์เลี้ยง</h2><p>พบ {owners.length.toLocaleString("th-TH")} รายการ · ข้อมูลส่วนบุคคลในรายการถูกปิดบังบางส่วน</p></div></div>
+          {owners.length ? <><div className="core-table-wrap"><table className="core-table"><thead><tr><th>เจ้าของ</th><th>ติดต่อ</th><th>ที่อยู่</th><th>สัตว์เลี้ยง</th><th>LINE/Consent</th><th>วันที่สร้าง</th><th></th></tr></thead><tbody>{owners.map((owner) => <tr key={owner.id}><td><strong>{owner.fullName}</strong><small>{owner.nationalId || "ไม่ระบุเลขบัตร"}</small></td><td>{owner.phone}</td><td>บ้านเลขที่ {owner.houseNo}<small>หมู่ {owner.villageNo} · {owner.villageName}</small></td><td><b>{Number(owner.petCount || 0).toLocaleString("th-TH")}</b> ตัว</td><td><span className={`core-status ${owner.linkedLine ? "ready" : "muted"}`}>{owner.linkedLine ? "เชื่อม LINE" : "ยังไม่เชื่อม"}</span><small>{owner.consentAt ? `ยินยอม ${formatDate(owner.consentAt)}` : "ยังไม่มีเวลายินยอม"}</small></td><td>{formatDate(owner.createdAt)}</td><td><button type="button" className="core-row-button" onClick={() => openEditor(owner)}>ดูและแก้ไข</button></td></tr>)}</tbody></table></div><Pagination page={Number(pageMeta.page || page)} hasNext={Boolean(pageMeta.hasNext)} onChange={setPage} disabled={loading}/></> : <EmptyState text="ไม่พบเจ้าของสัตว์เลี้ยง" detail="ลองเปลี่ยนคำค้นหาหรือตัวกรองหมู่บ้าน" />}
         </article>
       )}
 

@@ -29,3 +29,8 @@ button{cursor:pointer}button:disabled{cursor:not-allowed}button:focus-visible,se
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 .report-filter-bar{display:flex;align-items:end;gap:10px;margin-bottom:14px;padding:13px 15px;border:1px solid var(--line);border-radius:12px;background:#fff}.report-filter-bar label{display:flex;flex-direction:column;gap:5px;color:#526a62;font-size:10px;font-weight:700}.report-filter-bar input,.report-filter-bar select{min-height:38px;padding:0 10px;border:1px solid #cfddd7;border-radius:8px;background:#fff;color:#29463c}.report-filter-bar span{margin-left:auto;align-self:center;color:var(--muted);font-size:10px}.report-actions{flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:760px){.report-filter-bar{align-items:stretch;flex-direction:column}.report-filter-bar span{margin-left:0}.report-actions{justify-content:flex-start}}
+
+/* Use the complete desktop workspace and keep the navigation overlay semantic. */
+.content{width:calc(100% - 238px);max-width:none}
+.scrim{border:0;padding:0}
+@media(max-width:1024px){.content{width:100%}}

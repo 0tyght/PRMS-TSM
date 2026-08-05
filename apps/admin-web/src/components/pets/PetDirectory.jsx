@@ -508,7 +508,7 @@ function PetLifecycleDialog({ pet, api, onClose, onSaved }) {
     }
   }
 
-  return <div className="pet-modal-backdrop" role="presentation"><section className="pet-service-dialog pet-lifecycle-dialog"><div className="pet-dialog-header"><div><p className="eyebrow">ประวัติและวงจรชีวิตสัตว์</p><h2>{pet.petName}</h2><p>{pet.registrationNo} · เจ้าของปัจจุบัน {pet.ownerName}</p></div><button type="button" className="pet-dialog-close" onClick={onClose}>×</button></div>
+  return <div className="pet-modal-backdrop" role="presentation"><section className="pet-service-dialog pet-lifecycle-dialog"><div className="pet-dialog-header"><div><p className="eyebrow">ประวัติและวงจรชีวิตสัตว์เลี้ยง</p><h2>{pet.petName}</h2><p>{pet.registrationNo} · เจ้าของปัจจุบัน {pet.ownerName}</p></div><button type="button" className="pet-dialog-close" onClick={onClose}>×</button></div>
     <div className="pet-lifecycle-tabs"><button type="button" className={mode === "status" ? "active" : ""} onClick={() => setMode("status")}>เปลี่ยนสถานะ</button><button type="button" className={mode === "owner" ? "active" : ""} onClick={() => setMode("owner")}>โอนเจ้าของ</button><button type="button" className={mode === "health" ? "active" : ""} onClick={() => { setMode("health"); setHealthEdit(null); }}>ประวัติสุขภาพ</button></div>
     {mode !== "health" ? <form onSubmit={submit} className="pet-lifecycle-form">{mode === "status" ? <label className="pet-form-field"><span>สถานะใหม่</span><select value={nextStatus} onChange={(event) => setNextStatus(event.target.value)}>{Object.entries(PET_STATUS_LABELS).filter(([value]) => value !== pet.status).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : <label className="pet-form-field"><span>เจ้าของใหม่</span><select value={ownerId} onChange={(event) => setOwnerId(event.target.value)} required><option value="">เลือกจากทะเบียนเจ้าของ</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.fullName} · บ้านเลขที่ {owner.houseNo} หมู่ {owner.villageNo}</option>)}</select></label>}<label className="pet-form-field"><span>วันที่มีผล</span><input type="date" value={effectiveAt} max={today} onChange={(event) => setEffectiveAt(event.target.value)} required /></label><label className="pet-form-field pet-lifecycle-note"><span>{mode === "owner" ? "เหตุผลการโอน" : "เหตุผล/รายละเอียด"}</span><textarea value={note} onChange={(event) => setNote(event.target.value)} minLength="2" maxLength="500" rows="3" required /></label><Notice message={message}/><div className="pet-dialog-actions"><button type="button" className="pet-secondary-button" onClick={onClose}>ยกเลิก</button><button type="submit" className="pet-primary-button" disabled={busy}>{busy ? "กำลังบันทึก…" : "ยืนยันการเปลี่ยนแปลง"}</button></div></form> : null}
     {mode === "health" && healthEdit ? <form onSubmit={submit} className="pet-lifecycle-form pet-health-edit">{healthEdit.type === "vaccine" ? <><label className="pet-form-field"><span>ชื่อวัคซีน</span><input value={healthEdit.vaccineName} onChange={(event) => setHealthEdit({ ...healthEdit, vaccineName: event.target.value })} required /></label><label className="pet-form-field"><span>วันที่ฉีด</span><input type="date" value={healthEdit.vaccinatedAt} onChange={(event) => setHealthEdit({ ...healthEdit, vaccinatedAt: event.target.value })} required /></label><label className="pet-form-field"><span>เลขล็อต</span><input value={healthEdit.lotNo || ""} onChange={(event) => setHealthEdit({ ...healthEdit, lotNo: event.target.value })} /></label><label className="pet-form-field"><span>กำหนดครั้งถัดไป</span><input type="date" value={healthEdit.nextDueAt || ""} onChange={(event) => setHealthEdit({ ...healthEdit, nextDueAt: event.target.value })} /></label></> : <label className="pet-form-field"><span>วันที่ทำหมัน</span><input type="date" value={healthEdit.sterilizedAt} onChange={(event) => setHealthEdit({ ...healthEdit, sterilizedAt: event.target.value })} required /></label>}<label className="pet-form-field"><span>หน่วยบริการ</span><input value={healthEdit.providerName || ""} onChange={(event) => setHealthEdit({ ...healthEdit, providerName: event.target.value })} /></label>{healthEdit.type === "sterilization" ? <label className="pet-form-field pet-lifecycle-note"><span>หมายเหตุ</span><textarea rows="3" value={healthEdit.note || ""} onChange={(event) => setHealthEdit({ ...healthEdit, note: event.target.value })} /></label> : null}<Notice message={message}/><div className="pet-dialog-actions"><button type="button" className="pet-secondary-button" onClick={() => setHealthEdit(null)}>ยกเลิกแก้ไข</button><button type="submit" className="pet-primary-button" disabled={busy}>{busy ? "กำลังบันทึก…" : "บันทึกข้อมูลสุขภาพ"}</button></div></form> : null}
@@ -552,7 +552,7 @@ function PetSummaryCards({ rows, visibleCount }) {
 
   const cards = [
     {
-      label: "สัตว์ที่พบ",
+      label: "สัตว์เลี้ยงที่พบ",
       value: visibleCount,
       detail: `จากข้อมูล ${summary.total} รายการ`,
       icon: "ท",
@@ -561,14 +561,14 @@ function PetSummaryCards({ rows, visibleCount }) {
     {
       label: "สุนัข",
       value: summary.dogs,
-      detail: "สัตว์ที่ขึ้นทะเบียนแล้ว",
+      detail: "สัตว์เลี้ยงที่ขึ้นทะเบียนแล้ว",
       icon: "ส",
       tone: "amber",
     },
     {
       label: "แมว",
       value: summary.cats,
-      detail: "สัตว์ที่ขึ้นทะเบียนแล้ว",
+      detail: "สัตว์เลี้ยงที่ขึ้นทะเบียนแล้ว",
       icon: "ม",
       tone: "blue",
     },
@@ -698,7 +698,7 @@ export default function PetDirectory({
       setMessage(
         error instanceof Error
           ? error.message
-          : "ไม่สามารถโหลดข้อมูลสัตว์จากฐานข้อมูลได้",
+          : "ไม่สามารถโหลดข้อมูลสัตว์เลี้ยงจากฐานข้อมูลได้",
       );
     } finally {
       if (requestId === requestSequence.current) {
@@ -742,12 +742,12 @@ export default function PetDirectory({
         title={
           serviceMode
             ? "บันทึกวัคซีนและการทำหมัน"
-            : "ข้อมูลสัตว์ขึ้นทะเบียน"
+            : "ข้อมูลสัตว์เลี้ยงขึ้นทะเบียน"
         }
         detail={
           serviceMode
             ? "ค้นหาและบันทึกบริการลงฐานข้อมูลจริง พร้อมตรวจสอบสถานะล่าสุด"
-            : "แสดงข้อมูลสัตว์ เจ้าของ ที่อยู่ วัคซีน และการทำหมันจากฐานข้อมูลจริง"
+            : "แสดงข้อมูลสัตว์เลี้ยง เจ้าของ ที่อยู่ วัคซีน และการทำหมันจากฐานข้อมูลจริง"
         }
         actions={
           <button
@@ -777,7 +777,7 @@ export default function PetDirectory({
               setSearchInput(event.target.value);
               setPage(1);
             }}
-            placeholder="ค้นหาชื่อสัตว์ เจ้าของ เบอร์โทร เลขทะเบียน หรือไมโครชิป"
+            placeholder="ค้นหาชื่อสัตว์เลี้ยง เจ้าของ เบอร์โทร เลขทะเบียน หรือไมโครชิป"
           />
         </div>
 
@@ -787,7 +787,7 @@ export default function PetDirectory({
             setSpecies(event.target.value);
             setPage(1);
           }}
-          aria-label="กรองชนิดสัตว์"
+          aria-label="กรองชนิดสัตว์เลี้ยง"
         >
           <option value="">ทุกชนิด</option>
           <option value="DOG">สุนัข</option>
@@ -800,7 +800,7 @@ export default function PetDirectory({
             setStatus(event.target.value);
             setPage(1);
           }}
-          aria-label="กรองสถานะสัตว์"
+          aria-label="กรองสถานะสัตว์เลี้ยง"
         >
           <option value="">ทุกสถานะ</option>
           <option value="ACTIVE">ปกติ</option>
@@ -856,7 +856,7 @@ export default function PetDirectory({
           <div>
             <h2>
               {serviceMode
-                ? "รายชื่อสัตว์สำหรับบันทึกบริการ"
+                ? "รายชื่อสัตว์เลี้ยงสำหรับบันทึกบริการ"
                 : "ทะเบียนสัตว์เลี้ยง"}
             </h2>
 
@@ -883,7 +883,7 @@ export default function PetDirectory({
             text={
               hasFilters
                 ? "ไม่พบข้อมูลตามเงื่อนไขที่เลือก"
-                : "ยังไม่มีสัตว์ที่ผ่านการขึ้นทะเบียน"
+                : "ยังไม่มีสัตว์เลี้ยงที่ผ่านการขึ้นทะเบียน"
             }
             detail={
               hasFilters
@@ -896,7 +896,7 @@ export default function PetDirectory({
             <table className="pet-data-table">
               <thead>
                 <tr>
-                  <th>ข้อมูลสัตว์</th>
+                  <th>ข้อมูลสัตว์เลี้ยง</th>
                   <th>ทะเบียน</th>
                   <th>เจ้าของและที่อยู่</th>
                   <th>สถานะ</th>

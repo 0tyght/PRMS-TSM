@@ -5,7 +5,6 @@ import { ADMIN_MENU } from "./config/navigation.js";
 import { useHashPage } from "./hooks/useHashPage.js";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
-import MapPage from "./pages/MapPage.jsx";
 import OwnersPage from "./pages/OwnersPage.jsx";
 import PetsPage from "./pages/PetsPage.jsx";
 import RegistrationsPage from "./pages/RegistrationsPage.jsx";
@@ -18,15 +17,28 @@ const PAGE_COMPONENTS = {
   owners: OwnersPage,
   pets: PetsPage,
   services: ServicesPage,
-  map: MapPage,
   settings: SettingsPage,
 };
+
+function readSessionUser(token) {
+  try {
+    const payload = token.split(".")[1];
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const normalized = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const bytes = Uint8Array.from(window.atob(normalized), (character) => character.charCodeAt(0));
+    const data = JSON.parse(new TextDecoder().decode(bytes));
+    return { name: data.name || "เจ้าหน้าที่เทศบาล", role: data.role || "OFFICER" };
+  } catch {
+    return { name: "เจ้าหน้าที่เทศบาล", role: "OFFICER" };
+  }
+}
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem("prms_access_token"));
   const { page, navigate } = useHashPage();
+  const sessionUser = useMemo(() => readSessionUser(token || ""), [token]);
   const title = useMemo(
-    () => ADMIN_MENU.find((item) => item.id === page)?.label || "ภาพรวมและแผนที่",
+    () => ADMIN_MENU.find((item) => item.id === page)?.label || "ภาพรวม",
     [page],
   );
 
@@ -48,7 +60,7 @@ export default function App() {
   };
 
   return (
-    <AdminLayout page={page} navigate={navigate} title={title} onLogout={logout}>
+    <AdminLayout page={page} navigate={navigate} title={title} user={sessionUser} onLogout={logout}>
       <PageErrorBoundary key={page} onRecover={() => navigate("dashboard")}>
         <Page token={token} navigate={navigate} />
       </PageErrorBoundary>
