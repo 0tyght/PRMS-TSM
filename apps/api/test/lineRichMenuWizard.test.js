@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildMainWizardDefinition,
   buildStaticSubmenuDefinition,
+  buildTextEntryWizardDefinition,
   buildWizardPage,
   extractWizardChoicesFromMessages,
   fingerprintWizardPage,
@@ -42,6 +43,20 @@ test("static submenu back and home controls switch instantly", () => {
   assert.equal(page.controlSlots[0].action.type, "richmenuswitch");
   assert.equal(page.controlSlots[0].action.richMenuAliasId, "prms-v12-main-owner");
   assert.equal(page.controlSlots[1].action.type, "richmenuswitch");
+});
+
+test("reuses one pre-warmed menu for keyboard-only data entry", () => {
+  const definition = buildTextEntryWizardDefinition();
+  const page = buildWizardPage(definition, 0, true);
+
+  assert.equal(definition.cacheScope, "static");
+  assert.equal(definition.staticAlias, "prms-v12-input");
+  assert.equal(page.choiceSlots.length, 1);
+  assert.equal(page.choiceSlots[0].action.inputOption, "openKeyboard");
+  assert.deepEqual(
+    page.controlSlots.map((slot) => slot.action.data),
+    ["session=back", "wizard=home", "session=cancel"],
+  );
 });
 
 test("keeps rich menu open and removes displayText from postbacks", () => {

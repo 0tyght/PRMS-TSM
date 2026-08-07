@@ -77,6 +77,21 @@ async function reply(replyToken, messages) {
   return { status: "SENT", httpStatus: response.status };
 }
 
+function continueRichMenuTask(task, event) {
+  if (!task) return;
+
+  // A Rich Menu can involve a LINE API call and, on a cache miss, an image
+  // upload. Do not make the chat reply wait for that work. Per-user ordering is
+  // retained inside lineRichMenuWizard's queue.
+  void Promise.resolve(task).catch((error) => {
+    console.error("[line-bot] rich menu task failed", {
+      eventType: event?.type,
+      lineUserId: String(event?.source?.userId || "").slice(0, 8),
+      error: String(error?.message || error),
+    });
+  });
+}
+
 async function loadState(lineUserId) {
   try {
     return await loadCitizenExperienceByLineUserId(lineUserId);
@@ -131,11 +146,8 @@ async function processEvent(event) {
           ])
         : Promise.resolve({ status: "SKIPPED" });
 
-      const [replyResult, menuResult] = await Promise.allSettled([replyTask, menuTask]);
-      if (replyResult.status === "rejected") throw replyResult.reason;
-      if (menuResult.status === "rejected") {
-        console.error("[line-bot] follow wizard menu failed", menuResult.reason);
-      }
+      continueRichMenuTask(menuTask, event);
+      await replyTask;
       await completeLineWebhookEvent(event);
       return;
     }
@@ -184,15 +196,8 @@ async function processEvent(event) {
       ? reply(event.replyToken, result.messages)
       : null;
 
-    const tasks = [replyTask, menuTask].filter(Boolean);
-    const settled = await Promise.allSettled(tasks);
-    if (replyTask && settled[0]?.status === "rejected") {
-      throw settled[0].reason;
-    }
-    const menuIndex = replyTask ? 1 : 0;
-    if (menuTask && settled[menuIndex]?.status === "rejected") {
-      console.error("[line-bot] rich menu task failed", settled[menuIndex].reason);
-    }
+    continueRichMenuTask(menuTask, event);
+    if (replyTask) await replyTask;
 
     await completeLineWebhookEvent(event);
   } catch (error) {

@@ -34,6 +34,7 @@ const STATIC_ALIAS_BY_KEY = Object.freeze({
   "submenu-status-v12": "prms-v12-status",
   "submenu-requests-v12": "prms-v12-requests",
   "submenu-owner-v12": "prms-v12-owner",
+  "input-v12": "prms-v12-input",
 });
 const MAIN_OWNER_ALIAS = STATIC_ALIAS_BY_KEY["main-owner-v12"];
 
@@ -1539,6 +1540,19 @@ export function buildStaticSubmenuDefinition(key) {
   return definition ? structuredClone(definition) : null;
 }
 
+export function buildTextEntryWizardDefinition() {
+  return {
+    key: "input-v12",
+    title: "กรอกข้อมูล",
+    subtitle: "กดพิมพ์ข้อมูล แล้วส่งข้อความตามคำถามในแชต",
+    cacheScope: "static",
+    staticAlias: STATIC_ALIAS_BY_KEY["input-v12"],
+    choices: [
+      choice("พิมพ์ข้อมูล", keyboardAction()),
+    ],
+  };
+}
+
 export function buildMainWizardDefinition(state) {
   if (!state?.linked) {
     return {
@@ -1584,6 +1598,7 @@ export async function warmWizardRichMenus() {
     const definitions = [
       buildMainWizardDefinition({ linked: false }),
       buildMainWizardDefinition({ linked: true }),
+      buildTextEntryWizardDefinition(),
       ...Object.values(STATIC_SUBMENUS).map((item) => structuredClone(item)),
     ];
 
@@ -1719,6 +1734,26 @@ function definitionKey(prompt, choices, suppliedKey = "") {
   return `flow-${crypto.createHash("sha1").update(signature).digest("hex").slice(0, 14)}`;
 }
 
+function isKeyboardOnlySessionChoice(choiceItem) {
+  const action = choiceItem?.action || choiceItem;
+  if (action?.type === "postback" && action.inputOption === "openKeyboard") return true;
+
+  // Older prompt helpers still attach a cancel quick reply. The static input
+  // menu already contains cancellation, so it does not need a unique menu.
+  return action?.type === "postback" && action.data === "session=cancel";
+}
+
+function shouldUseStaticTextEntryMenu(activeSession, choices) {
+  return (
+    activeSession &&
+    choices.some((choiceItem) => {
+      const action = choiceItem?.action || choiceItem;
+      return action?.type === "postback" && action.inputOption === "openKeyboard";
+    }) &&
+    choices.every(isKeyboardOnlySessionChoice)
+  );
+}
+
 export async function decorateNativeCitizenResultWithRichMenu({
   lineUserId,
   result,
@@ -1774,6 +1809,14 @@ export async function decorateNativeCitizenResultWithRichMenu({
       }),
       preserveRichMenu: true,
     };
+  }
+
+  // Text-entry steps repeat frequently (name, address, notes, etc.). Reusing
+  // one pre-warmed menu prevents a new image upload and Rich Menu creation for
+  // every field, while the question itself remains clearly visible in chat.
+  if (shouldUseStaticTextEntryMenu(activeSession, choices)) {
+    definition = buildTextEntryWizardDefinition();
+    choices = definition.choices;
   }
 
   definition = {
