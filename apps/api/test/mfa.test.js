@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createMfaSecret, createTotp, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "../src/mfa.js";
+import { createMfaSecret, createTotp, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "../src/modules/security/mfa.js";
 
 test("encrypts and decrypts an MFA secret", () => {
   const secret = createMfaSecret();

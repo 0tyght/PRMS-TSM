@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-import * as nativeCitizen from "../src/lineNativeCitizen.js";
-import { extractWizardChoicesFromMessages } from "../src/lineRichMenuWizard.js";
+import * as nativeCitizen from "../src/modules/line/lineNativeCitizen.js";
+import { extractWizardChoicesFromMessages } from "../src/modules/line/lineRichMenuWizard.js";
 
 test("removes the legacy Flex-list compatibility layer", () => {
   assert.equal("buildNativeChoiceListFlex" in nativeCitizen, false);
@@ -29,7 +29,7 @@ test("derives one choice set for both Quick Reply and Rich Menu", () => {
 
 
 test("paginates request history from the database without a hidden 200-row cap", () => {
-  const source = fs.readFileSync(new URL("../src/lineNativeCitizen.v10.js", import.meta.url), "utf8");
+  const source = fs.readFileSync(new URL("../src/modules/line/lineNativeCitizen.v10.js", import.meta.url), "utf8");
   assert.doesNotMatch(source, /ORDER BY submittedAt DESC\s+LIMIT 200/);
   assert.match(source, /SELECT COUNT\(\*\) AS total/);
   assert.match(source, /action=request_detail/);

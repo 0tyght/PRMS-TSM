@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$ProjectPath = (Split-Path -Parent $PSScriptRoot),
+    [string]$ProjectPath = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [switch]$SkipGitPush
 )
 
@@ -40,9 +40,9 @@ if (-not (Test-Path -LiteralPath $ProjectPath)) {
     throw "ไม่พบโฟลเดอร์โปรเจกต์: $ProjectPath"
 }
 
-$startPublicPath = Join-Path $ProjectPath "scripts\start-public.ps1"
+$startPublicPath = Join-Path $ProjectPath "scripts\server\start-public.ps1"
 if (-not (Test-Path -LiteralPath $startPublicPath)) {
-    throw "ไม่พบ scripts\start-public.ps1"
+    throw "ไม่พบ scripts\server\start-public.ps1"
 }
 
 Write-Host "Smart Tha Pho Start" -ForegroundColor Cyan

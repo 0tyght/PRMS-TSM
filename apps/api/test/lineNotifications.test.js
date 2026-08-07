@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { enqueueLineNotification } from "../src/lineNotifications.js";
+import { enqueueLineNotification } from "../src/modules/line/lineNotifications.js";
 
 test("stores a durable LINE notification event inside the caller transaction", async () => {
   const calls = [];

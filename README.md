@@ -2,9 +2,9 @@
 
 แพลตฟอร์มระบบงานดิจิทัลของเทศบาลท่าโพธ์ ประกอบด้วยระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง ระบบบริหารจัดการรถเก็บขยะ ระบบบริหารจัดการบรรเทาสาธารณภัย และระบบบริหารจัดการการประปา
 
-ดูโครงสร้างปัจจุบันได้ที่ [docs/SMART_THA_PHO_STRUCTURE.md](docs/SMART_THA_PHO_STRUCTURE.md)
+ดูภาพรวมแพลตฟอร์มที่ [docs/architecture/SMART_THA_PHO_STRUCTURE.md](docs/architecture/SMART_THA_PHO_STRUCTURE.md) และผังโฟลเดอร์สำหรับผู้พัฒนาที่ [docs/architecture/REPOSITORY_STRUCTURE.md](docs/architecture/REPOSITORY_STRUCTURE.md)
 
-เปิด API, Cloudflare Tunnel และอัปเดต LINE Webhook อัตโนมัติด้วย `./start-smart-tha-pho.ps1` ดูรายละเอียดที่ [docs/LINE_OPERATION.md](docs/LINE_OPERATION.md)
+เปิด API, Cloudflare Tunnel และอัปเดต LINE Webhook อัตโนมัติด้วย `./start-smart-tha-pho.ps1` ดูรายละเอียดที่ [docs/operations/LINE_OPERATION.md](docs/operations/LINE_OPERATION.md)
 
 ระบบขึ้นทะเบียนและบริหารจัดการข้อมูลสุนัขและแมวสำหรับ **เทศบาลท่าโพธ์**
 
@@ -21,7 +21,7 @@
 ## เริ่มใช้งานสำหรับพัฒนา
 
 1. คัดลอก `.env.example` เป็น `.env`
-2. สร้างฐานข้อมูลครั้งแรกด้วย `database/create_database.sql` และ `database/create_tables.sql`
+2. สร้างฐานข้อมูลครั้งแรกด้วย `database/bootstrap/create_database.sql` และ `database/bootstrap/create_tables.sql`
 3. รัน `npm install`
 4. รัน `npm run dev`
 
@@ -35,7 +35,7 @@ Admin Web: `https://0tyght.github.io/PRMS-TSM/`
 
 ตั้งค่า LINE OA โดยกำหนด `LINE_CHANNEL_SECRET` และ `LINE_CHANNEL_ACCESS_TOKEN` ใน `.env` แล้วกำหนด Webhook URL ของ Messaging API ให้ชี้ที่ `/api/line/webhook` ของ API ที่เข้าถึงจากภายนอกได้ สคริปต์ `start-smart-tha-pho.ps1` ใช้เปิด API ชั่วคราวและตั้ง Webhook เมื่อผู้ดูแลสั่งใช้งาน
 
-เปิด MySQL ใน XAMPP แล้วเปิดช่องทางเข้าถึงชั่วคราวด้วย `powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1` สคริปต์จะ apply migration ที่รันซ้ำได้ก่อนเริ่ม API จากนั้นหน้า GitHub Pages จะอ่านที่อยู่ API จาก `runtime-config.json` และเชื่อมต่อผ่าน Cloudflare Quick Tunnel หาก Tunnel หรือ API ออฟไลน์ ระบบจะแจ้งสถานะการเชื่อมต่อโดยไม่สร้างหรือแสดงข้อมูลจำลอง
+เปิด MySQL ใน XAMPP แล้วเปิดช่องทางเข้าถึงชั่วคราวด้วย `./start-smart-tha-pho.ps1` สคริปต์จะ apply migration ที่รันซ้ำได้ก่อนเริ่ม API จากนั้นหน้า GitHub Pages จะอ่านที่อยู่ API จาก `runtime-config.json` และเชื่อมต่อผ่าน Cloudflare Quick Tunnel หาก Tunnel หรือ API ออฟไลน์ ระบบจะแจ้งสถานะการเชื่อมต่อโดยไม่สร้างหรือแสดงข้อมูลจำลอง
 
 ไฟล์รูปและหลักฐานถูกเก็บใน `storage/uploads` ซึ่งไม่ถูก commit ขึ้น Git และดาวน์โหลดผ่าน API ที่ตรวจสิทธิ์พื้นที่พร้อมบันทึก Audit Log เท่านั้น สามารถกำหนดตำแหน่ง private storage ใหม่ด้วย `PRIVATE_STORAGE_DIR`
 

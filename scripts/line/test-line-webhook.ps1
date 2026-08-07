@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$ProjectPath = (Split-Path -Parent $PSScriptRoot),
+    [string]$ProjectPath = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [int]$MaxAttempts = 15,
     [int]$DelaySeconds = 5
 )
@@ -120,7 +120,7 @@ Cloudflare Tunnel ยังไม่พร้อมหลังลอง $MaxAtt
 สาเหตุล่าสุด:
 $LastError
 
-ให้เปิด scripts\start-public.ps1 ค้างไว้ใน PowerShell อีกหน้าต่าง
+ให้เปิด scripts\server\start-public.ps1 ค้างไว้ใน PowerShell อีกหน้าต่าง
 ถ้า URL นี้ยัง resolve ไม่ได้ ให้หยุด cloudflared แล้วรัน start-public.ps1 ใหม่
 "@
 }

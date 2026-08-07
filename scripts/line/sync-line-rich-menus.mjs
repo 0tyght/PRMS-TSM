@@ -1,12 +1,12 @@
-import { pool } from "../apps/api/src/db.js";
-import { loadCitizenExperienceByLineUserId } from "../apps/api/src/citizenExperience.js";
-import { isValidLineUserId } from "../apps/api/src/lineNativeCitizen.js";
+import { pool } from "../../apps/api/src/core/db.js";
+import { loadCitizenExperienceByLineUserId } from "../../apps/api/src/modules/line/citizenExperience.js";
+import { isValidLineUserId } from "../../apps/api/src/modules/line/lineNativeCitizen.js";
 import {
   cleanupWizardRichMenus,
   ensureWizardSchema,
   showWizardMainMenu,
   warmWizardRichMenus,
-} from "../apps/api/src/lineRichMenuWizard.js";
+} from "../../apps/api/src/modules/line/lineRichMenuWizard.js";
 
 const lineUserIds = new Set();
 

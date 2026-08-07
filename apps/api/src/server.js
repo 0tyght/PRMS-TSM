@@ -1,11 +1,11 @@
 import { createApp } from "./app.js";
-import { config } from "./config.js";
+import { config } from "./core/config.js";
 import {
   enqueueVaccinationReminders,
   processPendingLineNotifications,
-} from "./lineNotifications.js";
-import { cleanupNativeLineState } from "./lineNativeCitizen.js";
-import { warmWizardRichMenus } from "./lineRichMenuWizard.js";
+} from "./modules/line/lineNotifications.js";
+import { cleanupNativeLineState } from "./modules/line/lineNativeCitizen.js";
+import { warmWizardRichMenus } from "./modules/line/lineRichMenuWizard.js";
 
 const app = createApp();
 const server = app.listen(config.port, () => {

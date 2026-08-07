@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import PDFDocument from "pdfkit";
 import { strToU8, zipSync } from "fflate";
 
-const fontPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../assets/fonts/Sarabun-Regular.ttf");
+const fontPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../assets/fonts/Sarabun-Regular.ttf");
 
 function xmlEscape(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-import { config } from "./config.js";
+import { config } from "../../core/config.js";
 import {
   buildCitizenStatusFlex,
   loadCitizenExperienceByLineUserId,

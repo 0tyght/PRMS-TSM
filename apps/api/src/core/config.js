@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT_ENV_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../../.env",
+  "../../../../.env",
 );
 
 loadEnv({

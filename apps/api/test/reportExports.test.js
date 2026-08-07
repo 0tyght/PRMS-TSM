@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { unzipSync } from "fflate";
-import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "../src/reportExports.js";
+import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "../src/modules/reports/reportExports.js";
 
 const rows = [{ villageNo: 1, villageName: "หมู่ที่ 1", totalPets: 12, dogs: 7, cats: 5, vaccinated: 8, sterilized: 4, pending: 2, openCases: 1 }];
 

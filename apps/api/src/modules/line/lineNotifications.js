@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
-import { config } from "./config.js";
-import { pool } from "./db.js";
+import { config } from "../../core/config.js";
+import { pool } from "../../core/db.js";
 import { syncRichMenuForLineUser } from "./citizenExperience.js";
 
 const ACTIONABLE_STATUS_CODES = new Set([

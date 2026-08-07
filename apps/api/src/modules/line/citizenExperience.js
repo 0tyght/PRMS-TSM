@@ -1,6 +1,6 @@
-﻿import { config } from "./config.js";
-import { pool } from "./db.js";
-import { authenticate, requireRole } from "./middleware.js";
+import { config } from "../../core/config.js";
+import { pool } from "../../core/db.js";
+import { authenticate, requireRole } from "../../core/middleware.js";
 
 function numberValue(value) {
   return Number(value || 0);

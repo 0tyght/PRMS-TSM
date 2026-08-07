@@ -93,7 +93,7 @@ export function createApi(token) {
 
     if (!apiBase) {
       throw new Error(
-        "ไม่พบลิงก์ API ล่าสุด กรุณาเปิดเซิร์ฟเวอร์ด้วย scripts/start-public.ps1"
+        "ไม่พบลิงก์ API ล่าสุด กรุณาเปิดเซิร์ฟเวอร์ด้วย start-smart-tha-pho.ps1"
       );
     }
 

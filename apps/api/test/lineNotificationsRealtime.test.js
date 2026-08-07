@@ -5,7 +5,7 @@ import {
   buildHouseholdVaccinationMessage,
   groupVaccinationReminderRows,
   shouldSendRealtimeStatusNotification,
-} from "../src/lineNotifications.js";
+} from "../src/modules/line/lineNotifications.js";
 
 test("sends only actionable status notifications without delaying final results", () => {
   assert.equal(shouldSendRealtimeStatusNotification("UNDER_REVIEW"), false);

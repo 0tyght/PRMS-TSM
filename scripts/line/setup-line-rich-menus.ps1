@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$ProjectPath = (Split-Path -Parent $PSScriptRoot)
+    [string]$ProjectPath = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 )
 
 Set-StrictMode -Version Latest
@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $exitCode = 1
 Push-Location $ProjectPath
 try {
-    & node "scripts\sync-line-rich-menus.mjs"
+    & node "scripts\line\sync-line-rich-menus.mjs"
     $exitCode = $LASTEXITCODE
 }
 finally {

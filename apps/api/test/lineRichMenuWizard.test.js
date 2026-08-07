@@ -12,12 +12,12 @@ import {
   fingerprintWizardPage,
   normalizeWizardAction,
   renderWizardMenuImage,
-} from "../src/lineRichMenuWizard.js";
+} from "../src/modules/line/lineRichMenuWizard.js";
 import {
   buildMainMenuActions,
   buildRichSubmenuActions,
   commandToAction,
-} from "../src/lineNativeCitizen.js";
+} from "../src/modules/line/lineNativeCitizen.js";
 
 function actionData(items) {
   return items.map((item) => item?.action?.data || item?.data).filter(Boolean);

@@ -198,7 +198,7 @@ function Invoke-DatabaseMigrations {
 
 $root = (
     Resolve-Path (
-        Join-Path $PSScriptRoot ".."
+        Join-Path $PSScriptRoot "..\\.."
     )
 ).Path
 

@@ -2,10 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(process.cwd());
-const nativePath = path.join(root, "apps", "api", "src", "lineNativeCitizen.v10.js");
-const wizardPath = path.join(root, "apps", "api", "src", "lineRichMenuWizard.js");
-const botPath = path.join(root, "apps", "api", "src", "lineBot.js");
-const citizenPath = path.join(root, "apps", "api", "src", "citizenExperience.js");
+const nativePath = path.join(root, "apps", "api", "src", "modules", "line", "lineNativeCitizen.v10.js");
+const wizardPath = path.join(root, "apps", "api", "src", "modules", "line", "lineRichMenuWizard.js");
+const botPath = path.join(root, "apps", "api", "src", "modules", "line", "lineBot.js");
+const citizenPath = path.join(root, "apps", "api", "src", "modules", "line", "citizenExperience.js");
 
 const native = fs.readFileSync(nativePath, "utf8");
 const wizard = fs.readFileSync(wizardPath, "utf8");

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { config } from "./config.js";
+import { config } from "../../core/config.js";
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 

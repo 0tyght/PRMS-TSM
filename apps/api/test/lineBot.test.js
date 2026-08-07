@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCitizenStatusFlex } from "../src/citizenExperience.js";
-import { verifyLineWebhookSignature } from "../src/lineBot.js";
+import { buildCitizenStatusFlex } from "../src/modules/line/citizenExperience.js";
+import { verifyLineWebhookSignature } from "../src/modules/line/lineBot.js";
 import {
   buildMainMenuActions,
   buildStatusMenuActions,
@@ -11,7 +11,7 @@ import {
   normalizeNativeCommand,
   normalizeThaiPhone,
   parsePostbackData,
-} from "../src/lineNativeCitizen.js";
+} from "../src/modules/line/lineNativeCitizen.js";
 
 test("verifies an authentic LINE webhook signature", () => {
   const secret = "test-channel-secret";

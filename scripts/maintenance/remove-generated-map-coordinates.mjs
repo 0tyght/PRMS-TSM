@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pool } from "../apps/api/src/db.js";
+import { pool } from "../../apps/api/src/core/db.js";
 
 const EPSILON = 1e-12;
 const TOLERANCE = 0.00000011;
@@ -9,7 +9,7 @@ const applyChanges = process.argv.includes("--apply");
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const geoJsonPath = path.resolve(
   scriptDirectory,
-  "../apps/smart-tha-pho/src/assets/maps/tha-pho-villages.geojson",
+  "../../apps/smart-tha-pho/src/assets/maps/tha-pho-villages.geojson",
 );
 const geoJson = JSON.parse(await fs.readFile(geoJsonPath, "utf8"));
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { openApiDocument } from "../src/openapi.js";
+import { openApiDocument } from "../src/contracts/openapi.js";
 
 const documentedPaths = [
   "/openapi.json", "/health", "/health/live", "/health/ready",

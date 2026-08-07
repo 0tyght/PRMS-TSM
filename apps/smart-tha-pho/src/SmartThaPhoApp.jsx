@@ -4,10 +4,10 @@ import PlatformLoginPage from "./pages/PlatformLoginPage.jsx";
 import SystemPickerPage from "./pages/SystemPickerPage.jsx";
 
 const APPLICATIONS = Object.freeze({
-  pet: lazy(() => import("./apps/pet-registration/PetRegistrationApp.jsx")),
-  waste: lazy(() => import("./apps/waste-management/WasteManagementApp.jsx")),
-  disaster: lazy(() => import("./apps/disaster-management/DisasterManagementApp.jsx")),
-  water: lazy(() => import("./apps/waterworks-management/WaterworksManagementApp.jsx")),
+  pet: lazy(() => import("./modules/pet-registration/PetRegistrationApp.jsx")),
+  waste: lazy(() => import("./modules/waste-management/WasteManagementApp.jsx")),
+  disaster: lazy(() => import("./modules/disaster-management/DisasterManagementApp.jsx")),
+  water: lazy(() => import("./modules/waterworks-management/WaterworksManagementApp.jsx")),
 });
 
 function getAccessToken() {

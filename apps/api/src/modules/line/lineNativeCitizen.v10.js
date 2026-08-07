@@ -2,8 +2,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { config } from "./config.js";
-import { pool, withTransaction } from "./db.js";
+import { config } from "../../core/config.js";
+import { pool, withTransaction } from "../../core/db.js";
 import {
   buildCitizenStatusFlex,
   loadCitizenExperienceByLineUserId,

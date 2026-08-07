@@ -12,19 +12,19 @@ import {
   REGISTRATION_STATUS,
   validatePetRegistration,
 } from "@smart-thapho/shared";
-import { config } from "./config.js";
-import { pool, withTransaction } from "./db.js";
-import { authenticate, errorHandler, requestContext, requireRole } from "./middleware.js";
-import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "./reportExports.js";
-import { openApiDocument } from "./openapi.js";
+import { config } from "./core/config.js";
+import { pool, withTransaction } from "./core/db.js";
+import { authenticate, errorHandler, requestContext, requireRole } from "./core/middleware.js";
+import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "./modules/reports/reportExports.js";
+import { openApiDocument } from "./contracts/openapi.js";
 import {
   deliverLineNotification,
   enqueueLineNotification,
   shouldSendRealtimeStatusNotification,
-} from "./lineNotifications.js";
-import { handleLineWebhook } from "./lineBot.js";
-import { applyNativeOwnerTransfer, findNativeAttachmentForAdmin, listNativeAttachments } from "./lineNativeCitizen.js";
-import { createMfaSecret, createOtpAuthUrl, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "./mfa.js";
+} from "./modules/line/lineNotifications.js";
+import { handleLineWebhook } from "./modules/line/lineBot.js";
+import { applyNativeOwnerTransfer, findNativeAttachmentForAdmin, listNativeAttachments } from "./modules/line/lineNativeCitizen.js";
+import { createMfaSecret, createOtpAuthUrl, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "./modules/security/mfa.js";
 
 const registrationSchema = z.object({
   ownerName: z.string().trim().min(2).max(150),

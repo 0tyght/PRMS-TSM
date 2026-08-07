@@ -6,6 +6,10 @@ dist/
 *.log
 .DS_Store
 coverage/
+__pycache__/
+*.py[cod]
+outputs/
+scripts/reports/
 .codex-tmp/
 ~$*.docx
 storage/uploads/*
