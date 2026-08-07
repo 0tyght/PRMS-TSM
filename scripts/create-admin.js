@@ -5,7 +5,7 @@ import "dotenv/config";
 
 const email = process.env.ADMIN_EMAIL;
 const password = process.env.ADMIN_PASSWORD;
-const name = process.env.ADMIN_NAME || "ผู้ดูแลระบบ PRMS-TSM";
+const name = process.env.ADMIN_NAME || "ผู้ดูแลระบบ Smart Tha Pho";
 if (!email || !password || password.length < 10) {
   console.error("กำหนด ADMIN_EMAIL และ ADMIN_PASSWORD ที่มีอย่างน้อย 10 ตัวอักษร");
   process.exit(1);

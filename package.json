@@ -1,5 +1,5 @@
 {
-  "name": "prms-tsm",
+  "name": "smart-tha-pho",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -9,11 +9,12 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm-run-all --parallel dev:api dev:admin",
-    "dev:api": "npm run dev --workspace @prms/api",
-    "dev:admin": "npm run dev --workspace @prms/admin-web",
-    "build": "npm run build --workspace @prms/shared && npm run build --workspace @prms/admin-web",
-    "test": "npm run test --workspace @prms/api && npm run test --workspace @prms/shared",
+    "dev": "npm-run-all --parallel dev:api dev:platform",
+    "dev:api": "npm run dev --workspace @smart-thapho/api",
+    "dev:platform": "npm run dev --workspace @smart-thapho/platform",
+    "dev:admin": "npm run dev:platform",
+    "build": "npm run build --workspace @smart-thapho/shared && npm run build --workspace @smart-thapho/platform",
+    "test": "npm run test --workspace @smart-thapho/api && npm run test --workspace @smart-thapho/shared",
     "create-admin": "node scripts/create-admin.js"
   },
   "devDependencies": {

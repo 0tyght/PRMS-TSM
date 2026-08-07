@@ -4,6 +4,52 @@ export const ORGANIZATION = Object.freeze({
   productName: "PRMS-TSM",
 });
 
+export const PLATFORM = Object.freeze({
+  productName: "Smart Tha Pho",
+  thaiName: "สมาร์ทท่าโพธ์",
+  municipalityName: "เทศบาลท่าโพธ์",
+  systemName: "แพลตฟอร์มบริการดิจิทัลเทศบาลท่าโพธ์",
+});
+
+export const MUNICIPAL_SYSTEMS = Object.freeze([
+  Object.freeze({
+    id: "pet",
+    productName: "PRMS-TSM",
+    name: "ระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง",
+    shortName: "ทะเบียนสัตว์เลี้ยง",
+    description: "ตรวจสอบการขึ้นทะเบียนสัตว์เลี้ยงและวางแผนบริการสาธารณสุข",
+    availability: "ready",
+  }),
+  Object.freeze({
+    id: "waste",
+    productName: "Waste Management",
+    name: "ระบบบริหารจัดการรถเก็บขยะ",
+    shortName: "รถเก็บขยะ",
+    description: "ติดตามแผนการเก็บขยะ รถปฏิบัติงาน และการแจ้งเตือนประชาชน",
+    availability: "setup",
+  }),
+  Object.freeze({
+    id: "disaster",
+    productName: "Disaster Management",
+    name: "ระบบบริหารจัดการบรรเทาสาธารณภัย",
+    shortName: "บรรเทาสาธารณภัย",
+    description: "รับแจ้งเหตุ ประสานกำลัง และติดตามสถานการณ์ฉุกเฉิน",
+    availability: "setup",
+  }),
+  Object.freeze({
+    id: "water",
+    productName: "Waterworks Management",
+    name: "ระบบบริหารจัดการการประปา",
+    shortName: "การประปา",
+    description: "จัดการผู้ใช้น้ำ มิเตอร์ ค่าบริการ และแจ้งเหตุระบบประปา",
+    availability: "setup",
+  }),
+]);
+
+export function getMunicipalSystem(systemId) {
+  return MUNICIPAL_SYSTEMS.find((system) => system.id === systemId) || null;
+}
+
 export const SPECIES = Object.freeze({ DOG: "DOG", CAT: "CAT" });
 export const SEX = Object.freeze({ MALE: "MALE", FEMALE: "FEMALE", UNKNOWN: "UNKNOWN" });
 export const REGISTRATION_STATUS = Object.freeze({

@@ -1,19 +1,20 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App.jsx";
+import App from "./SmartThaPhoApp.jsx";
 import RootErrorBoundary from "./components/layout/RootErrorBoundary.jsx";
 import "./styles.css";
 import "./ux-foundation-v7.css";
 import "./admin-sections-v8.css";
+import "./platform.css";
 const rootElement = document.getElementById("root");
 const fatalElement = document.getElementById("fatal-root");
 
-if (window.__prmsBootTimer) {
-  window.clearTimeout(window.__prmsBootTimer);
+if (window.__smartThaPhoBootTimer || window.__prmsBootTimer) {
+  window.clearTimeout(window.__smartThaPhoBootTimer || window.__prmsBootTimer);
 }
 
 function revealFatalScreen(error) {
-  console.error("PRMS fatal browser error:", error);
+  console.error("Smart Tha Pho fatal browser error:", error);
 
   window.setTimeout(() => {
     if (
@@ -44,7 +45,7 @@ if (!rootElement) {
 const root = createRoot(rootElement, {
   onRecoverableError(error, errorInfo) {
     console.error(
-      "PRMS recoverable React error:",
+      "Smart Tha Pho recoverable React error:",
       error,
       errorInfo,
     );

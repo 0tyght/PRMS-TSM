@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$ProjectPath = "C:\xampp\htdocs\PRMS-TSM"
+    [string]$ProjectPath = (Split-Path -Parent $PSScriptRoot)
 )
 
 Set-StrictMode -Version Latest

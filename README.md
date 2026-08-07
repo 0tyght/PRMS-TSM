@@ -1,10 +1,16 @@
-# PRMS-TSM
+# Smart Tha Pho
+
+แพลตฟอร์มระบบงานดิจิทัลของเทศบาลท่าโพธ์ ประกอบด้วยระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง ระบบบริหารจัดการรถเก็บขยะ ระบบบริหารจัดการบรรเทาสาธารณภัย และระบบบริหารจัดการการประปา
+
+ดูโครงสร้างปัจจุบันได้ที่ [docs/SMART_THA_PHO_STRUCTURE.md](docs/SMART_THA_PHO_STRUCTURE.md)
+
+เปิด API, Cloudflare Tunnel และอัปเดต LINE Webhook อัตโนมัติด้วย `./start-smart-tha-pho.ps1` ดูรายละเอียดที่ [docs/LINE_OPERATION.md](docs/LINE_OPERATION.md)
 
 ระบบขึ้นทะเบียนและบริหารจัดการข้อมูลสุนัขและแมวสำหรับ **เทศบาลท่าโพธ์**
 
 ## ช่องทางใช้งานจริง
 
-- `apps/admin-web` — เว็บระบบงานสำหรับเจ้าหน้าที่เทศบาล
+- `apps/smart-tha-pho` — เว็บเจ้าหน้าที่ Smart Tha Pho และหน้าเข้าสู่ระบบกลาง
 - LINE Official Account — ช่องทางเดียวสำหรับเจ้าของสัตว์เลี้ยงทุกขั้นตอน
 - `apps/api` — API, การยืนยันตัวตน และกฎธุรกิจ
 - `packages/shared` — แบบข้อมูลและค่ากลางที่ใช้ร่วมกัน
@@ -27,7 +33,7 @@ API v1: `http://localhost:4100/api/v1/health`
 
 Admin Web: `https://0tyght.github.io/PRMS-TSM/`
 
-ตั้งค่า LINE OA โดยกำหนด `LINE_CHANNEL_SECRET` และ `LINE_CHANNEL_ACCESS_TOKEN` ใน `.env` แล้วกำหนด Webhook URL ของ Messaging API ให้ชี้ที่ `/api/line/webhook` ของ API ที่เข้าถึงจากภายนอกได้ สคริปต์ `scripts/start-prms.ps1` ใช้เปิด API ชั่วคราวและตั้ง Webhook เมื่อผู้ดูแลสั่งใช้งาน
+ตั้งค่า LINE OA โดยกำหนด `LINE_CHANNEL_SECRET` และ `LINE_CHANNEL_ACCESS_TOKEN` ใน `.env` แล้วกำหนด Webhook URL ของ Messaging API ให้ชี้ที่ `/api/line/webhook` ของ API ที่เข้าถึงจากภายนอกได้ สคริปต์ `start-smart-tha-pho.ps1` ใช้เปิด API ชั่วคราวและตั้ง Webhook เมื่อผู้ดูแลสั่งใช้งาน
 
 เปิด MySQL ใน XAMPP แล้วเปิดช่องทางเข้าถึงชั่วคราวด้วย `powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1` สคริปต์จะ apply migration ที่รันซ้ำได้ก่อนเริ่ม API จากนั้นหน้า GitHub Pages จะอ่านที่อยู่ API จาก `runtime-config.json` และเชื่อมต่อผ่าน Cloudflare Quick Tunnel หาก Tunnel หรือ API ออฟไลน์ ระบบจะแจ้งสถานะการเชื่อมต่อโดยไม่สร้างหรือแสดงข้อมูลจำลอง
 

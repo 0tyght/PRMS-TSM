@@ -11,7 +11,7 @@ import {
   ORGANIZATION,
   REGISTRATION_STATUS,
   validatePetRegistration,
-} from "@prms/shared";
+} from "@smart-thapho/shared";
 import { config } from "./config.js";
 import { pool, withTransaction } from "./db.js";
 import { authenticate, errorHandler, requestContext, requireRole } from "./middleware.js";

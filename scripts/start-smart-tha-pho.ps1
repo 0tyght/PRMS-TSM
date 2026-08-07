@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$ProjectPath = "C:\xampp\htdocs\PRMS-TSM",
+    [string]$ProjectPath = (Split-Path -Parent $PSScriptRoot),
     [switch]$SkipGitPush
 )
 
@@ -45,7 +45,7 @@ if (-not (Test-Path -LiteralPath $startPublicPath)) {
     throw "ไม่พบ scripts\start-public.ps1"
 }
 
-Write-Host "PRMS-TSM V12 Start" -ForegroundColor Cyan
+Write-Host "Smart Tha Pho Start" -ForegroundColor Cyan
 Write-Host "เปิด API, MySQL, Cloudflare และอัปเดต LINE Webhook อัตโนมัติ"
 Write-Host ""
 
@@ -164,7 +164,7 @@ if (-not [bool]$testResult.success) {
 }
 
 Write-Host ""
-Write-Host "PRMS-TSM พร้อมใช้งาน" -ForegroundColor Green
+Write-Host "Smart Tha Pho พร้อมใช้งาน" -ForegroundColor Green
 Write-Host "Bot: $($botInfo.displayName) ($($botInfo.basicId))" -ForegroundColor Green
 Write-Host "API: $apiBaseUrl" -ForegroundColor Green
 Write-Host "Webhook: $webhookUrl" -ForegroundColor Green

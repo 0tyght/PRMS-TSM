@@ -1,5 +1,5 @@
 {
-  "name": "@prms/admin-web",
+  "name": "@smart-thapho/platform",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
-    "@prms/shared": "*",
+    "@smart-thapho/shared": "*",
     "@vitejs/plugin-react": "latest",
     "leaflet": "^1.9.4",
     "react": "latest",

@@ -89,7 +89,7 @@ export default class RootErrorBoundary extends Component {
   static getDerivedStateFromError(error) {
     return {
       error,
-      errorReference: `PRMS-${Date.now()}`,
+      errorReference: `SMART-THA-PHO-${Date.now()}`,
     };
   }
 
@@ -120,6 +120,8 @@ export default class RootErrorBoundary extends Component {
   handleLoginAgain = () => {
     try {
       sessionStorage.removeItem("prms_access_token");
+      sessionStorage.removeItem("smart_thapho_access_token");
+      sessionStorage.removeItem("smart_thapho_active_system");
     } catch {
       // ดำเนินการต่อแม้ sessionStorage ใช้ไม่ได้
     }

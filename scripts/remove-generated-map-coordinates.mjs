@@ -9,7 +9,7 @@ const applyChanges = process.argv.includes("--apply");
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const geoJsonPath = path.resolve(
   scriptDirectory,
-  "../apps/admin-web/src/assets/maps/tha-pho-villages.geojson",
+  "../apps/smart-tha-pho/src/assets/maps/tha-pho-villages.geojson",
 );
 const geoJson = JSON.parse(await fs.readFile(geoJsonPath, "utf8"));
 

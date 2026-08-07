@@ -163,7 +163,7 @@ V12 ปรับระบบจาก “สร้าง Rich Menu ใหม่�
 
 ```powershell
 cd C:\xampp\htdocs\PRMS-TSM
-powershell -ExecutionPolicy Bypass -File scripts\start-prms.ps1
+powershell -ExecutionPolicy Bypass -File scripts\start-smart-tha-pho.ps1
 ```
 
 คำสั่งนี้เปิดระบบผ่าน `start-public.ps1` แล้วตรวจ Public API, อัปเดต LINE Webhook เป็น Quick Tunnel URL ปัจจุบัน และทดสอบ Webhook ให้อัตโนมัติ

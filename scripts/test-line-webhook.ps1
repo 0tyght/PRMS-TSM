@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$ProjectPath = "C:\xampp\htdocs\PRMS-TSM",
+    [string]$ProjectPath = (Split-Path -Parent $PSScriptRoot),
     [int]$MaxAttempts = 15,
     [int]$DelaySeconds = 5
 )

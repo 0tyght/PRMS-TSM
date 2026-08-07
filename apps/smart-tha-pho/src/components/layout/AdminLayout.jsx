@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ORGANIZATION } from "@prms/shared";
+import { ORGANIZATION, PLATFORM } from "@smart-thapho/shared";
 import { ADMIN_MENU } from "../../config/navigation.js";
 
 const MENU_GROUPS = [
@@ -76,14 +76,14 @@ function Brand() {
     <div className="v6-brand">
       <span className="v6-brand__mark" aria-hidden="true">ทพ</span>
       <span className="v6-brand__text">
-        <strong>{ORGANIZATION.shortName}</strong>
-        <small>Pet Registration Management</small>
+        <strong>{PLATFORM.productName}</strong>
+        <small>{ORGANIZATION.productName}</small>
       </span>
     </div>
   );
 }
 
-function Sidebar({ page, navigate, open, close }) {
+function Sidebar({ page, navigate, open, close, onSwitchSystem }) {
   const menuMap = useMemo(
     () => new Map(ADMIN_MENU.map((item) => [item.id, item])),
     [],
@@ -146,12 +146,15 @@ function Sidebar({ page, navigate, open, close }) {
           </div>
           <button type="button" onClick={() => navigate("registrations")}>เปิดศูนย์รับข้อมูล</button>
         </div>
+        <button type="button" className="platform-switch-button" onClick={onSwitchSystem}>
+          เลือกระบบ Smart Tha Pho
+        </button>
       </aside>
     </>
   );
 }
 
-function Topbar({ title, user, navigate, onMenu, onLogout }) {
+function Topbar({ title, user, navigate, onMenu, onLogout, onSwitchSystem }) {
   return (
     <header className="v6-topbar">
       <div className="v6-topbar__left">
@@ -166,6 +169,9 @@ function Topbar({ title, user, navigate, onMenu, onLogout }) {
       </div>
 
       <div className="v6-topbar__right">
+        <button type="button" className="topbar-system-switch" onClick={onSwitchSystem}>
+          เปลี่ยนระบบ
+        </button>
         <button
           type="button"
           className="v6-line-status"
@@ -199,7 +205,7 @@ function Topbar({ title, user, navigate, onMenu, onLogout }) {
   );
 }
 
-export default function AdminLayout({ page, navigate, title, user, onLogout, children }) {
+export default function AdminLayout({ page, navigate, title, user, onLogout, onSwitchSystem, children }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -222,6 +228,7 @@ export default function AdminLayout({ page, navigate, title, user, onLogout, chi
         navigate={navigate}
         open={menuOpen}
         close={() => setMenuOpen(false)}
+        onSwitchSystem={onSwitchSystem}
       />
       <Topbar
         title={title}
@@ -229,6 +236,7 @@ export default function AdminLayout({ page, navigate, title, user, onLogout, chi
         navigate={navigate}
         onMenu={() => setMenuOpen(true)}
         onLogout={onLogout}
+        onSwitchSystem={onSwitchSystem}
       />
       <main className="v6-main" aria-label={title}>
         <div className="v6-main__inner">{children}</div>

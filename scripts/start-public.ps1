@@ -52,7 +52,7 @@ function Get-PublicHealth {
             -Headers @{
                 "Cache-Control" = "no-cache"
                 "Pragma" = "no-cache"
-                "User-Agent" = "PRMS-TSM-Health-Check"
+                "User-Agent" = "Smart-Tha-Pho-Health-Check"
             }
     }
     catch {
@@ -576,6 +576,6 @@ if (-not $SkipGitPush) {
 }
 
 Write-Host ""
-Write-Host "PRMS-TSM is ready." -ForegroundColor Green
-Write-Host "Admin: https://0tyght.github.io/PRMS-TSM/" -ForegroundColor Green
+Write-Host "Smart Tha Pho is ready." -ForegroundColor Green
+Write-Host "Platform: https://0tyght.github.io/PRMS-TSM/" -ForegroundColor Green
 Write-Host ("API: {0}/api" -f $tunnelUrl) -ForegroundColor Green
