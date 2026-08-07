@@ -68,20 +68,20 @@ test("normalizes native Thai commands", () => {
 });
 
 
-test("groups owner services into instant static menu switches", () => {
+test("groups owner services into visible postback selections", () => {
   const actions = buildMainMenuActions({ linked: true });
 
   assert.deepEqual(
-    actions.slice(0, 5).map((item) => item.richMenuAliasId),
+    actions.slice(0, 5).map((item) => [item.type, item.data, item.displayText]),
     [
-      "prms-v12-pets",
-      "prms-v12-health",
-      "prms-v12-status",
-      "prms-v12-requests",
-      "prms-v12-owner",
+      ["postback", "wizard=switched&target=pets", "สัตว์ของฉัน"],
+      ["postback", "wizard=switched&target=health", "สุขภาพสัตว์"],
+      ["postback", "wizard=switched&target=status", "แจ้งสถานะสัตว์"],
+      ["postback", "wizard=switched&target=requests", "คำขอของฉัน"],
+      ["postback", "wizard=switched&target=owner", "ข้อมูลเจ้าของ"],
     ],
   );
-  assert.equal(actions.every((item) => item.type === "richmenuswitch" || item.data === "action=action_center"), true);
+  assert.equal(actions.every((item) => item.type === "postback"), true);
 });
 
 test("keeps lost and deceased actions under the pet status submenu", () => {

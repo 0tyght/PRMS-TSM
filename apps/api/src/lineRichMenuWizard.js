@@ -20,7 +20,7 @@ const CHOICE_LIMIT = 6;
 const RUNTIME_TTL_DAYS = 7;
 const STATIC_ASSET_TTL_DAYS = 90;
 const DYNAMIC_ASSET_TTL_DAYS = 7;
-const RENDER_VERSION = "v12.2";
+const RENDER_VERSION = "v12.3";
 const MAX_HISTORY = 12;
 const REQUEST_TIMEOUT_MS = 15_000;
 const IMAGE_CACHE_LIMIT = 32;
@@ -165,6 +165,7 @@ function postbackAction(label, data, inputOption = "openRichMenu") {
     type: "postback",
     label: truncateLabel(label),
     data: clamp(data),
+    displayText: clamp(label, 300),
     inputOption,
   };
 }
@@ -209,6 +210,7 @@ export function normalizeWizardAction(action) {
       type: "postback",
       label,
       data,
+      displayText: clamp(action.displayText || label, 300),
       inputOption: action.inputOption || "openRichMenu",
       ...(action.fillInText && action.inputOption === "openKeyboard"
         ? { fillInText: clamp(action.fillInText, 300) }
@@ -865,9 +867,6 @@ export function buildWizardPage(definition, offset = 0, activeSession = false) {
   }
 
   const isMain = Boolean(definition?.isMain);
-  const staticReturnAlias = !activeSession && definition?.returnAlias
-    ? String(definition.returnAlias)
-    : "";
   const controlSlots = isMain
     ? []
     : [
@@ -876,15 +875,15 @@ export function buildWizardPage(definition, offset = 0, activeSession = false) {
           label: "ย้อนกลับ",
           action: activeSession
             ? postbackAction("ย้อนกลับ", "session=back")
-            : staticReturnAlias
-              ? richMenuSwitchAction("ย้อนกลับ", staticReturnAlias, "wizard=switched&target=main")
+            : definition?.returnAlias
+              ? postbackAction("ย้อนกลับ", "wizard=switched&target=main")
               : postbackAction("ย้อนกลับ", "wizard=back"),
         },
         {
           kind: "control",
           label: "เมนูหลัก",
-          action: staticReturnAlias
-            ? richMenuSwitchAction("เมนูหลัก", MAIN_OWNER_ALIAS, "wizard=switched&target=main")
+          action: definition?.returnAlias
+            ? postbackAction("เมนูหลัก", "wizard=switched&target=main")
             : postbackAction("เมนูหลัก", "wizard=home"),
         },
         {
@@ -1523,8 +1522,7 @@ function choice(label, dataOrAction) {
 }
 
 function staticSwitchChoice(label, key) {
-  const alias = STATIC_ALIAS_BY_KEY[`submenu-${key}-v12`];
-  return choice(label, richMenuSwitchAction(label, alias, `wizard=switched&target=${key}`));
+  return choice(label, postbackAction(label, `wizard=switched&target=${key}`));
 }
 
 const STATIC_SUBMENUS = Object.freeze({

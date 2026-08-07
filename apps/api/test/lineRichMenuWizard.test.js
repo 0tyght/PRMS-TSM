@@ -40,11 +40,13 @@ test("supports instant rich-menu switching through aliases", () => {
   assert.equal(action.richMenuAliasId, "prms-v12-health");
 });
 
-test("static submenu back and home controls switch instantly", () => {
+test("static submenu controls write visible chat selections", () => {
   const page = buildWizardPage(buildStaticSubmenuDefinition("health"), 0, false);
-  assert.equal(page.controlSlots[0].action.type, "richmenuswitch");
-  assert.equal(page.controlSlots[0].action.richMenuAliasId, "prms-v12-main-owner");
-  assert.equal(page.controlSlots[1].action.type, "richmenuswitch");
+  assert.equal(page.controlSlots[0].action.type, "postback");
+  assert.equal(page.controlSlots[0].action.data, "wizard=switched&target=main");
+  assert.equal(page.controlSlots[0].action.displayText, "ย้อนกลับ");
+  assert.equal(page.controlSlots[1].action.type, "postback");
+  assert.equal(page.controlSlots[1].action.displayText, "เมนูหลัก");
 });
 
 test("reuses one pre-warmed menu for keyboard-only data entry", () => {
@@ -77,14 +79,33 @@ test("mirrors every visible Rich Menu button above the keyboard", () => {
   assert.equal(message.quickReply.items.length, page.slots.length);
 });
 
-test("keeps rich menu open and removes displayText from postbacks", () => {
+test("all standard menu selections include visible chat text", () => {
+  const definitions = [
+    buildMainWizardDefinition({ linked: false }),
+    buildMainWizardDefinition({ linked: true }),
+    buildTextEntryWizardDefinition(),
+    ...["pets", "health", "status", "requests", "owner"].map(buildStaticSubmenuDefinition),
+  ];
+
+  for (const definition of definitions) {
+    const page = buildWizardPage(definition, 0, definition.key === "input-v12");
+    for (const slot of page.slots) {
+      if (slot.action.type === "postback") {
+        assert.equal(typeof slot.action.displayText, "string");
+        assert.ok(slot.action.displayText.length > 0);
+      }
+    }
+  }
+});
+
+test("writes each postback selection into the LINE chat", () => {
   const action = normalizeWizardAction({
     type: "postback",
     label: "เลือกสุนัข",
     data: "session=species&value=DOG",
     displayText: "เลือกสุนัข",
   });
-  assert.equal(action.displayText, undefined);
+  assert.equal(action.displayText, "เลือกสุนัข");
   assert.equal(action.inputOption, "openRichMenu");
 });
 
@@ -138,13 +159,13 @@ test("uses stable fingerprints for cached rich menus", () => {
 test("builds streamlined owner main menu without duplicate add-pet shortcut", () => {
   const definition = buildMainWizardDefinition({ linked: true });
   assert.deepEqual(
-    definition.choices.slice(0, 5).map((choice) => [choice.action.type, choice.action.richMenuAliasId]),
+    definition.choices.slice(0, 5).map((choice) => [choice.action.type, choice.action.data, choice.action.displayText]),
     [
-      ["richmenuswitch", "prms-v12-pets"],
-      ["richmenuswitch", "prms-v12-health"],
-      ["richmenuswitch", "prms-v12-status"],
-      ["richmenuswitch", "prms-v12-requests"],
-      ["richmenuswitch", "prms-v12-owner"],
+      ["postback", "wizard=switched&target=pets", "สัตว์ของฉัน"],
+      ["postback", "wizard=switched&target=health", "สุขภาพสัตว์"],
+      ["postback", "wizard=switched&target=status", "แจ้งสถานะสัตว์"],
+      ["postback", "wizard=switched&target=requests", "คำขอของฉัน"],
+      ["postback", "wizard=switched&target=owner", "ข้อมูลเจ้าของ"],
     ],
   );
   assert.equal(definition.choices[5].action.data, "action=action_center");
