@@ -289,7 +289,7 @@ export default function SettingsPage({ token }) {
 
           <ServiceCard
             icon="line"
-            title="LINE OA / LIFF"
+            title="LINE Official Account"
             detail="ช่องทางสำหรับเจ้าของสัตว์เลี้ยงส่งและติดตามข้อมูล"
             status={
               system?.line === "configured"

@@ -2,13 +2,15 @@
 
 ระบบขึ้นทะเบียนและบริหารจัดการข้อมูลสุนัขและแมวสำหรับ **เทศบาลท่าโพธ์**
 
-## ส่วนประกอบ
+## ช่องทางใช้งานจริง
 
-- `apps/admin-web` — ระบบสำหรับเจ้าหน้าที่เทศบาล
-- `apps/citizen-web` — เว็บสำรองสำหรับประชาชน (ช่องทางหลักจะเป็น LINE LIFF)
+- `apps/admin-web` — เว็บระบบงานสำหรับเจ้าหน้าที่เทศบาล
+- LINE Official Account — ช่องทางเดียวสำหรับเจ้าของสัตว์เลี้ยงทุกขั้นตอน
 - `apps/api` — API, การยืนยันตัวตน และกฎธุรกิจ
 - `packages/shared` — แบบข้อมูลและค่ากลางที่ใช้ร่วมกัน
 - `database` — Schema, migration และ seed data
+
+เจ้าของสัตว์เลี้ยงไม่ต้องเปิดเว็บไซต์และไม่ใช้ LIFF: เริ่มต้นขึ้นทะเบียน เชื่อมทะเบียนเดิม ติดตามผล ส่งข้อมูลวัคซีน/ทำหมัน แจ้งสถานะสัตว์เลี้ยง แก้ไขข้อมูล โอนเจ้าของ และส่งตำแหน่งบ้าน ทำผ่านบทสนทนาและ Rich Menu ใน LINE OA ทั้งหมด ส่วนเจ้าหน้าที่ตรวจสอบและวางแผนงานผ่าน Admin Web
 
 ## เริ่มใช้งานสำหรับพัฒนา
 
@@ -21,15 +23,11 @@
 
 Admin Web: `http://localhost:5173`
 
-Citizen Web: `http://localhost:5174`
-
 API v1: `http://localhost:4100/api/v1/health`
 
 Admin Web: `https://0tyght.github.io/PRMS-TSM/`
 
-Citizen Web / LINE LIFF Endpoint: `https://0tyght.github.io/PRMS-TSM/citizen/`
-
-การเปิด LINE LIFF ต้องกำหนด `LINE_CHANNEL_ID`, `LINE_CHANNEL_SECRET` และ `LINE_LIFF_ID` ใน `.env` ของ API แล้วตั้ง Endpoint URL ของ LIFF ให้ชี้มายัง Citizen Web ด้านบน ระบบจะส่ง ID Token ไปตรวจสอบกับ LINE Platform ฝั่งเซิร์ฟเวอร์ก่อนอนุญาตให้เข้าถึงข้อมูลเจ้าของ
+ตั้งค่า LINE OA โดยกำหนด `LINE_CHANNEL_SECRET` และ `LINE_CHANNEL_ACCESS_TOKEN` ใน `.env` แล้วกำหนด Webhook URL ของ Messaging API ให้ชี้ที่ `/api/line/webhook` ของ API ที่เข้าถึงจากภายนอกได้ สคริปต์ `scripts/start-prms.ps1` ใช้เปิด API ชั่วคราวและตั้ง Webhook เมื่อผู้ดูแลสั่งใช้งาน
 
 เปิด MySQL ใน XAMPP แล้วเปิดช่องทางเข้าถึงชั่วคราวด้วย `powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1` สคริปต์จะ apply migration ที่รันซ้ำได้ก่อนเริ่ม API จากนั้นหน้า GitHub Pages จะอ่านที่อยู่ API จาก `runtime-config.json` และเชื่อมต่อผ่าน Cloudflare Quick Tunnel หาก Tunnel หรือ API ออฟไลน์ ระบบจะแจ้งสถานะการเชื่อมต่อโดยไม่สร้างหรือแสดงข้อมูลจำลอง
 
@@ -40,5 +38,4 @@ Citizen Web / LINE LIFF Endpoint: `https://0tyght.github.io/PRMS-TSM/citizen/`
 ## ลำดับความสำคัญ
 
 1. Admin Web สำหรับงานเจ้าหน้าที่เทศบาล
-2. LINE LIFF สำหรับเจ้าของสัตว์และประชาชน
-3. Citizen Web เป็นช่องทางสำรองเมื่อไม่สามารถใช้ LINE ได้
+2. LINE Official Account สำหรับเจ้าของสัตว์เลี้ยงทุกขั้นตอน

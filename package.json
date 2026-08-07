@@ -9,11 +9,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm-run-all --parallel dev:api dev:admin dev:citizen",
+    "dev": "npm-run-all --parallel dev:api dev:admin",
     "dev:api": "npm run dev --workspace @prms/api",
     "dev:admin": "npm run dev --workspace @prms/admin-web",
-    "dev:citizen": "npm run dev --workspace @prms/citizen-web",
-    "build": "npm run build --workspace @prms/shared && npm run build --workspace @prms/admin-web && npm run build --workspace @prms/citizen-web",
+    "build": "npm run build --workspace @prms/shared && npm run build --workspace @prms/admin-web",
     "test": "npm run test --workspace @prms/api && npm run test --workspace @prms/shared",
     "create-admin": "node scripts/create-admin.js"
   },

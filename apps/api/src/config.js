@@ -95,10 +95,6 @@ const origins = [
       "http://localhost:5173",
   ),
   normalizeOrigin(
-    process.env.CITIZEN_WEB_ORIGIN ||
-      "http://localhost:5174",
-  ),
-  normalizeOrigin(
     process.env.PUBLIC_WEB_ORIGIN ||
       "https://0tyght.github.io",
   ),
@@ -117,11 +113,7 @@ export const config = Object.freeze({
 
   mfaEncryptionKey: readText(process.env.MFA_ENCRYPTION_KEY, jwtSecret),
 
-  lineChannelId: readText(process.env.LINE_CHANNEL_ID),
-
   lineChannelSecret: readText(process.env.LINE_CHANNEL_SECRET),
-
-  lineLiffId: readText(process.env.LINE_LIFF_ID),
 
   lineChannelAccessToken: readText(process.env.LINE_CHANNEL_ACCESS_TOKEN),
 
@@ -132,10 +124,8 @@ export const config = Object.freeze({
   lineRichMenuActionId: readText(process.env.LINE_RICH_MENU_ACTION_ID),
 
   lineConfigured: Boolean(
-    readText(process.env.LINE_CHANNEL_ID) &&
     readText(process.env.LINE_CHANNEL_SECRET) &&
-    readText(process.env.LINE_CHANNEL_ACCESS_TOKEN) &&
-    readText(process.env.LINE_LIFF_ID)
+    readText(process.env.LINE_CHANNEL_ACCESS_TOKEN)
   ),
 
   privateStorageDir: path.resolve(readText(process.env.PRIVATE_STORAGE_DIR, "./storage/uploads")),

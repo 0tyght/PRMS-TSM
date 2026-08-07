@@ -27,6 +27,19 @@ test("serves the versioned API contract without breaking the legacy path", async
   assert.equal((await legacy.json()).status, "alive");
 });
 
+test("retires the citizen web API in favor of LINE OA", async (t) => {
+  const server = createApp().listen(0, "127.0.0.1");
+  await new Promise((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/citizen/me`);
+  assert.equal(response.status, 410);
+  assert.match((await response.json()).message, /LINE Official Account/);
+});
+
 test("validates attachment signatures instead of trusting the browser MIME type", () => {
   const onePixelPng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

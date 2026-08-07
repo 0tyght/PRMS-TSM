@@ -22,7 +22,6 @@ import {
   enqueueLineNotification,
   shouldSendRealtimeStatusNotification,
 } from "./lineNotifications.js";
-import { registerCitizenExperienceRoutes } from "./citizenExperience.js";
 import { handleLineWebhook } from "./lineBot.js";
 import { applyNativeOwnerTransfer, findNativeAttachmentForAdmin, listNativeAttachments } from "./lineNativeCitizen.js";
 import { createMfaSecret, createOtpAuthUrl, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "./mfa.js";
@@ -1174,11 +1173,12 @@ export function createApp() {
     },
   );
 
-  app.get("/api/public/line-config", (_req, res) => {
-    res.json({ data: { enabled: Boolean(config.lineLiffId), liffId: config.lineLiffId || null } });
-  });
-
-  registerCitizenExperienceRoutes(app);
+  // Citizen Web and LIFF are retired. All owner transactions are handled by LINE OA.
+  // Keep the legacy handlers below unreachable so existing bookmarked web URLs receive
+  // an explicit response instead of a blank page while they are removed from clients.
+  app.use("/api/citizen", (_req, res) => res.status(410).json({
+    message: "บริการสำหรับเจ้าของสัตว์เลี้ยงดำเนินการผ่าน LINE Official Account เท่านั้น",
+  }));
 
   app.post("/api/citizen/line/session", lineSessionRateLimit, async (req, res, next) => {
     try {

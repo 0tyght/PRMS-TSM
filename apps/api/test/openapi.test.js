@@ -4,9 +4,7 @@ import { openApiDocument } from "../src/openapi.js";
 
 const documentedPaths = [
   "/openapi.json", "/health", "/health/live", "/health/ready",
-  "/public/villages", "/public/registrations", "/public/registrations/{referenceNo}", "/public/line-config",
-  "/citizen/line/session", "/citizen/line/link", "/citizen/me", "/auth/login",
-  "/citizen/pets/{id}/submissions", "/citizen/submissions/{id}/cancel",
+  "/public/villages", "/public/registrations", "/public/registrations/{referenceNo}", "/auth/login",
   "/admin/dashboard", "/admin/owners", "/admin/owners/{id}", "/admin/users", "/admin/users/{id}",
   "/admin/system-status", "/admin/registrations", "/admin/registrations/{id}", "/admin/registrations/{id}/status",
   "/admin/attachments/{id}",

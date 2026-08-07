@@ -10,7 +10,7 @@ export const openApiDocument = {
     { url: "/api", description: "เส้นทางเดิมเพื่อความเข้ากันได้" },
   ],
   tags: [
-    { name: "Public" }, { name: "Citizen" }, { name: "Authentication" },
+    { name: "Public" }, { name: "Authentication" },
     { name: "Admin" }, { name: "Reports" }, { name: "Monitoring" },
   ],
   components: {
@@ -28,14 +28,6 @@ export const openApiDocument = {
     "/public/villages": { get: { tags: ["Public"], summary: "รายชื่อหมู่บ้าน", responses: { 200: { description: "Village list" } } } },
     "/public/registrations": { post: { tags: ["Public"], summary: "ส่งข้อมูลขึ้นทะเบียนสัตว์เลี้ยง", parameters: [{ in: "header", name: "Idempotency-Key", schema: { type: "string", maxLength: 128 } }], requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/RegistrationInput" } } } }, responses: { 201: { description: "Created" }, 200: { description: "Idempotent replay" }, 422: { description: "Invalid input" } } } },
     "/public/registrations/{referenceNo}": { get: { tags: ["Public"], summary: "ติดตามข้อมูลขึ้นทะเบียน", parameters: [{ in: "path", name: "referenceNo", required: true, schema: { type: "string" } }], responses: { 200: { description: "Registration status" }, 404: { description: "Not found" } } } },
-    "/public/line-config": { get: { tags: ["Public"], summary: "สถานะและ LIFF ID สาธารณะ", responses: { 200: { description: "LINE configuration" } } } },
-    "/citizen/line/session": { post: { tags: ["Citizen"], summary: "ยืนยัน LINE ID Token", responses: { 200: { description: "Citizen session" }, 401: { description: "Invalid LINE token" } } } },
-    "/citizen/line/link": { post: { tags: ["Citizen"], summary: "ผูก LINE กับทะเบียนเจ้าของ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Linked" } } } },
-    "/citizen/me": { get: { tags: ["Citizen"], summary: "สัตว์เลี้ยงและข้อมูลที่เจ้าของส่ง", security: [{ bearerAuth: [] }], responses: { 200: { description: "Citizen data" } } } },
-    "/citizen/pets/{id}/submissions": { post: { tags: ["Citizen"], summary: "ส่งข้อมูลแก้ทะเบียน วัคซีน ทำหมัน หรือสถานะสัตว์เลี้ยง", security: [{ bearerAuth: [] }], parameters: [{ in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }], responses: { 201: { description: "Submitted for staff review" }, 409: { description: "A pending submission already exists" } } } },
-    "/citizen/submissions/{id}": { get: { tags: ["Citizen"], summary: "ดูรายละเอียดข้อมูลที่ส่งเพื่อแก้ไข", security: [{ bearerAuth: [] }], responses: { 200: { description: "Owned submission detail" }, 404: { description: "Not found or not owned" } } } },
-    "/citizen/submissions/{id}/resubmit": { patch: { tags: ["Citizen"], summary: "แก้ไขข้อมูลที่เจ้าหน้าที่ส่งกลับ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Resubmitted" }, 409: { description: "State or version conflict" } } } },
-    "/citizen/submissions/{id}/cancel": { patch: { tags: ["Citizen"], summary: "ยกเลิกข้อมูลที่ยังไม่รับรอง", security: [{ bearerAuth: [] }], responses: { 200: { description: "Cancelled" }, 409: { description: "Version conflict" } } } },
     "/auth/login": { post: { tags: ["Authentication"], summary: "เข้าสู่ระบบเจ้าหน้าที่", responses: { 200: { description: "JWT session" }, 401: { description: "Invalid credentials" }, 423: { description: "Account locked" } } } },
     "/auth/mfa/verify": { post: { tags: ["Authentication"], summary: "ยืนยันรหัส MFA เพื่อรับ JWT session", responses: { 200: { description: "JWT session" }, 401: { description: "Invalid code" } } } },
     "/auth/mfa/status": { get: { tags: ["Authentication"], summary: "สถานะ MFA ของบัญชีปัจจุบัน", security: [{ bearerAuth: [] }], responses: { 200: { description: "MFA status" } } } },

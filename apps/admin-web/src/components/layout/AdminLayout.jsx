@@ -142,7 +142,7 @@ function Sidebar({ page, navigate, open, close }) {
           <span className="v6-line-card__badge">LINE</span>
           <div>
             <strong>ช่องทางประชาชน</strong>
-            <small>LINE OA และ LIFF เชื่อมกับระบบกลาง</small>
+            <small>LINE OA เชื่อมกับระบบกลาง</small>
           </div>
           <button type="button" onClick={() => navigate("registrations")}>เปิดศูนย์รับข้อมูล</button>
         </div>
@@ -175,7 +175,7 @@ function Topbar({ title, user, navigate, onMenu, onLogout }) {
           <i />
           <span>
             <small>ข้อมูลประชาชน</small>
-            <strong>LINE OA / LIFF</strong>
+            <strong>LINE OA</strong>
           </span>
         </button>
 
