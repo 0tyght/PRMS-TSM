@@ -915,6 +915,69 @@ export function buildWizardPage(definition, offset = 0, activeSession = false) {
   };
 }
 
+function quickReplyActionFromWizardAction(action) {
+  const normalized = normalizeWizardAction(action);
+  if (!normalized) return null;
+
+  // LINE Quick Reply does not support richmenuswitch. Keep the same label and
+  // postback data so the server can show the matching submenu and reply.
+  if (normalized.type === "richmenuswitch") {
+    return postbackAction(
+      normalized.label,
+      normalized.data || "wizard=switched",
+      "openRichMenu",
+    );
+  }
+
+  return normalized;
+}
+
+export function buildQuickReplyItemsFromWizardPage(page) {
+  return (Array.isArray(page?.slots) ? page.slots : [])
+    .map((slot) => {
+      const action = quickReplyActionFromWizardAction(slot?.action);
+      return action ? { type: "action", action } : null;
+    })
+    .filter(Boolean)
+    .slice(0, 13);
+}
+
+export function buildWizardMenuMessage(page, acknowledgement = "") {
+  const quickReplyItems = buildQuickReplyItemsFromWizardPage(page);
+  const text = [
+    acknowledgement,
+    page?.title || "เมนูบริการ",
+    page?.subtitle || "เลือกบริการที่ต้องการ",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return {
+    type: "text",
+    text: clamp(text, 5000),
+    ...(quickReplyItems.length ? { quickReply: { items: quickReplyItems } } : {}),
+  };
+}
+
+function attachMatchingQuickReplies(messages, page) {
+  const quickReplyItems = buildQuickReplyItemsFromWizardPage(page);
+  if (!quickReplyItems.length) return messages;
+
+  const next = [...messages];
+  const targetIndex = next.map((message) => message?.type).lastIndexOf("text");
+
+  if (targetIndex < 0) {
+    next.push(buildWizardMenuMessage(page));
+    return next;
+  }
+
+  next[targetIndex] = {
+    ...next[targetIndex],
+    quickReply: { items: quickReplyItems },
+  };
+  return next;
+}
+
 function renderChoiceSvg(slot, bounds, compact = false) {
   const palette = slotPalette(slot);
   const radius = 24;
@@ -1655,6 +1718,47 @@ async function showPreviousWizard(lineUserId, state) {
   return true;
 }
 
+function definitionForSwitchedMenu(target, state) {
+  if (target === "main") return buildMainWizardDefinition(state);
+  return buildStaticSubmenuDefinition(target);
+}
+
+async function loadRuntimeMenuContext(lineUserId, state, requestedOffset = null) {
+  const [runtime, sessionContext] = await Promise.all([
+    loadRuntime(lineUserId),
+    loadActiveSessionContext(lineUserId),
+  ]);
+  const definition = runtime?.definition || buildMainWizardDefinition(state);
+  return {
+    definition,
+    offset: requestedOffset == null ? Number(runtime?.pageOffset || 0) : requestedOffset,
+    sessionContext,
+  };
+}
+
+function menuControlResult({
+  definition,
+  lineUserId,
+  acknowledgement,
+  activeSession = false,
+  offset = 0,
+  sessionContext = undefined,
+  richMenuTask,
+}) {
+  const page = buildWizardPage(definition, offset, activeSession);
+  return {
+    handled: true,
+    preserveRichMenu: true,
+    messages: [buildWizardMenuMessage(page, acknowledgement)],
+    richMenuTask: richMenuTask || showWizardMenu(lineUserId, definition, {
+      activeSession,
+      sessionContext,
+      offset: page.offset,
+      pushHistory: false,
+    }),
+  };
+}
+
 export async function handleWizardControl(event, state) {
   if (event?.type !== "postback") return null;
 
@@ -1665,11 +1769,38 @@ export async function handleWizardControl(event, state) {
   if (!wizard) return null;
 
   if (wizard === "switched") {
-    return { handled: true, preserveRichMenu: true, messages: [] };
+    const target = String(params.get("target") || "").toLowerCase();
+    const definition = definitionForSwitchedMenu(target, state);
+    if (!definition) {
+      return {
+        handled: true,
+        preserveRichMenu: true,
+        messages: [{ type: "text", text: "เปิดเมนูแล้ว เลือกรายการที่ต้องการได้จาก Rich Menu ด้านล่าง" }],
+      };
+    }
+    const isMain = target === "main";
+    return menuControlResult({
+      definition,
+      lineUserId,
+      acknowledgement: `เปิดเมนู ${definition.title} แล้ว`,
+      richMenuTask: isMain
+        ? showWizardMainMenu(lineUserId, state)
+        : showWizardMenu(lineUserId, definition, {
+            activeSession: false,
+            sessionContext: { active: false, label: "" },
+            pushHistory: false,
+          }),
+    });
   }
 
   if (wizard === "input") {
-    return { handled: true, preserveRichMenu: true, messages: [] };
+    const context = await loadRuntimeMenuContext(lineUserId, state);
+    return menuControlResult({
+      ...context,
+      lineUserId,
+      activeSession: context.sessionContext.active,
+      acknowledgement: "พร้อมรับข้อมูลแล้ว พิมพ์คำตอบแล้วกดส่งได้เลย",
+    });
   }
 
   if (wizard === "message") {
@@ -1677,49 +1808,60 @@ export async function handleWizardControl(event, state) {
   }
 
   if (wizard === "home") {
-    return {
-      handled: true,
-      preserveRichMenu: true,
-      messages: [],
+    const definition = buildMainWizardDefinition(state);
+    return menuControlResult({
+      definition,
+      lineUserId,
+      acknowledgement: "กลับสู่เมนูหลักแล้ว",
       richMenuTask: showWizardMainMenu(lineUserId, state),
-    };
+    });
   }
 
   if (wizard === "refresh") {
-    const task = (async () => {
-      const runtime = await loadRuntime(lineUserId);
-      if (runtime?.definition) {
-        return showWizardMenu(lineUserId, runtime.definition, {
-          offset: runtime.pageOffset || 0,
-          pushHistory: false,
-        });
-      }
-      return showWizardMainMenu(lineUserId, state);
-    })();
-
-    return { handled: true, preserveRichMenu: true, messages: [], richMenuTask: task };
+    const context = await loadRuntimeMenuContext(lineUserId, state);
+    return menuControlResult({
+      ...context,
+      lineUserId,
+      activeSession: context.sessionContext.active,
+      acknowledgement: "อัปเดตเมนูแล้ว",
+    });
   }
 
   if (wizard === "page") {
-    const task = (async () => {
-      const runtime = await loadRuntime(lineUserId);
-      if (!runtime?.definition) return showWizardMainMenu(lineUserId, state);
-      return showWizardMenu(lineUserId, runtime.definition, {
-        offset: Number(params.get("offset") || 0),
-        pushHistory: false,
-      });
-    })();
-
-    return { handled: true, preserveRichMenu: true, messages: [], richMenuTask: task };
+    const context = await loadRuntimeMenuContext(
+      lineUserId,
+      state,
+      Number(params.get("offset") || 0),
+    );
+    const page = buildWizardPage(
+      context.definition,
+      context.offset,
+      context.sessionContext.active,
+    );
+    return menuControlResult({
+      ...context,
+      lineUserId,
+      activeSession: context.sessionContext.active,
+      acknowledgement: `แสดงรายการหน้า ${page.pageIndex + 1} จาก ${page.pageCount}`,
+    });
   }
 
   if (wizard === "back") {
-    return {
-      handled: true,
-      preserveRichMenu: true,
-      messages: [],
+    const [runtime, sessionContext] = await Promise.all([
+      loadRuntime(lineUserId),
+      loadActiveSessionContext(lineUserId),
+    ]);
+    const previous = runtime?.history?.at(-1);
+    const definition = previous?.definition || buildMainWizardDefinition(state);
+    return menuControlResult({
+      definition,
+      lineUserId,
+      activeSession: sessionContext.active,
+      sessionContext,
+      offset: Number(previous?.offset || 0),
+      acknowledgement: "กลับไปยังเมนูก่อนหน้าแล้ว",
       richMenuTask: showPreviousWizard(lineUserId, state),
-    };
+    });
   }
 
   return null;
@@ -1766,13 +1908,18 @@ export async function decorateNativeCitizenResultWithRichMenu({
   const activeSession = sessionContext.active;
 
   if (safeResult.refreshState) {
+    const definition = buildMainWizardDefinition(state);
+    const page = buildWizardPage(definition, 0, false);
     return {
       ...safeResult,
-      messages: filterMessagesForExperience(rawMessages, {
-        choices: [],
-        activeSession: false,
-        refreshState: true,
-      }),
+      messages: attachMatchingQuickReplies(
+        filterMessagesForExperience(rawMessages, {
+          choices: [],
+          activeSession: false,
+          refreshState: true,
+        }),
+        page,
+      ),
       preserveRichMenu: true,
       richMenuTask: showWizardMainMenu(lineUserId, state),
     };
@@ -1802,11 +1949,14 @@ export async function decorateNativeCitizenResultWithRichMenu({
   if (!choices.length && !definition) {
     return {
       ...safeResult,
-      messages: filterMessagesForExperience(rawMessages, {
-        choices,
-        activeSession,
-        refreshState: false,
-      }),
+      messages: attachMatchingQuickReplies(
+        filterMessagesForExperience(rawMessages, {
+          choices,
+          activeSession,
+          refreshState: false,
+        }),
+        buildWizardPage(buildMainWizardDefinition(state), 0, false),
+      ),
       preserveRichMenu: true,
     };
   }
@@ -1833,6 +1983,7 @@ export async function decorateNativeCitizenResultWithRichMenu({
     cacheScope: definition?.cacheScope || "dynamic",
   };
 
+  const page = buildWizardPage(definition, 0, activeSession);
   const richMenuTask = showWizardMenu(lineUserId, definition, {
     activeSession,
     sessionContext,
@@ -1841,11 +1992,14 @@ export async function decorateNativeCitizenResultWithRichMenu({
 
   return {
     ...safeResult,
-    messages: filterMessagesForExperience(rawMessages, {
-      choices,
-      activeSession,
-      refreshState: false,
-    }),
+    messages: attachMatchingQuickReplies(
+      filterMessagesForExperience(rawMessages, {
+        choices,
+        activeSession,
+        refreshState: false,
+      }),
+      page,
+    ),
     preserveRichMenu: true,
     richMenuTask,
   };

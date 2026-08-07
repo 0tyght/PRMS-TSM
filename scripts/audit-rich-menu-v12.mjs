@@ -55,9 +55,14 @@ const requiredWizardFeatures = [
 ];
 const missingFeatures = requiredWizardFeatures.filter((token) => !wizard.includes(token));
 const botChecks = [
-  ["parallel reply/menu", "Promise.allSettled"],
+  ["non-blocking rich menu task", "continueRichMenuTask"],
   ["reply timeout", "AbortSignal.timeout"],
   ["richMenuTask handling", "result.richMenuTask"],
+];
+const quickReplyChecks = [
+  "buildQuickReplyItemsFromWizardPage",
+  "attachMatchingQuickReplies",
+  "buildWizardMenuMessage",
 ];
 const requestChecks = [
   "SELECT COUNT(*) AS total",
@@ -69,20 +74,23 @@ const missingRequestFeatures = requestChecks.filter((token) => !native.includes(
 const missingBotFeatures = botChecks
   .filter(([, token]) => !bot.includes(token))
   .map(([label]) => label);
+const missingQuickReplyFeatures = quickReplyChecks.filter((token) => !wizard.includes(token));
 
 console.log(`Rich Menu V12 audit: emittedActions=${emitted.size}, handledActions=${handled.size}`);
 console.log(`Rich Menu V12 audit: unresolvedActions=${missing.length}`);
 console.log(`Rich Menu V12 audit: forbiddenLegacy=${forbiddenFound.length}`);
 console.log(`Rich Menu V12 audit: missingWizardFeatures=${missingFeatures.length}`);
 console.log(`Rich Menu V12 audit: missingBotFeatures=${missingBotFeatures.length}`);
+console.log(`Rich Menu V12 audit: missingQuickReplyFeatures=${missingQuickReplyFeatures.length}`);
 console.log(`Rich Menu V12 audit: missingRequestFeatures=${missingRequestFeatures.length}`);
 
 if (missing.length) console.error(`Unhandled actions: ${missing.join(", ")}`);
 if (forbiddenFound.length) console.error(`Legacy/unsafe tokens: ${forbiddenFound.join(", ")}`);
 if (missingFeatures.length) console.error(`Missing wizard features: ${missingFeatures.join(", ")}`);
 if (missingBotFeatures.length) console.error(`Missing bot features: ${missingBotFeatures.join(", ")}`);
+if (missingQuickReplyFeatures.length) console.error(`Missing quick reply features: ${missingQuickReplyFeatures.join(", ")}`);
 if (missingRequestFeatures.length) console.error(`Missing request features: ${missingRequestFeatures.join(", ")}`);
 
-if (missing.length || forbiddenFound.length || missingFeatures.length || missingBotFeatures.length || missingRequestFeatures.length) {
+if (missing.length || forbiddenFound.length || missingFeatures.length || missingBotFeatures.length || missingQuickReplyFeatures.length || missingRequestFeatures.length) {
   process.exitCode = 1;
 }

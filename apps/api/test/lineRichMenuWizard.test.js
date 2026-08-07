@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   buildMainWizardDefinition,
+  buildQuickReplyItemsFromWizardPage,
   buildStaticSubmenuDefinition,
   buildTextEntryWizardDefinition,
+  buildWizardMenuMessage,
   buildWizardPage,
   extractWizardChoicesFromMessages,
   fingerprintWizardPage,
@@ -57,6 +59,22 @@ test("reuses one pre-warmed menu for keyboard-only data entry", () => {
     page.controlSlots.map((slot) => slot.action.data),
     ["session=back", "wizard=home", "session=cancel"],
   );
+});
+
+test("mirrors every visible Rich Menu button above the keyboard", () => {
+  const page = buildWizardPage(buildStaticSubmenuDefinition("health"), 0, false);
+  const quickReplyItems = buildQuickReplyItemsFromWizardPage(page);
+  const message = buildWizardMenuMessage(page, "เปิดเมนูสุขภาพสัตว์แล้ว");
+
+  assert.equal(quickReplyItems.length, page.slots.length);
+  assert.deepEqual(
+    quickReplyItems.map((item) => item.action.label),
+    page.slots.map((slot) => slot.action.label),
+  );
+  assert.equal(quickReplyItems.some((item) => item.action.type === "richmenuswitch"), false);
+  assert.equal(message.type, "text");
+  assert.match(message.text, /เปิดเมนูสุขภาพสัตว์แล้ว/);
+  assert.equal(message.quickReply.items.length, page.slots.length);
 });
 
 test("keeps rich menu open and removes displayText from postbacks", () => {

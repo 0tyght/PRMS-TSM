@@ -10,7 +10,7 @@ test("removes the legacy Flex-list compatibility layer", () => {
   assert.equal("convertNativeMessagesToListMenus" in nativeCitizen, false);
 });
 
-test("moves choices from chat quick replies into the rich menu", () => {
+test("derives one choice set for both Quick Reply and Rich Menu", () => {
   const message = {
     type: "text",
     text: "เลือกเพศสัตว์",
