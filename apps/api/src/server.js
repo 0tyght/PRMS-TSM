@@ -4,11 +4,23 @@ import {
   enqueueVaccinationReminders,
   processPendingLineNotifications,
 } from "./lineNotifications.js";
+import { cleanupNativeLineState } from "./lineNativeCitizen.js";
+import { warmWizardRichMenus } from "./lineRichMenuWizard.js";
 
 const app = createApp();
 const server = app.listen(config.port, () => {
   console.log(`PRMS-TSM API listening on http://localhost:${config.port}`);
 });
+
+
+async function warmRichMenus() {
+  try {
+    const menus = await warmWizardRichMenus();
+    console.log(`[rich-menu-v12] warmed=${menus.length}`);
+  } catch (error) {
+    console.error("[rich-menu-v12] warm failed", String(error?.message || error));
+  }
+}
 
 let queueRunning = false;
 let reminderRunning = false;
@@ -59,8 +71,26 @@ async function scanVaccinationReminders() {
   }
 }
 
+async function cleanupNativeWorkflow() {
+  try {
+    const result = await cleanupNativeLineState();
+    if (result.attachments || result.sessions || result.events) {
+      console.log(
+        `[line-native] cleanup attachments=${result.attachments} sessions=${result.sessions} events=${result.events}`,
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[line-native] cleanup failed",
+      String(error?.message || error),
+    );
+  }
+}
+
 void processNotificationQueue();
 void scanVaccinationReminders();
+void cleanupNativeWorkflow();
+void warmRichMenus();
 
 const queueTimer = setInterval(
   () => void processNotificationQueue(),
@@ -70,14 +100,20 @@ const reminderTimer = setInterval(
   () => void scanVaccinationReminders(),
   6 * 60 * 60 * 1000,
 );
+const cleanupTimer = setInterval(
+  () => void cleanupNativeWorkflow(),
+  6 * 60 * 60 * 1000,
+);
 
 queueTimer.unref();
 reminderTimer.unref();
+cleanupTimer.unref();
 
 function shutdown(signal) {
   console.log(`[server] received ${signal}; shutting down`);
   clearInterval(queueTimer);
   clearInterval(reminderTimer);
+  clearInterval(cleanupTimer);
 
   server.close(() => {
     process.exit(0);

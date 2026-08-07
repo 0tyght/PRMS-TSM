@@ -37,6 +37,7 @@ const REQUEST_LABELS = {
   VACCINATION: "ข้อมูลการรับวัคซีน",
   STERILIZATION: "ข้อมูลการทำหมัน",
   PET_STATUS: "ข้อมูลสถานะสัตว์เลี้ยง",
+  OWNER_TRANSFER: "ขอโอนเจ้าของสัตว์เลี้ยง",
 };
 
 const FIELD_LABELS = {
@@ -57,6 +58,16 @@ const FIELD_LABELS = {
   note: "หมายเหตุ",
   status: "สถานะสัตว์เลี้ยง",
   effectiveAt: "วันที่มีผล",
+  newOwnerName: "ชื่อเจ้าของใหม่",
+  newOwnerPhone: "เบอร์โทรเจ้าของใหม่",
+  newHouseNo: "บ้านเลขที่เจ้าของใหม่",
+  newVillageId: "หมู่บ้านเจ้าของใหม่",
+  newVillageNo: "เลขหมู่เจ้าของใหม่",
+  newAddressDetail: "รายละเอียดที่อยู่เจ้าของใหม่",
+  newLatitude: "ละติจูดเจ้าของใหม่",
+  newLongitude: "ลองจิจูดเจ้าของใหม่",
+  transferredAt: "วันที่โอนเจ้าของ",
+  additionalInfo: "ข้อมูลเพิ่มเติมจากประชาชน",
 };
 
 const SPECIES_LABELS = { DOG: "สุนัข", CAT: "แมว" };
@@ -79,7 +90,8 @@ function displayValue(field, value) {
   if (value === null || value === undefined || value === "") return "—";
   if (field === "species") return SPECIES_LABELS[value] || value;
   if (field === "sex") return SEX_LABELS[value] || value;
-  if (["birthDate", "vaccinatedAt", "nextDueAt", "sterilizedAt", "effectiveAt"].includes(field)) {
+  if (field === "status") return ({ ACTIVE: "ปกติ", MISSING: "สูญหาย", DECEASED: "เสียชีวิต", TRANSFERRED: "โอนเจ้าของ" })[value] || value;
+  if (["birthDate", "vaccinatedAt", "nextDueAt", "sterilizedAt", "effectiveAt", "transferredAt"].includes(field)) {
     return formatThaiDate(value);
   }
   if (typeof value === "boolean") return value ? "ใช่" : "ไม่";
@@ -98,7 +110,7 @@ function isUrgent(item) {
 }
 
 function sourceLabel(item) {
-  return item.sourceType === "CITIZEN_SUBMISSION" ? "LINE / LIFF" : "ขึ้นทะเบียนออนไลน์";
+  return item.sourceType === "CITIZEN_SUBMISSION" ? "LINE Official Account" : "คำขอขึ้นทะเบียน";
 }
 
 function Icon({ name }) {
@@ -200,6 +212,7 @@ function RegistrationDetail({ detail, onDownload }) {
             ["บ้านเลขที่", proposed.houseNo],
             ["หมู่บ้าน", proposed.villageNo ? `หมู่ ${proposed.villageNo} ${proposed.villageName || ""}` : "—"],
             ["รายละเอียดที่อยู่", proposed.addressDetail],
+            ["ตำแหน่งบ้าน", proposed.latitude != null && proposed.longitude != null ? `${Number(proposed.latitude).toFixed(7)}, ${Number(proposed.longitude).toFixed(7)}` : "ยังไม่มีพิกัด"],
             ["การเชื่อม LINE", detail.lineUserId ? "เชื่อมบัญชีแล้ว" : "ยังไม่เชื่อม"],
           ]}
         />
@@ -244,45 +257,67 @@ function RegistrationDetail({ detail, onDownload }) {
   );
 }
 
-function ChangeDetail({ detail }) {
+function ChangeDetail({ detail, onDownload }) {
   const current = detail.current || {};
   const proposed = detail.proposed || {};
   const fields = Array.from(new Set([...Object.keys(current), ...Object.keys(proposed)]));
+  const attachments = Array.isArray(detail.attachments) ? detail.attachments : [];
 
   return (
-    <section className="inbox-detail-section">
-      <div className="inbox-detail-section__head">
-        <h3>เปรียบเทียบข้อมูลเดิมและข้อมูลที่เสนอ</h3>
-        <span>{fields.length} รายการ</span>
-      </div>
-
-      {fields.length ? (
-        <div className="inbox-diff">
-          <div className="inbox-diff__head">
-            <span>รายการ</span>
-            <span>ข้อมูลเดิม</span>
-            <span>ข้อมูลที่เสนอ</span>
-          </div>
-          {fields.map((field) => {
-            const before = displayValue(field, current[field]);
-            const after = displayValue(field, proposed[field]);
-            const changed = before !== after;
-            return (
-              <div className={changed ? "is-changed" : ""} key={field}>
-                <strong>{FIELD_LABELS[field] || field}</strong>
-                <span>{before}</span>
-                <span>{after}</span>
-              </div>
-            );
-          })}
+    <>
+      <section className="inbox-detail-section">
+        <div className="inbox-detail-section__head">
+          <h3>เปรียบเทียบข้อมูลเดิมและข้อมูลที่เสนอ</h3>
+          <span>{fields.length} รายการ</span>
         </div>
-      ) : (
-        <p className="inbox-inline-note">ไม่พบข้อมูลเปรียบเทียบในคำขอนี้</p>
-      )}
-    </section>
+        {fields.length ? (
+          <div className="inbox-diff">
+            <div className="inbox-diff__head">
+              <span>รายการ</span>
+              <span>ข้อมูลเดิม</span>
+              <span>ข้อมูลที่เสนอ</span>
+            </div>
+            {fields.map((field) => {
+              const before = displayValue(field, current[field]);
+              const after = displayValue(field, proposed[field]);
+              const changed = before !== after;
+              return (
+                <div className={changed ? "is-changed" : ""} key={field}>
+                  <strong>{FIELD_LABELS[field] || field}</strong>
+                  <span>{before}</span>
+                  <span>{after}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="inbox-inline-note">ไม่พบข้อมูลเปรียบเทียบในคำขอนี้</p>
+        )}
+      </section>
+      <section className="inbox-detail-section">
+        <div className="inbox-detail-section__head">
+          <h3>หลักฐานจาก LINE</h3>
+          <span>{attachments.length} ไฟล์</span>
+        </div>
+        {attachments.length ? (
+          <div className="inbox-files">
+            {attachments.map((file) => (
+              <button type="button" key={file.id} onClick={() => onDownload(file)}>
+                <span>
+                  <strong>{file.fileName}</strong>
+                  <small>{file.mimeType} · {Math.ceil(Number(file.fileSize || 0) / 1024).toLocaleString("th-TH")} KB</small>
+                </span>
+                <b>เปิดไฟล์</b>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="inbox-inline-note">ไม่มีรูปหรือหลักฐานแนบมากับคำขอนี้</p>
+        )}
+      </section>
+    </>
   );
 }
-
 function DetailPanel({
   item,
   detail,
@@ -349,7 +384,7 @@ function DetailPanel({
                 {item.requestType === "REGISTER_PET" ? (
                   <RegistrationDetail detail={detail} onDownload={onDownload} />
                 ) : (
-                  <ChangeDetail detail={detail} />
+                  <ChangeDetail detail={detail} onDownload={onDownload} />
                 )}
               </div>
 
@@ -569,7 +604,7 @@ export default function RegistrationsPage({ token }) {
       <PageHead
         eyebrow="Citizen Data Operations"
         title="ศูนย์รับข้อมูลจากประชาชน"
-        detail="รวมข้อมูลขึ้นทะเบียน แก้ไขทะเบียน วัคซีน ทำหมัน และสถานะสัตว์เลี้ยงที่ส่งจากเว็บไซต์และ LINE OA / LIFF"
+        detail="รวมข้อมูลขึ้นทะเบียน แก้ไขทะเบียน วัคซีน ทำหมัน สถานะสัตว์ และการโอนเจ้าของที่ประชาชนส่งผ่าน LINE Official Account"
         actions={
           <>
             <button type="button" className="prms-button prms-button--ghost" onClick={() => setShowFilters((value) => !value)}>

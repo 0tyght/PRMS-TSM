@@ -3,32 +3,21 @@ import crypto from "node:crypto";
 import { config } from "./config.js";
 import {
   buildCitizenStatusFlex,
-  citizenLinks,
   loadCitizenExperienceByLineUserId,
   syncRichMenuForLineUser,
 } from "./citizenExperience.js";
+import {
+  claimLineWebhookEvent,
+  completeLineWebhookEvent,
+  handleNativeCitizenEvent,
+} from "./lineNativeCitizen.js";
+import {
+  decorateNativeCitizenResultWithRichMenu,
+  handleWizardControl,
+  showWizardMainMenu,
+} from "./lineRichMenuWizard.js";
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
-const RECENT_EVENT_TTL_MS = 10 * 60 * 1000;
-const recentEventIds = new Map();
-
-function pruneRecentEvents(now = Date.now()) {
-  for (const [eventId, expiresAt] of recentEventIds) {
-    if (expiresAt <= now) recentEventIds.delete(eventId);
-  }
-}
-
-function acceptEvent(event) {
-  const eventId = String(event?.webhookEventId || "").trim();
-  if (!eventId) return true;
-
-  const now = Date.now();
-  pruneRecentEvents(now);
-
-  if (recentEventIds.has(eventId)) return false;
-  recentEventIds.set(eventId, now + RECENT_EVENT_TTL_MS);
-  return true;
-}
 
 export function verifyLineWebhookSignature(rawBody, signature, channelSecret) {
   if (!Buffer.isBuffer(rawBody) || !signature || !channelSecret) return false;
@@ -47,69 +36,52 @@ export function verifyLineWebhookSignature(rawBody, signature, channelSecret) {
   );
 }
 
-function quickReply() {
-  return {
-    items: [
-      {
-        type: "action",
-        action: {
-          type: "uri",
-          label: "ข้อมูลของฉัน",
-          uri: citizenLinks.account(),
-        },
-      },
-      {
-        type: "action",
-        action: {
-          type: "uri",
-          label: "ลงทะเบียนสัตว์",
-          uri: citizenLinks.register(),
-        },
-      },
-      {
-        type: "action",
-        action: {
-          type: "uri",
-          label: "ติดตามคำขอ",
-          uri: citizenLinks.track(),
-        },
-      },
-      {
-        type: "action",
-        action: {
-          type: "message",
-          label: "เช็กสถานะ",
-          text: "สถานะของฉัน",
-        },
-      },
-    ],
-  };
-}
-
-function textMessage(text, withQuickReply = true) {
+function textMessage(text) {
   return {
     type: "text",
-    text,
-    ...(withQuickReply ? { quickReply: quickReply() } : {}),
+    text: String(text || "").slice(0, 5000),
   };
 }
 
-function normalizeCommand(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
+async function reply(replyToken, messages) {
+  if (!replyToken || !config.lineChannelAccessToken) {
+    return {
+      status: "SKIPPED",
+      reason: !replyToken ? "NO_REPLY_TOKEN" : "NO_CHANNEL_ACCESS_TOKEN",
+    };
+  }
 
-function containsAny(text, words) {
-  return words.some((word) => text.includes(word));
+  const safeMessages = (Array.isArray(messages) ? messages : [])
+    .filter(Boolean)
+    .slice(0, 5);
+
+  if (!safeMessages.length) return { status: "SKIPPED", reason: "NO_MESSAGES" };
+
+  const response = await fetch(LINE_REPLY_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.lineChannelAccessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ replyToken, messages: safeMessages }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => "")).slice(0, 500);
+    throw new Error(
+      `LINE_REPLY_${response.status}${detail ? `: ${detail}` : ""}`,
+    );
+  }
+
+  return { status: "SENT", httpStatus: response.status };
 }
 
 async function loadState(lineUserId) {
   try {
     return await loadCitizenExperienceByLineUserId(lineUserId);
   } catch (error) {
-    console.error("[line-bot] load state failed", error);
+    console.error("[line-bot] load citizen state failed", error);
     return {
       linked: false,
       menuKey: "guest",
@@ -128,341 +100,160 @@ async function loadState(lineUserId) {
   }
 }
 
-function commandReply(command, state) {
-  if (
-    containsAny(command, [
-      "เมนู",
-      "สถานะของฉัน",
-      "ข้อมูลของฉัน",
-      "ช่วยเหลือ",
-      "help",
-      "สวัสดี",
-      "เริ่มต้น",
-    ])
-  ) {
-    return [buildCitizenStatusFlex(state)];
-  }
-
-  if (containsAny(command, ["ลงทะเบียน", "ขึ้นทะเบียน", "เพิ่มสัตว์"])) {
-    return [
-      textMessage(
-        "เปิดแบบฟอร์มลงทะเบียนสัตว์เลี้ยง พร้อมเลือกตำแหน่งบ้านบนแผนที่",
-      ),
-      {
-        type: "template",
-        altText: "เปิดแบบฟอร์มลงทะเบียนสัตว์เลี้ยง",
-        template: {
-          type: "buttons",
-          text: "ลงทะเบียนสัตว์เลี้ยง",
-          actions: [
-            {
-              type: "uri",
-              label: "เปิดแบบฟอร์มและแผนที่",
-              uri: citizenLinks.register(),
-            },
-          ],
-        },
-      },
-    ];
-  }
-
-  if (containsAny(command, ["วัคซีน", "ฉีดยา"])) {
-    return [
-      textMessage(
-        state.linked
-          ? `มีสัตว์ใกล้ครบกำหนดวัคซีน ${state.counts.vaccinationDue} ตัว`
-          : "กรุณาเชื่อมทะเบียนกับ LINE ก่อนแจ้งวัคซีน",
-      ),
-      {
-        type: "template",
-        altText: "แจ้งข้อมูลวัคซีน",
-        template: {
-          type: "buttons",
-          text: "เลือกสัตว์และแจ้งข้อมูลวัคซีน",
-          actions: [
-            {
-              type: "uri",
-              label: "เปิดเมนูวัคซีน",
-              uri: citizenLinks.vaccination(),
-            },
-          ],
-        },
-      },
-    ];
-  }
-
-  if (command.includes("ทำหมัน")) {
-    return [
-      textMessage(
-        state.linked
-          ? `มีสัตว์ที่ยังไม่มีประวัติทำหมัน ${state.counts.unsterilized} ตัว`
-          : "กรุณาเชื่อมทะเบียนกับ LINE ก่อนแจ้งทำหมัน",
-      ),
-      {
-        type: "template",
-        altText: "แจ้งข้อมูลทำหมัน",
-        template: {
-          type: "buttons",
-          text: "เลือกสัตว์และแจ้งข้อมูลทำหมัน",
-          actions: [
-            {
-              type: "uri",
-              label: "เปิดเมนูทำหมัน",
-              uri: citizenLinks.sterilization(),
-            },
-          ],
-        },
-      },
-    ];
-  }
-
-  if (
-    containsAny(command, [
-      "หาย",
-      "สูญหาย",
-      "เสียชีวิต",
-      "ย้ายเจ้าของ",
-      "แจ้งสถานะ",
-    ])
-  ) {
-    return [
-      textMessage(
-        state.linked
-          ? `สัตว์ที่อยู่ในสถานะสูญหาย ${state.counts.missingPets} ตัว`
-          : "กรุณาเชื่อมทะเบียนกับ LINE ก่อนแจ้งสถานะสัตว์",
-      ),
-      {
-        type: "template",
-        altText: "แจ้งสถานะสัตว์เลี้ยง",
-        template: {
-          type: "buttons",
-          text: "เลือกสัตว์และแจ้งสถานะล่าสุด",
-          actions: [
-            {
-              type: "uri",
-              label: "เปิดเมนูแจ้งสถานะ",
-              uri: citizenLinks.status(),
-            },
-          ],
-        },
-      },
-    ];
-  }
-
-  if (containsAny(command, ["ตำแหน่ง", "พิกัด", "แผนที่", "ที่อยู่"])) {
-    return [
-      textMessage(
-        state.location?.missing
-          ? "ยังไม่ได้ระบุตำแหน่งบ้าน กรุณาเลือกจุดบนแผนที่"
-          : "ตำแหน่งบ้านถูกบันทึกแล้ว คุณสามารถเปิดแผนที่เพื่อแก้ไขได้",
-      ),
-      {
-        type: "template",
-        altText: "เปิดแผนที่ตำแหน่งบ้าน",
-        template: {
-          type: "buttons",
-          text: "ตำแหน่งบ้าน",
-          actions: [
-            {
-              type: "uri",
-              label: "เปิดแผนที่",
-              uri: citizenLinks.location(),
-            },
-          ],
-        },
-      },
-    ];
-  }
-
-  if (containsAny(command, ["ติดต่อเทศบาล", "เบอร์โทร", "ติดต่อเจ้าหน้าที่"])) {
-    return [
-      textMessage(
-        [
-          "ติดต่อเทศบาลเมืองท่าโพธิ์",
-          "โทรศัพท์ 055-906-050",
-          "ที่อยู่ 99/99 หมู่ที่ 6 ตำบลท่าโพธิ์ อำเภอเมืองพิษณุโลก จังหวัดพิษณุโลก 65000",
-        ].join("\n"),
-      ),
-    ];
-  }
-
-  if (
-    containsAny(command, [
-      "ติดตาม",
-      "เลขคำขอ",
-      "ผลตรวจ",
-      "คำขอ",
-    ])
-  ) {
-    return [
-      textMessage(
-        state.linked
-          ? `มีคำขอรอดำเนินการ ${state.counts.pending} รายการ และต้องแก้ไข ${state.counts.needsAttention} รายการ`
-          : "กรอกเลขอ้างอิงเพื่อติดตามผลคำขอ",
-      ),
-      {
-        type: "template",
-        altText: "ติดตามคำขอ",
-        template: {
-          type: "buttons",
-          text: "ติดตามผลจากเลขอ้างอิงหรือดูคำขอในบัญชี",
-          actions: [
-            {
-              type: "uri",
-              label: state.linked ? "เปิดคำขอของฉัน" : "กรอกเลขอ้างอิง",
-              uri: state.linked ? citizenLinks.account() : citizenLinks.track(),
-            },
-          ],
-        },
-      },
-    ];
-  }
-
-  return [
-    textMessage(
-      "ยังไม่พบคำสั่งนี้ พิมพ์ “เมนู” เพื่อดูข้อมูลจริงและบริการที่ใช้งานได้ในขณะนี้",
-    ),
-  ];
-}
-
-async function reply(replyToken, messages) {
-  if (!replyToken || !config.lineChannelAccessToken) {
-    return {
-      status: "SKIPPED",
-      reason: !replyToken ? "NO_REPLY_TOKEN" : "NO_CHANNEL_ACCESS_TOKEN",
-    };
-  }
-
-  const safeMessages = messages.slice(0, 5);
-  const response = await fetch(LINE_REPLY_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.lineChannelAccessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      replyToken,
-      messages: safeMessages,
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = (await response.text().catch(() => "")).slice(0, 500);
-    throw new Error(
-      `LINE_REPLY_${response.status}${detail ? `: ${detail}` : ""}`,
-    );
-  }
-
-  return { status: "SENT", httpStatus: response.status };
-}
-
 async function processEvent(event) {
-  if (!event || event.mode === "standby" || !acceptEvent(event)) return;
+  if (!event || event.mode === "standby") return;
 
-  const lineUserId = event.source?.userId || "";
+  const accepted = await claimLineWebhookEvent(event);
+  if (!accepted) return;
 
-  if (event.type === "unfollow") {
-    console.info("[line-bot] user unfollowed", lineUserId || "unknown");
-    return;
-  }
+  const lineUserId = String(event.source?.userId || "").trim();
 
-  const state = await loadState(lineUserId);
+  try {
+    if (event.type === "unfollow") {
+      console.info("[line-bot] user unfollowed", lineUserId || "unknown");
+      await completeLineWebhookEvent(event);
+      return;
+    }
 
-  if (lineUserId) {
-    await syncRichMenuForLineUser(lineUserId, state).catch((error) => {
-      console.error("[line-bot] rich menu sync failed", error);
+    const state = await loadState(lineUserId);
+
+    if (event.type === "follow") {
+      const menuTask = showWizardMainMenu(lineUserId, state);
+      const replyTask = event.replyToken
+        ? reply(event.replyToken, [
+            textMessage(
+              state.linked
+                ? `ยินดีต้อนรับกลับ ${state.owner?.fullName || ""}
+เลือกบริการจาก Rich Menu ด้านล่างได้ทันที`
+                : "ยินดีต้อนรับสู่ ThaPho PET\nทุกขั้นตอนเลือกจาก Rich Menu ด้านล่าง โดยไม่ต้องเปิดเว็บไซต์",
+            ),
+            buildCitizenStatusFlex(state),
+          ])
+        : Promise.resolve({ status: "SKIPPED" });
+
+      const [replyResult, menuResult] = await Promise.allSettled([replyTask, menuTask]);
+      if (replyResult.status === "rejected") throw replyResult.reason;
+      if (menuResult.status === "rejected") {
+        console.error("[line-bot] follow wizard menu failed", menuResult.reason);
+      }
+      await completeLineWebhookEvent(event);
+      return;
+    }
+
+    const wizardControl = await handleWizardControl(event, state);
+    let result;
+    let resultCameFromWizard = false;
+
+    if (wizardControl?.handled) {
+      result = wizardControl;
+      resultCameFromWizard = true;
+    } else {
+      const effectiveEvent = wizardControl?.syntheticText
+        ? {
+            ...event,
+            type: "message",
+            message: {
+              type: "text",
+              text: wizardControl.syntheticText,
+            },
+          }
+        : event;
+
+      result = await handleNativeCitizenEvent(effectiveEvent, state);
+    }
+
+    let currentState = state;
+    if (result.refreshState && lineUserId) {
+      currentState = await loadState(lineUserId);
+    }
+
+    if (!resultCameFromWizard) {
+      result = await decorateNativeCitizenResultWithRichMenu({
+        lineUserId,
+        result,
+        state: currentState,
+      });
+    }
+
+    const menuTask = result.richMenuTask || (
+      lineUserId && !result.preserveRichMenu
+        ? syncRichMenuForLineUser(lineUserId, currentState)
+        : null
+    );
+    const replyTask = event.replyToken && result.messages?.length
+      ? reply(event.replyToken, result.messages)
+      : null;
+
+    const tasks = [replyTask, menuTask].filter(Boolean);
+    const settled = await Promise.allSettled(tasks);
+    if (replyTask && settled[0]?.status === "rejected") {
+      throw settled[0].reason;
+    }
+    const menuIndex = replyTask ? 1 : 0;
+    if (menuTask && settled[menuIndex]?.status === "rejected") {
+      console.error("[line-bot] rich menu task failed", settled[menuIndex].reason);
+    }
+
+    await completeLineWebhookEvent(event);
+  } catch (error) {
+    console.error("[line-bot] event failed", {
+      eventType: event?.type,
+      eventId: event?.webhookEventId,
+      lineUserId: lineUserId ? `${lineUserId.slice(0, 8)}...` : "unknown",
+      error: String(error?.message || error),
     });
+
+    if (event.replyToken) {
+      await reply(event.replyToken, [
+        textMessage(
+          `${String(error?.message || "ไม่สามารถดำเนินการได้ในขณะนี้")}\n\nพิมพ์ “เมนู” เพื่อเลือกบริการใหม่ หรือพิมพ์ “ยกเลิก” เพื่อยกเลิกรายการที่ค้างอยู่`,
+        ),
+      ]).catch((replyError) => {
+        console.error("[line-bot] error reply failed", replyError);
+      });
+    }
+
+    await completeLineWebhookEvent(event, "FAILED", String(error?.message || error)).catch(() => {});
   }
-
-  if (!event.replyToken) return;
-
-  if (event.type === "follow") {
-    await reply(event.replyToken, [
-      textMessage(
-        state.linked
-          ? `ยินดีต้อนรับกลับ ${state.owner?.fullName || ""} เมนูได้รับการปรับตามข้อมูลทะเบียนล่าสุดแล้ว`
-          : "ยินดีต้อนรับสู่ ThaPho PET ลงทะเบียนสัตว์เลี้ยง ติดตามคำขอ และเชื่อมทะเบียนได้จากเมนูด้านล่าง",
-      ),
-      buildCitizenStatusFlex(state),
-    ]);
-    return;
-  }
-
-  if (event.type === "message" && event.message?.type === "text") {
-    await reply(
-      event.replyToken,
-      commandReply(normalizeCommand(event.message.text), state),
-    );
-    return;
-  }
-
-  if (event.type === "postback") {
-    await reply(
-      event.replyToken,
-      commandReply(normalizeCommand(event.postback?.data || "เมนู"), state),
-    );
-    return;
-  }
-
-  await reply(event.replyToken, [
-    textMessage("ขณะนี้รองรับคำสั่งข้อความ กรุณาพิมพ์ “เมนู”"),
-  ]);
 }
 
 async function processEvents(events) {
-  const results = await Promise.allSettled(events.map(processEvent));
-
-  results.forEach((result, index) => {
-    if (result.status === "rejected") {
-      console.error("[line-bot] webhook event failed", {
+  for (const [index, event] of events.entries()) {
+    try {
+      await processEvent(event);
+    } catch (error) {
+      console.error("[line-bot] webhook event rejected", {
         index,
-        error: String(result.reason?.message || result.reason || "UNKNOWN_ERROR"),
+        error: String(error?.message || error || "UNKNOWN_ERROR"),
       });
     }
-  });
+  }
 }
 
 export function handleLineWebhook(req, res) {
   const rawBody = Buffer.isBuffer(req.body)
     ? req.body
     : Buffer.from(req.body || "");
-
   const signature = req.get("x-line-signature");
 
   if (!config.lineChannelSecret) {
-    return res.status(503).json({
-      message: "ยังไม่ได้ตั้งค่า LINE_CHANNEL_SECRET",
-    });
+    return res.status(503).json({ message: "ยังไม่ได้ตั้งค่า LINE_CHANNEL_SECRET" });
   }
 
-  if (
-    !verifyLineWebhookSignature(
-      rawBody,
-      signature,
-      config.lineChannelSecret,
-    )
-  ) {
-    return res.status(401).json({
-      message: "LINE webhook signature ไม่ถูกต้อง",
-    });
+  if (!verifyLineWebhookSignature(rawBody, signature, config.lineChannelSecret)) {
+    return res.status(401).json({ message: "LINE webhook signature ไม่ถูกต้อง" });
   }
 
   let payload;
-
   try {
     payload = JSON.parse(rawBody.toString("utf8"));
   } catch {
-    return res.status(400).json({
-      message: "LINE webhook JSON ไม่ถูกต้อง",
-    });
+    return res.status(400).json({ message: "LINE webhook JSON ไม่ถูกต้อง" });
   }
 
   const events = Array.isArray(payload?.events) ? payload.events : [];
 
-  res.status(200).json({
-    ok: true,
-    accepted: events.length,
-  });
+  res.status(200).json({ ok: true, accepted: events.length });
 
   if (events.length) {
     queueMicrotask(() => {

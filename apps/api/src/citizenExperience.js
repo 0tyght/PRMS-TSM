@@ -1,4 +1,4 @@
-import { config } from "./config.js";
+﻿import { config } from "./config.js";
 import { pool } from "./db.js";
 import { authenticate, requireRole } from "./middleware.js";
 
@@ -31,14 +31,6 @@ function selectMenuKey(state) {
   }
 
   return "owner";
-}
-
-function richMenuIdFor(menuKey) {
-  return {
-    guest: config.lineRichMenuGuestId,
-    owner: config.lineRichMenuOwnerId,
-    action: config.lineRichMenuActionId,
-  }[menuKey] || "";
 }
 
 export async function loadCitizenExperienceByLineUserId(lineUserId) {
@@ -232,42 +224,22 @@ export async function syncRichMenuForLineUser(lineUserId, suppliedState = null) 
     return { status: "SKIPPED", reason: "NO_LINE_USER_ID" };
   }
 
+  if (!/^U[0-9a-f]{32}$/i.test(normalizedLineUserId)) {
+    return { status: "SKIPPED", reason: "INVALID_OR_DEMO_LINE_USER_ID" };
+  }
+
   if (!config.lineChannelAccessToken) {
     return { status: "SKIPPED", reason: "NO_CHANNEL_ACCESS_TOKEN" };
   }
 
   const state = suppliedState || await loadCitizenExperienceByLineUserId(normalizedLineUserId);
-  const richMenuId = richMenuIdFor(state.menuKey);
-
-  if (!richMenuId) {
-    return {
-      status: "SKIPPED",
-      reason: `RICH_MENU_${state.menuKey.toUpperCase()}_NOT_CONFIGURED`,
-      menuKey: state.menuKey,
-    };
-  }
-
-  const response = await fetch(
-    `https://api.line.me/v2/bot/user/${encodeURIComponent(normalizedLineUserId)}/richmenu/${encodeURIComponent(richMenuId)}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.lineChannelAccessToken}`,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    const detail = (await response.text().catch(() => "")).slice(0, 500);
-    throw new Error(
-      `LINE_RICH_MENU_${response.status}${detail ? `: ${detail}` : ""}`,
-    );
-  }
+  const { showWizardMainMenu } = await import("./lineRichMenuWizard.js");
+  const linked = await showWizardMainMenu(normalizedLineUserId, state);
 
   return {
-    status: "LINKED",
-    menuKey: state.menuKey,
-    richMenuId,
+    status: linked ? "LINKED" : "SKIPPED",
+    reason: linked ? undefined : "INVALID_LINE_USER_ID",
+    menuKey: state.linked ? "owner" : "guest",
   };
 }
 
@@ -276,7 +248,7 @@ function countLine(label, value) {
 }
 
 export function buildCitizenStatusFlex(state) {
-  const counts = state.counts;
+  const counts = state.counts || {};
   const accent = state.menuKey === "action" ? "#D97706" : "#087F5B";
   const heading = state.linked
     ? `สวัสดี ${state.owner?.fullName || "เจ้าของสัตว์เลี้ยง"}`
@@ -289,21 +261,13 @@ export function buildCitizenStatusFlex(state) {
         countLine("ต้องแก้ไขข้อมูล", counts.needsAttention),
         countLine("วัคซีนใกล้ครบกำหนด", counts.vaccinationDue),
       ].join("\n")
-    : "ลงทะเบียนสัตว์เลี้ยง ติดตามคำขอ และเชื่อมทะเบียนกับบัญชี LINE";
-
-  const primaryUri = state.linked
-    ? citizenUrl({ view: "account" })
-    : citizenUrl({ view: "register" });
-
-  const secondaryUri = state.linked && state.menuKey === "action"
-    ? citizenUrl({ view: "account", section: "attention" })
-    : citizenUrl({ view: "track" });
+    : "ลงทะเบียนสัตว์ ติดตามคำขอ หรือเชื่อมทะเบียนเดิมได้จากเมนูด้านล่าง";
 
   return {
     type: "flex",
     altText: state.linked
-      ? `ข้อมูล ThaPho PET: มีสัตว์ ${counts.pets} ตัว`
-      : "เปิดบริการ ThaPho PET",
+      ? `ข้อมูล ThaPho PET: มีสัตว์ ${Number(counts.pets || 0)} ตัว`
+      : "เริ่มใช้บริการ ThaPho PET",
     contents: {
       type: "bubble",
       size: "kilo",
@@ -313,22 +277,8 @@ export function buildCitizenStatusFlex(state) {
         backgroundColor: accent,
         paddingAll: "18px",
         contents: [
-          {
-            type: "text",
-            text: "THAPHO PET",
-            color: "#FFFFFF",
-            weight: "bold",
-            size: "xs",
-          },
-          {
-            type: "text",
-            text: heading,
-            color: "#FFFFFF",
-            weight: "bold",
-            size: "lg",
-            wrap: true,
-            margin: "sm",
-          },
+          { type: "text", text: "THAPHO PET", color: "#FFFFFF", weight: "bold", size: "xs" },
+          { type: "text", text: heading, color: "#FFFFFF", weight: "bold", size: "lg", wrap: true, margin: "sm" },
         ],
       },
       body: {
@@ -336,17 +286,11 @@ export function buildCitizenStatusFlex(state) {
         layout: "vertical",
         paddingAll: "18px",
         contents: [
-          {
-            type: "text",
-            text: summary,
-            wrap: true,
-            size: "sm",
-            color: "#334155",
-          },
-          ...(state.linked && state.location.missing
+          { type: "text", text: summary, wrap: true, size: "sm", color: "#334155" },
+          ...(state.linked && state.location?.missing
             ? [{
                 type: "text",
-                text: "ยังไม่ได้ระบุตำแหน่งบ้าน กรุณาเลือกตำแหน่งบนแผนที่",
+                text: "ยังไม่ได้ระบุตำแหน่งบ้าน เลือก ‘ข้อมูลเจ้าของ’ จาก Rich Menu เพื่อเพิ่มตำแหน่ง",
                 wrap: true,
                 size: "sm",
                 color: "#B45309",
@@ -354,34 +298,13 @@ export function buildCitizenStatusFlex(state) {
                 margin: "md",
               }]
             : []),
-        ],
-      },
-      footer: {
-        type: "box",
-        layout: "vertical",
-        spacing: "sm",
-        paddingAll: "18px",
-        contents: [
           {
-            type: "button",
-            style: "primary",
-            color: accent,
-            action: {
-              type: "uri",
-              label: state.linked ? "เปิดข้อมูลของฉัน" : "ลงทะเบียนสัตว์",
-              uri: primaryUri,
-            },
-          },
-          {
-            type: "button",
-            style: "secondary",
-            action: {
-              type: "uri",
-              label: state.linked && state.menuKey === "action"
-                ? "ดูรายการที่ต้องดำเนินการ"
-                : "ติดตามคำขอ",
-              uri: secondaryUri,
-            },
+            type: "text",
+            text: "เลือกบริการจาก Rich Menu ด้านล่าง",
+            wrap: true,
+            size: "xs",
+            color: "#64748B",
+            margin: "lg",
           },
         ],
       },
@@ -444,7 +367,7 @@ export function registerCitizenExperienceRoutes(app) {
           longitude < -180 ||
           longitude > 180
         ) {
-          const error = new Error("กรุณาเลือกตำแหน่งบนแผนที่ให้ถูกต้อง");
+          const error = new Error("กรุณาส่งตำแหน่งให้ถูกต้อง");
           error.status = 422;
           error.expose = true;
           throw error;

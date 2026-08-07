@@ -1,6 +1,6 @@
 const CONFIG_URLS = [
-  "https://raw.githubusercontent.com/0tyght/PRMS-TSM/main/runtime-config.json",
   new URL("runtime-config.json", `${location.origin}${import.meta.env.BASE_URL}`).href,
+  "https://raw.githubusercontent.com/0tyght/PRMS-TSM/main/runtime-config.json",
 ];
 
 let apiBasePromise;
@@ -10,7 +10,7 @@ async function getApiBase() {
   if (!apiBasePromise) apiBasePromise = (async () => {
     for (const url of CONFIG_URLS) {
       try {
-        const response = await fetch(`${url}?t=${Date.now()}`, { cache: "no-store" });
+        const response = await fetch(url, { cache: "no-store" });
         if (!response.ok) continue;
         const value = String((await response.json()).apiBaseUrl || "").replace(/\/+$/, "");
         if (value.startsWith("https://")) return value.endsWith("/api") ? value : `${value}/api`;

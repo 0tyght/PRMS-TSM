@@ -17,9 +17,14 @@ import { pool, withTransaction } from "./db.js";
 import { authenticate, errorHandler, requestContext, requireRole } from "./middleware.js";
 import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "./reportExports.js";
 import { openApiDocument } from "./openapi.js";
-import { deliverLineNotification, enqueueLineNotification } from "./lineNotifications.js";
+import {
+  deliverLineNotification,
+  enqueueLineNotification,
+  shouldSendRealtimeStatusNotification,
+} from "./lineNotifications.js";
 import { registerCitizenExperienceRoutes } from "./citizenExperience.js";
 import { handleLineWebhook } from "./lineBot.js";
+import { applyNativeOwnerTransfer, findNativeAttachmentForAdmin, listNativeAttachments } from "./lineNativeCitizen.js";
 import { createMfaSecret, createOtpAuthUrl, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "./mfa.js";
 
 const registrationSchema = z.object({
@@ -145,8 +150,20 @@ const citizenSubmissionSchema = z.discriminatedUnion("subjectType", [
     effectiveAt: z.string().date(),
     reason: z.string().trim().min(2).max(500),
   }),
+  z.object({
+    subjectType: z.literal("OWNER_TRANSFER"),
+    newOwnerName: z.string().trim().min(2).max(150),
+    newOwnerPhone: z.string().regex(/^0\d{9}$/),
+    newHouseNo: z.string().trim().min(1).max(30),
+    newVillageId: z.coerce.number().int().positive(),
+    newVillageNo: z.coerce.number().int().positive().optional(),
+    newAddressDetail: z.string().trim().max(255).optional().default(""),
+    newLatitude: z.coerce.number().min(-90).max(90),
+    newLongitude: z.coerce.number().min(-180).max(180),
+    transferredAt: z.string().date(),
+    reason: z.string().trim().min(2).max(500),
+  }),
 ]);
-
 const citizenSubmissionDecisionSchema = z.object({
   status: z.enum(["UNDER_REVIEW", "NEED_MORE_INFO", "APPROVED", "REJECTED"]),
   note: z.string().trim().max(500).optional().default(""),
@@ -166,6 +183,7 @@ function validateCitizenSubmissionDates(input) {
   }
   if (input.subjectType === "STERILIZATION") ensureOccurredDate(input.sterilizedAt, "วันที่ทำหมัน");
   if (input.subjectType === "PET_STATUS") ensureOccurredDate(input.effectiveAt, "วันที่มีผล");
+  if (input.subjectType === "OWNER_TRANSFER") ensureOccurredDate(input.transferredAt, "วันที่โอนเจ้าของ");
 }
 
 function createHttpError(status, message) {
@@ -329,6 +347,10 @@ function ensureOccurredDate(value, fieldLabel) {
 async function applyCitizenSubmission(db, submission, reviewerId) {
   const proposed = parseJsonObject(submission.proposedPayload);
   const current = parseJsonObject(submission.currentPayload);
+  if (submission.subjectType === "OWNER_TRANSFER") {
+    await applyNativeOwnerTransfer(db, submission, reviewerId);
+    return;
+  }
   if (submission.subjectType === "PET_UPDATE") {
     await db.execute(
       `UPDATE pets SET name = ?, species = ?, sex = ?, breed = NULLIF(?, ''), color = NULLIF(?, ''),
@@ -1785,7 +1807,10 @@ export function createApp() {
            LIMIT 1`,
           [req.params.id, villageId, villageId],
         );
-        const attachment = rows[0];
+        let attachment = rows[0] || null;
+        if (!attachment) {
+          attachment = await findNativeAttachmentForAdmin(req.params.id, villageId);
+        }
         if (!attachment) throw createHttpError(404, "ไม่พบไฟล์หลักฐานหรือไม่มีสิทธิ์เข้าถึง");
         const absolutePath = path.resolve(config.privateStorageDir, attachment.storagePath);
         const storagePrefix = `${path.resolve(config.privateStorageDir)}${path.sep}`;
@@ -1834,6 +1859,7 @@ export function createApp() {
         "VACCINATION",
         "STERILIZATION",
         "PET_STATUS",
+        "OWNER_TRANSFER",
       ]);
       if (!allowedStatuses.has(status)) throw createHttpError(422, "สถานะคิวตรวจสอบไม่ถูกต้อง");
       if (!allowedRequestTypes.has(requestType)) throw createHttpError(422, "ประเภทข้อมูลที่รอตรวจสอบไม่ถูกต้อง");
@@ -2028,7 +2054,8 @@ export function createApp() {
           [req.params.id, villageId, villageId],
         );
         if (!rows[0]) throw createHttpError(404, "ไม่พบคำขอหรือไม่มีสิทธิ์เข้าถึง");
-        return res.json({ data: { ...rows[0], current: parseJsonObject(rows[0].currentPayload), proposed: parseJsonObject(rows[0].proposedPayload), currentPayload: undefined, proposedPayload: undefined } });
+        const attachments = await listNativeAttachments("CITIZEN_SUBMISSION", req.params.id);
+        return res.json({ data: { ...rows[0], current: parseJsonObject(rows[0].currentPayload), proposed: parseJsonObject(rows[0].proposedPayload), currentPayload: undefined, proposedPayload: undefined, attachments } });
       } catch (error) {
         next(error);
       }
@@ -2077,14 +2104,16 @@ export function createApp() {
             [crypto.randomUUID(), req.user.sub, submission.id, JSON.stringify({ status: submission.status, version: submission.version }), JSON.stringify({ status: input.status, note: input.note, version: input.version + 1 }), req.ip],
           );
           const labels = { UNDER_REVIEW: "เจ้าหน้าที่รับตรวจสอบคำขอแล้ว", NEED_MORE_INFO: "กรุณาแก้ไขหรือส่งข้อมูลเพิ่มเติม", APPROVED: "คำขอได้รับอนุมัติแล้ว", REJECTED: "คำขอไม่ได้รับอนุมัติ" };
-          const queued = await enqueueLineNotification(db, {
-            ownerId: submission.ownerId,
-            entityType: "CITIZEN_SUBMISSION",
-            entityId: submission.id,
-            lineUserId: submission.lineUserId,
-            templateCode: `CITIZEN_SUBMISSION_${input.status}`,
-            message: `PRMS-TSM เทศบาลท่าโพธ์\n${labels[input.status]}\nเลขที่คำขอ ${submission.referenceNo}${input.note ? `\nหมายเหตุ: ${input.note}` : ""}`,
-          });
+          const queued = shouldSendRealtimeStatusNotification(input.status)
+            ? await enqueueLineNotification(db, {
+              ownerId: submission.ownerId,
+              entityType: "CITIZEN_SUBMISSION",
+              entityId: submission.id,
+              lineUserId: submission.lineUserId,
+              templateCode: `CITIZEN_SUBMISSION_${input.status}`,
+              message: `PRMS-TSM เทศบาลท่าโพธ์\n${labels[input.status]}\nเลขที่คำขอ ${submission.referenceNo}${input.note ? `\nหมายเหตุ: ${input.note}` : ""}`,
+            })
+            : { id: null, status: "SKIPPED_NON_ACTIONABLE" };
           return { ...submission, status: input.status, version: input.version + 1, notificationId: queued.id, queuedStatus: queued.status };
         });
         const notification = data.queuedStatus === "PENDING" ? await deliverLineNotification(data.notificationId) : { status: data.queuedStatus };
@@ -2348,6 +2377,8 @@ export function createApp() {
             CASE WHEN o.national_id_last4 IS NULL THEN NULL ELSE CONCAT('xxxxxxxxx', o.national_id_last4) END AS nationalId, o.line_user_id AS lineUserId,
             o.consent_at AS consentAt,
             h.house_no AS houseNo, h.address_detail AS addressDetail,
+            CAST(h.latitude AS DECIMAL(10, 7)) AS latitude,
+            CAST(h.longitude AS DECIMAL(10, 7)) AS longitude,
             h.latitude, h.longitude,
             v.id AS villageId, v.village_no AS villageNo, v.name_th AS villageName,
             p.id AS petId, p.registration_no AS registrationNo,
@@ -2377,6 +2408,7 @@ export function createApp() {
         [req.params.id],
       );
 
+      const lineNativeAttachments = await listNativeAttachments("REGISTRATION", req.params.id);
       const proposed = {
         ownerName: registration.ownerName,
         phone: registration.phone,
@@ -2386,6 +2418,8 @@ export function createApp() {
         villageNo: registration.villageNo,
         villageName: registration.villageName,
         addressDetail: registration.addressDetail,
+        latitude: registration.latitude,
+        longitude: registration.longitude,
         petName: registration.petName,
         species: registration.species,
         sex: registration.sex,
@@ -2400,7 +2434,7 @@ export function createApp() {
           requestType: "REGISTER_PET",
           current: registration.status === REGISTRATION_STATUS.APPROVED ? proposed : null,
           proposed,
-          attachments,
+          attachments: [...attachments, ...lineNativeAttachments],
         },
       });
     } catch (error) {
@@ -2582,14 +2616,16 @@ export function createApp() {
             ],
           );
 
-          const queued = await enqueueLineNotification(db, {
-            ownerId: registration.ownerId,
-            entityType: "REGISTRATION",
-            entityId: registration.id,
-            lineUserId: registration.lineUserId,
-            templateCode: `REGISTRATION_${status}`,
-            message: `PRMS-TSM เทศบาลท่าโพธ์\n${statusText}\nเลขที่คำขอ ${registration.referenceNo}${note ? `\nหมายเหตุ: ${note}` : ""}`,
-          });
+          const queued = shouldSendRealtimeStatusNotification(status)
+            ? await enqueueLineNotification(db, {
+              ownerId: registration.ownerId,
+              entityType: "REGISTRATION",
+              entityId: registration.id,
+              lineUserId: registration.lineUserId,
+              templateCode: `REGISTRATION_${status}`,
+              message: `PRMS-TSM เทศบาลท่าโพธ์\n${statusText}\nเลขที่คำขอ ${registration.referenceNo}${note ? `\nหมายเหตุ: ${note}` : ""}`,
+            })
+            : { id: null, status: "SKIPPED_NON_ACTIONABLE" };
 
           return {
             id: req.params.id,

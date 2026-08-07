@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   ORGANIZATION,
   normalizeThaiPhone,
@@ -6,7 +6,7 @@ import {
 } from "@prms/shared";
 import { createCitizenApi } from "./api.js";
 import { connectLine } from "./line.js";
-import MapPicker from "./MapPicker.jsx";
+const MapPicker = lazy(() => import("./MapPicker.jsx"));
 
 const EMPTY_REGISTRATION = {
   ownerName: "",
@@ -45,11 +45,21 @@ const STATUS_LABELS = {
 };
 
 const SUBJECT_LABELS = {
-  PET_UPDATE: "แก้ไขข้อมูลสัตว์",
+  PET_UPDATE: "แก้ไขข้อมูลสัตว์เลี้ยง",
   VACCINATION: "แจ้งวัคซีน",
   STERILIZATION: "แจ้งทำหมัน",
-  PET_STATUS: "แจ้งสถานะสัตว์",
+  PET_STATUS: "แจ้งสถานะสัตว์เลี้ยง",
 };
+
+function MapPickerLoading() {
+  return (
+    <div className="map-picker map-picker-loading" role="status" aria-live="polite">
+      <span aria-hidden="true">◌</span>
+      <strong>กำลังเปิดแผนที่</strong>
+      <small>กรุณารอสักครู่</small>
+    </div>
+  );
+}
 
 function routeFromUrl() {
   const query = new URLSearchParams(window.location.search);
@@ -58,6 +68,10 @@ function routeFromUrl() {
     action: query.get("action") || "",
     section: query.get("section") || "",
   };
+}
+
+function isLineClient() {
+  return /\bLine\//i.test(navigator.userAgent);
 }
 
 function setRoute(view, extras = {}, options = {}) {
@@ -292,7 +306,7 @@ function HomePage({
   let priority = {
     title: "ข้อมูลของคุณเป็นปัจจุบัน",
     description: "เลือกบริการที่ต้องการได้จากเมนูด้านล่าง",
-    label: "ดูสัตว์ของฉัน",
+    label: "ดูสัตว์เลี้ยงของฉัน",
     action: () => onNavigate("account", { section: "pets" }),
     tone: "success",
   };
@@ -307,9 +321,9 @@ function HomePage({
     };
   } else if (Number(counts.missingPets || 0) > 0) {
     priority = {
-      title: "มีสัตว์อยู่ในสถานะสูญหาย",
+      title: "มีสัตว์เลี้ยงอยู่ในสถานะสูญหาย",
       description: `${counts.missingPets} ตัว กดเพื่อตรวจสอบหรือแจ้งพบแล้ว`,
-      label: "ดูสถานะสัตว์",
+      label: "ดูสถานะสัตว์เลี้ยง",
       action: () => onNavigate("account", { action: "status" }),
       tone: "warning",
     };
@@ -344,7 +358,7 @@ function HomePage({
       <div className="page liff-dashboard-page">
         <section className="dashboard-welcome guest-welcome">
           <div className="dashboard-seal">TP</div>
-          <p className="eyebrow">บริการประชาชนเทศบาลท่าโพธิ์</p>
+          <p className="eyebrow">บริการประชาชน{ORGANIZATION.shortName}</p>
           <h1>เมนูหลัก ThaPho PET</h1>
           <p>เข้าสู่ระบบด้วย LINE เพียงครั้งเดียว แล้วระบบจะแสดงเมนูตามข้อมูลจริงของคุณ</p>
           <button
@@ -422,7 +436,7 @@ function HomePage({
       </section>
 
       <section className="dashboard-metrics" aria-label="สรุปข้อมูลปัจจุบัน">
-        <DashboardMetric value={counts.pets} label="สัตว์ทั้งหมด" />
+        <DashboardMetric value={counts.pets} label="สัตว์เลี้ยงทั้งหมด" />
         <DashboardMetric value={counts.pending} label="กำลังตรวจ" tone="info" />
         <DashboardMetric value={counts.needsAttention} label="ต้องแก้ไข" tone="danger" />
         <DashboardMetric value={actionCount} label="รายการสำคัญ" tone="warning" />
@@ -447,16 +461,16 @@ function HomePage({
 
         <div className="liff-service-menu">
           <button type="button" onClick={() => onNavigate("account", { section: "pets" })}>
-            <span>🐾</span><strong>สัตว์ของฉัน</strong><small>ดูรายละเอียดและประวัติ</small>
+            <span>🐾</span><strong>สัตว์เลี้ยงของฉัน</strong><small>ดูรายละเอียดและประวัติ</small>
           </button>
           <button type="button" onClick={() => onNavigate("register") }>
-            <span>＋</span><strong>เพิ่มสัตว์</strong><small>ลงทะเบียนสัตว์ตัวใหม่</small>
+            <span>＋</span><strong>เพิ่มสัตว์เลี้ยง</strong><small>ลงทะเบียนสัตว์เลี้ยงตัวใหม่</small>
           </button>
           <button type="button" onClick={() => onNavigate("account", { action: "vaccination" })}>
-            <span>💉</span><strong>สุขภาพสัตว์</strong><small>วัคซีนและทำหมัน</small>
+            <span>💉</span><strong>สุขภาพสัตว์เลี้ยง</strong><small>วัคซีนและทำหมัน</small>
           </button>
           <button type="button" onClick={() => onNavigate("account", { action: "status" })}>
-            <span>📍</span><strong>แจ้งสถานะสัตว์</strong><small>สูญหาย พบแล้ว หรือเสียชีวิต</small>
+            <span>📍</span><strong>แจ้งสถานะสัตว์เลี้ยง</strong><small>สูญหาย พบแล้ว หรือเสียชีวิต</small>
           </button>
           <button type="button" onClick={() => onNavigate("account", { section: "requests" })}>
             <span>📄</span><strong>คำขอของฉัน</strong><small>ติดตามและแก้ไขคำขอ</small>
@@ -601,17 +615,19 @@ function RegistrationPage({
             </label>
           </div>
 
-          <MapPicker
-            latitude={form.latitude}
-            longitude={form.longitude}
-            required
-            onChange={(location) => {
-              setForm((current) => ({
-                ...current,
-                ...location,
-              }));
-            }}
-          />
+          <Suspense fallback={<MapPickerLoading />}>
+            <MapPicker
+              latitude={form.latitude}
+              longitude={form.longitude}
+              required
+              onChange={(location) => {
+                setForm((current) => ({
+                  ...current,
+                  ...location,
+                }));
+              }}
+            />
+          </Suspense>
           <FieldError value={errors.location} />
         </section>
 
@@ -620,13 +636,13 @@ function RegistrationPage({
             <span>3</span>
             <div>
               <h2>ข้อมูลสัตว์เลี้ยง</h2>
-              <p>รองรับสุนัขและแมวในเขตตำบลท่าโพธิ์</p>
+              <p>รองรับสุนัขและแมวในเขตเทศบาลท่าโพธ์</p>
             </div>
           </div>
 
           <div className="form-grid">
             <label className="field">
-              <span>ชื่อสัตว์ *</span>
+              <span>ชื่อสัตว์เลี้ยง *</span>
               <input
                 name="petName"
                 value={form.petName}
@@ -1155,15 +1171,17 @@ function LocationEditor({ owner, experience, saving, onSave }) {
         />
       </label>
 
-      <MapPicker
-        latitude={location.latitude}
-        longitude={location.longitude}
-        required
-        onChange={(value) => setLocation((current) => ({
-          ...current,
-          ...value,
-        }))}
-      />
+      <Suspense fallback={<MapPickerLoading />}>
+        <MapPicker
+          latitude={location.latitude}
+          longitude={location.longitude}
+          required
+          onChange={(value) => setLocation((current) => ({
+            ...current,
+            ...value,
+          }))}
+        />
+      </Suspense>
 
       <button
         type="button"
@@ -1624,6 +1642,7 @@ export default function App() {
 
   useEffect(() => {
     if (autoConnectStarted.current) return;
+    if (!isLineClient()) return;
     autoConnectStarted.current = true;
     void connectToLine();
   }, []);

@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import AdminLayout from "./components/layout/AdminLayout.jsx";
 import PageErrorBoundary from "./components/layout/PageErrorBoundary.jsx";
 import { ADMIN_MENU } from "./config/navigation.js";
 import { useHashPage } from "./hooks/useHashPage.js";
-import DashboardPage from "./pages/DashboardPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
-import OwnersPage from "./pages/OwnersPage.jsx";
-import PetsPage from "./pages/PetsPage.jsx";
-import RegistrationsPage from "./pages/RegistrationsPage.jsx";
-import ServicesPage from "./pages/ServicesPage.jsx";
-import SettingsPage from "./pages/SettingsPage.jsx";
+const DashboardPage = lazy(() => import("./pages/DashboardPage.jsx"));
+const OwnersPage = lazy(() => import("./pages/OwnersPage.jsx"));
+const PetsPage = lazy(() => import("./pages/PetsPage.jsx"));
+const RegistrationsPage = lazy(() => import("./pages/RegistrationsPage.jsx"));
+const ServicesPage = lazy(() => import("./pages/ServicesPage.jsx"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage.jsx"));
 
 const PAGE_COMPONENTS = {
   dashboard: DashboardPage,
@@ -31,6 +31,16 @@ function readSessionUser(token) {
   } catch {
     return { name: "เจ้าหน้าที่เทศบาล", role: "OFFICER" };
   }
+}
+
+function PageLoading() {
+  return (
+    <section className="panel page-loading" aria-live="polite" aria-busy="true">
+      <i aria-hidden="true">◌</i>
+      <h1>กำลังเปิดข้อมูล</h1>
+      <p>กรุณารอสักครู่</p>
+    </section>
+  );
 }
 
 export default function App() {
@@ -62,7 +72,9 @@ export default function App() {
   return (
     <AdminLayout page={page} navigate={navigate} title={title} user={sessionUser} onLogout={logout}>
       <PageErrorBoundary key={page} onRecover={() => navigate("dashboard")}>
-        <Page token={token} navigate={navigate} />
+        <Suspense fallback={<PageLoading />}>
+          <Page token={token} navigate={navigate} />
+        </Suspense>
       </PageErrorBoundary>
     </AdminLayout>
   );

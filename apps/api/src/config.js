@@ -1,6 +1,17 @@
-import "dotenv/config";
+import { config as loadEnv } from "dotenv";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const ROOT_ENV_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../.env",
+);
+
+loadEnv({
+  path: ROOT_ENV_PATH,
+  override: false,
+  quiet: true,
+});
 const DEVELOPMENT_SECRET = "development-only-change-me";
 
 function readText(value, fallback = "") {

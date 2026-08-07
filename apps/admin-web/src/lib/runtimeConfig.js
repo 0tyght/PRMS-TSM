@@ -1,6 +1,6 @@
 const CONFIG_URLS = [
-  "https://raw.githubusercontent.com/0tyght/PRMS-TSM/main/runtime-config.json",
   new URL("runtime-config.json", `${location.origin}${import.meta.env.BASE_URL}`).href,
+  "https://raw.githubusercontent.com/0tyght/PRMS-TSM/main/runtime-config.json",
 ];
 
 let pending;
@@ -20,7 +20,7 @@ export async function getApiBase(force = false) {
   if (!pending) pending = (async () => {
     for (const configUrl of CONFIG_URLS) {
       try {
-        const response = await fetch(`${configUrl}?t=${Date.now()}`, { cache:"no-store" });
+        const response = await fetch(configUrl, { cache:"no-store" });
         if (!response.ok) continue;
         const apiBase = normalize((await response.json()).apiBaseUrl);
         if (apiBase) return apiBase;
