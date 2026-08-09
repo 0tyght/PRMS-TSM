@@ -1064,7 +1064,7 @@ export function createApp() {
     }
 
     res.json({
-      service: ORGANIZATION.productName,
+      service: "Smart Tha Pho API",
       version: "1.0.0",
       organization: ORGANIZATION.shortName,
       status: "ok",
