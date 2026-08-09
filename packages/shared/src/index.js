@@ -28,7 +28,7 @@ export const MUNICIPAL_SYSTEMS = Object.freeze([
     name: "ระบบบริหารจัดการรถเก็บขยะ",
     shortName: "รถเก็บขยะ",
     description: "ติดตามแผนการเก็บขยะ รถปฏิบัติงาน และการแจ้งเตือนประชาชน",
-    availability: "setup",
+    availability: "ready",
   }),
   Object.freeze({
     id: "disaster",

@@ -1,7 +1,31 @@
 const ACCESS_TOKEN_KEY = "smart_thapho_access_token";
 const ACTIVE_SYSTEM_KEY = "smart_thapho_active_system";
+const LOCAL_SESSION_PARAM = "smart_thapho_session";
+const LOCAL_SYSTEM_PARAM = "smart_thapho_system";
+
+function isLocalhost() {
+  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
+
+function importLocalDevelopmentSession() {
+  if (!isLocalhost()) return;
+
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get(LOCAL_SESSION_PARAM);
+  const systemId = url.searchParams.get(LOCAL_SYSTEM_PARAM);
+
+  if (!token) return;
+
+  sessionStorage.setItem(ACCESS_TOKEN_KEY, token);
+  if (systemId) sessionStorage.setItem(ACTIVE_SYSTEM_KEY, systemId);
+
+  url.searchParams.delete(LOCAL_SESSION_PARAM);
+  url.searchParams.delete(LOCAL_SYSTEM_PARAM);
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
 
 export function getAccessToken() {
+  importLocalDevelopmentSession();
   const token = sessionStorage.getItem(ACCESS_TOKEN_KEY);
   if (token) return token;
 
@@ -11,6 +35,10 @@ export function getAccessToken() {
   sessionStorage.setItem(ACCESS_TOKEN_KEY, legacyToken);
   sessionStorage.removeItem("prms_access_token");
   return legacyToken;
+}
+
+export function setAccessToken(token) {
+  sessionStorage.setItem(ACCESS_TOKEN_KEY, String(token || ""));
 }
 
 export function setActiveSystem(systemId) {

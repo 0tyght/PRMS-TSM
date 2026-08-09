@@ -42,6 +42,16 @@ export function getSystemUrl(systemId) {
   return new URL(`${route}/`, getPortalUrl()).href;
 }
 
-export function openSystemApplication(systemId) {
-  window.location.assign(getSystemUrl(systemId));
+export function openSystemApplication(systemId, token = "") {
+  const targetUrl = getSystemUrl(systemId);
+
+  if (!isLocalhost() || !token) {
+    window.location.assign(targetUrl);
+    return;
+  }
+
+  const target = new URL(targetUrl);
+  target.searchParams.set("smart_thapho_session", token);
+  target.searchParams.set("smart_thapho_system", systemId);
+  window.location.assign(target.href);
 }

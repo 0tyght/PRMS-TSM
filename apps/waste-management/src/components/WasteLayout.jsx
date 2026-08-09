@@ -1,0 +1,9 @@
+const MENU = Object.freeze([
+  ["dashboard", "ภาพรวม", "▦"], ["plans", "แผนปฏิบัติงาน", "◷"], ["resources", "รถ คนขับ และเส้นทาง", "▤"], ["tracking", "ติดตามรถเก็บขยะ", "⌖"], ["service-users", "ผู้ใช้บริการ", "⌂"], ["billing", "ค่าบริการ", "฿"], ["incidents", "เหตุระหว่างปฏิบัติงาน", "!"], ["reports", "รายงาน", "≡"],
+]);
+
+function initials(name) { return String(name || "เจ้าหน้าที่").trim().slice(0, 2) || "จน"; }
+
+export default function WasteLayout({ page, navigate, user, onSwitchSystem, onLogout, children }) {
+  return <main className="waste-app"><aside className="waste-sidebar"><button className="waste-brand" type="button" onClick={() => navigate("dashboard")}><span>ทพ</span><div><strong>Smart Tha Pho</strong><small>เทศบาลท่าโพธ์</small></div></button><div className="waste-system-mark"><span>ขย</span><div><small>WASTE MANAGEMENT</small><strong>ระบบบริหารจัดการ<br />รถเก็บขยะ</strong></div></div><nav aria-label="เมนูระบบรถเก็บขยะ">{MENU.map(([id, label, icon]) => <button key={id} type="button" className={page === id ? "is-active" : ""} aria-current={page === id ? "page" : undefined} onClick={() => navigate(id)}><i>{icon}</i><span>{label}</span></button>)}</nav><footer><button type="button" onClick={onSwitchSystem}>เปลี่ยนระบบงาน</button></footer></aside><section className="waste-main"><header className="waste-topbar"><button className="waste-mobile-brand" type="button" onClick={() => navigate("dashboard")}><b>ขย</b><span>รถเก็บขยะ</span></button><div className="waste-topbar__profile"><span>{initials(user?.name)}</span><div><strong>{user?.name || "เจ้าหน้าที่เทศบาล"}</strong><small>{user?.role === "ADMIN" ? "ผู้ดูแลระบบ" : "เจ้าหน้าที่กองสาธารณสุข"}</small></div><button type="button" onClick={onLogout}>ออกจากระบบ</button></div></header><div className="waste-content">{children}</div></section></main>;
+}

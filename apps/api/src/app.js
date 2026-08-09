@@ -25,6 +25,7 @@ import {
 import { handleLineWebhook } from "./modules/line/lineBot.js";
 import { applyNativeOwnerTransfer, findNativeAttachmentForAdmin, listNativeAttachments } from "./modules/line/lineNativeCitizen.js";
 import { createMfaSecret, createOtpAuthUrl, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "./modules/security/mfa.js";
+import { wasteRouter } from "./modules/waste/waste.router.js";
 
 const registrationSchema = z.object({
   ownerName: z.string().trim().min(2).max(150),
@@ -3461,6 +3462,7 @@ export function createApp() {
     },
   );
 
+  app.use("/api/waste", wasteRouter);
   app.use(errorHandler);
 
   return app;

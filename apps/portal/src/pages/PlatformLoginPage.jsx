@@ -2,6 +2,7 @@ import { useState } from "react";
 import { SMART_THA_PHO } from "../config/systems.js";
 import SystemPicker from "../components/platform/SystemPicker.jsx";
 import { createApi } from "@smart-thapho/web-core/api";
+import { setAccessToken, setActiveSystem } from "@smart-thapho/web-core/session";
 
 export default function PlatformLoginPage({ onLogin }) {
   const [selectedSystemId, setSelectedSystemId] = useState("");
@@ -33,8 +34,8 @@ export default function PlatformLoginPage({ onLogin }) {
         return;
       }
 
-      sessionStorage.setItem("smart_thapho_access_token", data.token);
-      sessionStorage.setItem("smart_thapho_active_system", selectedSystemId);
+      setAccessToken(data.token);
+      setActiveSystem(selectedSystemId);
       onLogin(data.token, selectedSystemId);
     } catch (requestError) {
       setError(requestError.message || "ไม่สามารถเข้าสู่ระบบได้");

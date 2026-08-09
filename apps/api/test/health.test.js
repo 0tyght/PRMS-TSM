@@ -40,6 +40,19 @@ test("retires the citizen web API in favor of LINE OA", async (t) => {
   assert.match((await response.json()).message, /LINE Official Account/);
 });
 
+test("protects waste-management endpoints through the versioned API contract", async (t) => {
+  const server = createApp().listen(0, "127.0.0.1");
+  await new Promise((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/waste/dashboard`);
+  assert.equal(response.status, 401);
+  assert.ok((await response.json()).message);
+});
+
 test("validates attachment signatures instead of trusting the browser MIME type", () => {
   const onePixelPng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

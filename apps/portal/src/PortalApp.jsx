@@ -19,10 +19,10 @@ export default function PortalApp() {
     return () => window.removeEventListener("smart-thapho:session-expired", expireSession);
   }, []);
 
-  const selectSystem = (systemId) => {
+  const selectSystem = (systemId, sessionToken = token) => {
     if (!getPlatformSystem(systemId)) return;
     setActiveSystem(systemId);
-    openSystemApplication(systemId);
+    openSystemApplication(systemId, sessionToken);
   };
 
   const logout = () => {
@@ -33,7 +33,7 @@ export default function PortalApp() {
   if (!token) {
     return <PlatformLoginPage onLogin={(nextToken, systemId) => {
       setToken(nextToken);
-      selectSystem(systemId);
+      selectSystem(systemId, nextToken);
     }} />;
   }
 

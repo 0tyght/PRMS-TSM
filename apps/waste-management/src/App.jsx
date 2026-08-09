@@ -1,5 +1,5 @@
-import { MunicipalWorkspace } from "@smart-thapho/web-core/workspace";
+import WasteManagementWorkspace from "./WasteManagementApp.jsx";
 
 export default function WasteManagementApp() {
-  return <MunicipalWorkspace systemId="waste" />;
+  return <WasteManagementWorkspace />;
 }
