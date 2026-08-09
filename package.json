@@ -9,7 +9,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm-run-all --parallel dev:api dev:portal",
+    "dev": "npm-run-all --parallel dev:api dev:portal dev:prms dev:waste dev:disaster dev:water",
     "dev:api": "npm run dev --workspace @smart-thapho/api",
     "dev:portal": "npm run dev --workspace @smart-thapho/portal",
     "dev:prms": "npm run dev --workspace @smart-thapho/prms-tsm",

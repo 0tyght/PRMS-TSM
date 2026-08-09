@@ -31,7 +31,9 @@
 
 สร้างบัญชีผู้ดูแลระบบครั้งแรกด้วย `npm run create-admin` ข้อมูลที่แสดงในทุกหน้าจะอ่านจาก API และฐานข้อมูลกลางเท่านั้น
 
-Admin Web: `http://localhost:5173`
+Local Portal: `http://localhost:5173` (starts together with all four web applications using `npm run dev`)
+
+Local PRMS-TSM: `http://localhost:5174`
 
 API v1: `http://localhost:4100/api/v1/health`
 
