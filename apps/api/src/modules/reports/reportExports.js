@@ -76,7 +76,7 @@ export function createVillageReportXlsx(rows, metadata) {
     Number(row.vaccinated), Number(row.sterilized), Number(row.pending), Number(row.openCases),
   ]);
   const reportRows = [
-    ["PRMS-TSM รายงานทะเบียนสัตว์ เทศบาลท่าโพธ์"],
+    ["ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานทะเบียนสัตว์ เทศบาลท่าโพธ์"],
     [`ข้อมูล ณ วันที่ ${metadata.cutoffLabel}`],
     [],
     headers,
@@ -99,7 +99,7 @@ export function createVillageReportXlsx(rows, metadata) {
 
 export function createVillageReportPdf(rows, metadata) {
   return new Promise((resolve, reject) => {
-    const document = new PDFDocument({ size: "A4", layout: "landscape", margin: 34, info: { Title: "PRMS-TSM รายงานทะเบียนสัตว์", Author: "เทศบาลท่าโพธ์" } });
+    const document = new PDFDocument({ size: "A4", layout: "landscape", margin: 34, info: { Title: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานทะเบียนสัตว์", Author: "เทศบาลท่าโพธ์" } });
     const chunks = [];
     document.on("data", (chunk) => chunks.push(chunk));
     document.on("end", () => resolve(Buffer.concat(chunks)));
@@ -110,7 +110,7 @@ export function createVillageReportPdf(rows, metadata) {
     const widths = [35, 170, 80, 65, 60, 70, 65, 65, 70];
     const labels = ["หมู่", "ชื่อหมู่บ้าน", "ทั้งหมด", "สุนัข", "แมว", "วัคซีน", "ทำหมัน", "รอตรวจ", "เหตุเปิด"];
     const drawHeader = () => {
-      document.fillColor("#17352b").fontSize(18).text("PRMS-TSM รายงานทะเบียนสัตว์ เทศบาลท่าโพธ์", 34, 28);
+      document.fillColor("#17352b").fontSize(18).text("ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานทะเบียนสัตว์ เทศบาลท่าโพธ์", 34, 28);
       document.fillColor("#687e76").fontSize(10).text(`ข้อมูล ณ วันที่ ${metadata.cutoffLabel}`, 34, 53);
       document.rect(34, 78, 726, 27).fill("#0b6847");
       document.fillColor("#ffffff").fontSize(10);

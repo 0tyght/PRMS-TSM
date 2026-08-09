@@ -1,7 +1,7 @@
 export const openApiDocument = {
   openapi: "3.1.0",
   info: {
-    title: "PRMS-TSM API",
+    title: "Pet Registration Management API",
     version: "1.0.0",
     description: "API ระบบขึ้นทะเบียนและบริหารจัดการข้อมูลสุนัขและแมว เทศบาลท่าโพธ์",
   },

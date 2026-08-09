@@ -86,7 +86,7 @@ export function buildHouseholdVaccinationMessage(group) {
   if (group?.villageNo) addressParts.push(`หมู่ ${group.villageNo}`);
 
   const lines = [
-    "PRMS-TSM เทศบาลท่าโพธิ์",
+    "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง เทศบาลท่าโพธ์",
     "แจ้งเตือนวัคซีนสัตว์เลี้ยง",
   ];
 

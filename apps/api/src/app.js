@@ -901,7 +901,7 @@ async function loadOperationalReport(type, cutoffDate, villageId = null) {
          AND (? IS NULL OR v.id = ?) ORDER BY v.village_no, p.registration_no`,
       [cutoffDate, villageId, villageId],
     );
-    return { title: "PRMS-TSM รายงานทะเบียนสัตว์ เทศบาลท่าโพธ์", sheetName: "ทะเบียนสัตว์", headers: ["เลขทะเบียน", "ชื่อสัตว์", "ชนิด", "เพศ", "สถานะ", "เจ้าของ", "โทรศัพท์", "หมู่", "บ้านเลขที่"], rows: rows.map((r) => [r.registrationNo, r.petName, r.species, r.sex, r.status, r.ownerName, r.phone, r.villageNo, r.houseNo]) };
+    return { title: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานทะเบียนสัตว์ เทศบาลท่าโพธ์", sheetName: "ทะเบียนสัตว์", headers: ["เลขทะเบียน", "ชื่อสัตว์", "ชนิด", "เพศ", "สถานะ", "เจ้าของ", "โทรศัพท์", "หมู่", "บ้านเลขที่"], rows: rows.map((r) => [r.registrationNo, r.petName, r.species, r.sex, r.status, r.ownerName, r.phone, r.villageNo, r.houseNo]) };
   }
   if (type === "vaccination") {
     const [rows] = await pool.execute(
@@ -919,7 +919,7 @@ async function loadOperationalReport(type, cutoffDate, villageId = null) {
        ORDER BY v.village_no, p.registration_no`,
       [cutoffDate, cutoffDate, cutoffDate, cutoffDate, villageId, villageId],
     );
-    return { title: "PRMS-TSM รายงานความครอบคลุมวัคซีน เทศบาลท่าโพธ์", sheetName: "ความครอบคลุมวัคซีน", headers: ["เลขทะเบียน", "ชื่อสัตว์", "ชนิด", "หมู่", "วัคซีน", "วันที่ฉีด", "กำหนดครั้งถัดไป", "สถานะ"], rows: rows.map((r) => [r.registrationNo, r.petName, r.species, r.villageNo, r.vaccineName || "", dateCell(r.vaccinatedAt), dateCell(r.nextDueAt), r.coverageStatus]) };
+    return { title: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานความครอบคลุมวัคซีน เทศบาลท่าโพธ์", sheetName: "ความครอบคลุมวัคซีน", headers: ["เลขทะเบียน", "ชื่อสัตว์", "ชนิด", "หมู่", "วัคซีน", "วันที่ฉีด", "กำหนดครั้งถัดไป", "สถานะ"], rows: rows.map((r) => [r.registrationNo, r.petName, r.species, r.villageNo, r.vaccineName || "", dateCell(r.vaccinatedAt), dateCell(r.nextDueAt), r.coverageStatus]) };
   }
   if (type === "sterilization") {
     const [rows] = await pool.execute(
@@ -934,7 +934,7 @@ async function loadOperationalReport(type, cutoffDate, villageId = null) {
        ORDER BY sr.sterilized_at DESC`,
       [cutoffDate, villageId, villageId],
     );
-    return { title: "PRMS-TSM รายงานการทำหมัน เทศบาลท่าโพธ์", sheetName: "การทำหมัน", headers: ["เลขทะเบียน", "ชื่อสัตว์", "ชนิด", "เพศ", "หมู่", "วันที่ทำหมัน", "ผู้ให้บริการ", "หมายเหตุ"], rows: rows.map((r) => [r.registrationNo, r.petName, r.species, r.sex, r.villageNo, dateCell(r.sterilizedAt), r.providerName || "", r.note || ""]) };
+    return { title: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานการทำหมัน เทศบาลท่าโพธ์", sheetName: "การทำหมัน", headers: ["เลขทะเบียน", "ชื่อสัตว์", "ชนิด", "เพศ", "หมู่", "วันที่ทำหมัน", "ผู้ให้บริการ", "หมายเหตุ"], rows: rows.map((r) => [r.registrationNo, r.petName, r.species, r.sex, r.villageNo, dateCell(r.sterilizedAt), r.providerName || "", r.note || ""]) };
   }
   if (type === "submissions") {
     const [rows] = await pool.execute(
@@ -955,7 +955,7 @@ async function loadOperationalReport(type, cutoffDate, villageId = null) {
        ORDER BY submittedAt DESC`,
       [cutoffDate, villageId, villageId],
     );
-    return { title: "PRMS-TSM รายงานคำขอและ SLA เทศบาลท่าโพธ์", sheetName: "คำขอและ SLA", headers: ["เลขคำขอ", "ประเภท", "สถานะ", "เจ้าของ", "สัตว์", "หมู่", "วันที่ยื่น", "อายุคำขอ (วัน)"], rows: rows.map((r) => [r.referenceNo, r.requestType, r.status, r.ownerName, r.petName, r.villageNo, dateCell(r.submittedAt), Number(r.ageDays || 0)]) };
+    return { title: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานคำขอและ SLA เทศบาลท่าโพธ์", sheetName: "คำขอและ SLA", headers: ["เลขคำขอ", "ประเภท", "สถานะ", "เจ้าของ", "สัตว์", "หมู่", "วันที่ยื่น", "อายุคำขอ (วัน)"], rows: rows.map((r) => [r.referenceNo, r.requestType, r.status, r.ownerName, r.petName, r.villageNo, dateCell(r.submittedAt), Number(r.ageDays || 0)]) };
   }
   if (type === "data-quality") {
     const [rows] = await pool.execute(
@@ -973,7 +973,7 @@ async function loadOperationalReport(type, cutoffDate, villageId = null) {
        HAVING issues <> '' ORDER BY v.village_no, p.registration_no`,
       [cutoffDate, villageId, villageId],
     );
-    return { title: "PRMS-TSM รายงานคุณภาพข้อมูล เทศบาลท่าโพธ์", sheetName: "คุณภาพข้อมูล", headers: ["เลขทะเบียน", "ชื่อสัตว์", "เจ้าของ", "หมู่", "ประเด็นคุณภาพข้อมูล"], rows: rows.map((r) => [r.registrationNo, r.petName, r.ownerName, r.villageNo, r.issues]) };
+    return { title: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานคุณภาพข้อมูล เทศบาลท่าโพธ์", sheetName: "คุณภาพข้อมูล", headers: ["เลขทะเบียน", "ชื่อสัตว์", "เจ้าของ", "หมู่", "ประเด็นคุณภาพข้อมูล"], rows: rows.map((r) => [r.registrationNo, r.petName, r.ownerName, r.villageNo, r.issues]) };
   }
   throw createHttpError(404, "ไม่พบประเภทรายงาน");
 }
@@ -2111,7 +2111,7 @@ export function createApp() {
               entityId: submission.id,
               lineUserId: submission.lineUserId,
               templateCode: `CITIZEN_SUBMISSION_${input.status}`,
-              message: `PRMS-TSM เทศบาลท่าโพธ์\n${labels[input.status]}\nเลขที่คำขอ ${submission.referenceNo}${input.note ? `\nหมายเหตุ: ${input.note}` : ""}`,
+              message: `ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง เทศบาลท่าโพธ์\n${labels[input.status]}\nเลขที่คำขอ ${submission.referenceNo}${input.note ? `\nหมายเหตุ: ${input.note}` : ""}`,
             })
             : { id: null, status: "SKIPPED_NON_ACTIONABLE" };
           return { ...submission, status: input.status, version: input.version + 1, notificationId: queued.id, queuedStatus: queued.status };
@@ -2623,7 +2623,7 @@ export function createApp() {
               entityId: registration.id,
               lineUserId: registration.lineUserId,
               templateCode: `REGISTRATION_${status}`,
-              message: `PRMS-TSM เทศบาลท่าโพธ์\n${statusText}\nเลขที่คำขอ ${registration.referenceNo}${note ? `\nหมายเหตุ: ${note}` : ""}`,
+              message: `ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง เทศบาลท่าโพธ์\n${statusText}\nเลขที่คำขอ ${registration.referenceNo}${note ? `\nหมายเหตุ: ${note}` : ""}`,
             })
             : { id: null, status: "SKIPPED_NON_ACTIONABLE" };
 

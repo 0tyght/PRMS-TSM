@@ -1,7 +1,8 @@
 export const ORGANIZATION = Object.freeze({
   shortName: "เทศบาลท่าโพธ์",
-  systemName: "ระบบขึ้นทะเบียนและบริหารจัดการข้อมูลสุนัขและแมว",
-  productName: "PRMS-TSM",
+  systemName: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง",
+  productName: "Pet Registration Management",
+  systemCode: "PRMS-TSM",
 });
 
 export const PLATFORM = Object.freeze({
@@ -14,8 +15,9 @@ export const PLATFORM = Object.freeze({
 export const MUNICIPAL_SYSTEMS = Object.freeze([
   Object.freeze({
     id: "pet",
-    productName: "PRMS-TSM",
-    name: "ระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง",
+    productName: "Pet Registration Management",
+    systemCode: "PRMS-TSM",
+    name: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง",
     shortName: "ทะเบียนสัตว์เลี้ยง",
     description: "ตรวจสอบการขึ้นทะเบียนสัตว์เลี้ยงและวางแผนบริการสาธารณสุข",
     availability: "ready",
