@@ -1,0 +1,15 @@
+{
+  "name": "@smart-thapho/portal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite --port 5173", "build": "vite build", "preview": "vite preview --port 4173" },
+  "dependencies": {
+    "@smart-thapho/shared": "*",
+    "@smart-thapho/web-core": "*",
+    "@vitejs/plugin-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest"
+  }
+}

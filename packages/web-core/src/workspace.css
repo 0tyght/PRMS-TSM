@@ -1,0 +1,35 @@
+@import url("https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap");
+
+:root { font-family: "Sarabun", system-ui, sans-serif; color: #18342b; background: #f4f8f6; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+.municipal-workspace { min-height: 100vh; background: #f4f8f6; }
+.municipal-workspace__topbar { min-height: 70px; padding: 0 clamp(20px, 4vw, 70px); display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #dbe7e1; background: #fff; }
+.municipal-workspace__brand { display: flex; align-items: center; gap: 10px; }
+.municipal-workspace__brand-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: #087957; color: #fff; font: 800 15px "Prompt", sans-serif; }
+.municipal-workspace__brand strong, .municipal-workspace__brand small { display: block; }
+.municipal-workspace__brand strong { font-size: 14px; }
+.municipal-workspace__brand small { color: #64776f; font-size: 11px; }
+.municipal-workspace__actions { display: flex; align-items: center; gap: 8px; }
+.municipal-workspace__actions button { border: 1px solid #cfdfd7; border-radius: 8px; padding: 8px 10px; background: #fff; color: #3d5c50; font: 700 11px "Sarabun", sans-serif; cursor: pointer; }
+.municipal-workspace__content { width: min(1260px, 100%); margin: 0 auto; padding: clamp(30px, 5vw, 64px) clamp(20px, 4vw, 60px); }
+.municipal-workspace__heading { display: flex; gap: 15px; align-items: center; margin-bottom: 26px; }
+.municipal-workspace__heading-mark { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 18px; background: #e1f4ec; color: #087957; font: 800 20px "Prompt", sans-serif; }
+.municipal-workspace--orange .municipal-workspace__heading-mark { color: #c97910; background: #fff0dc; }
+.municipal-workspace--red .municipal-workspace__heading-mark { color: #be4a42; background: #ffe9e7; }
+.municipal-workspace--blue .municipal-workspace__heading-mark { color: #2675ad; background: #e3f1fb; }
+.municipal-workspace__heading p { margin: 0; color: #087957; font-size: 12px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.municipal-workspace__heading h1 { margin: 4px 0; font: 600 clamp(24px, 3vw, 34px) "Prompt", sans-serif; }
+.municipal-workspace__heading span { color: #64776f; font-size: 13px; }
+.municipal-workspace__notice { display: flex; gap: 12px; padding: 16px 18px; border: 1px solid #e7d6a9; border-radius: 12px; background: #fff9e9; }
+.municipal-workspace__notice-icon { display: grid; place-items: center; flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; background: #e5a62e; color: #fff; font-weight: 800; }
+.municipal-workspace__notice strong { font-size: 13px; }
+.municipal-workspace__notice p { margin: 3px 0 0; color: #77643f; font-size: 12px; line-height: 1.6; }
+.municipal-workspace__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.municipal-workspace__grid article { min-height: 168px; padding: 20px; border: 1px solid #dbe7e1; border-radius: 14px; background: #fff; }
+.municipal-workspace__grid span { color: #087957; font-size: 11px; font-weight: 800; }
+.municipal-workspace__grid h2 { margin: 24px 0 6px; font: 600 17px "Prompt", sans-serif; }
+.municipal-workspace__grid p { margin: 0; color: #64776f; font-size: 12px; line-height: 1.6; }
+.municipal-workspace__loading { min-height: 100vh; display: grid; place-items: center; color: #64776f; background: #f4f8f6; }
+@media (max-width: 850px) { .municipal-workspace__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .municipal-workspace__topbar { min-height: 62px; padding: 0 16px; } .municipal-workspace__brand small { display: none; } .municipal-workspace__grid { grid-template-columns: 1fr; } .municipal-workspace__heading-mark { width: 52px; height: 52px; font-size: 16px; } }

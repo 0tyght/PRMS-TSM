@@ -4,13 +4,11 @@ Smart Tha Pho คือแพลตฟอร์มระบบงานของ
 
 ```text
 apps/
-  smart-tha-pho/                รากของแพลตฟอร์ม Smart Tha Pho
-    src/SmartThaPhoApp.jsx       Login gateway, session และการเลือกแอป
-    src/modules/
-      pet-registration/         ระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง (PRMS-TSM)
-      waste-management/         ระบบบริหารจัดการรถเก็บขยะ
-      disaster-management/      ระบบบริหารจัดการบรรเทาสาธารณภัย
-      waterworks-management/    ระบบบริหารจัดการการประปา
+  portal/                       Login gateway, session และการเลือกเว็บระบบ
+  prms-tsm/                     ระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง (PRMS-TSM)
+  waste-management/             ระบบบริหารจัดการรถเก็บขยะ
+  disaster-management/          ระบบบริหารจัดการบรรเทาสาธารณภัย
+  waterworks-management/        ระบบบริหารจัดการการประปา
   api/                          API กลางและบริการระบบทะเบียนสัตว์เลี้ยงที่ใช้งานอยู่
 packages/
   shared/                       ชื่อแพลตฟอร์ม รายการระบบ และค่าที่ใช้ร่วมกัน

@@ -1,0 +1,8 @@
+{
+  "name": "@smart-thapho/waterworks-management",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite --port 5177", "build": "vite build", "preview": "vite preview --port 4177" },
+  "dependencies": { "@smart-thapho/web-core": "*", "@vitejs/plugin-react": "latest", "react": "latest", "react-dom": "latest", "vite": "latest" }
+}

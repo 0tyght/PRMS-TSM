@@ -4,12 +4,11 @@
 
 ```text
 apps/
-  smart-tha-pho/                 เว็บเจ้าหน้าที่และจุดเข้าใช้งานกลาง
-    src/modules/                 โมดูลเว็บของแต่ละระบบ
-      pet-registration/          ระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง
-      waste-management/          ระบบบริหารจัดการรถเก็บขยะ
-      disaster-management/       ระบบบริหารจัดการบรรเทาสาธารณภัย
-      waterworks-management/     ระบบบริหารจัดการการประปา
+  portal/                        หน้า Login กลางและตัวเลือกระบบ
+  prms-tsm/                      ระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง
+  waste-management/              ระบบบริหารจัดการรถเก็บขยะ
+  disaster-management/           ระบบบริหารจัดการบรรเทาสาธารณภัย
+  waterworks-management/         ระบบบริหารจัดการการประปา
   api/                           API และกฎธุรกิจที่ใช้งานจริง
     src/core/                    การตั้งค่า ฐานข้อมูล และ middleware
     src/contracts/               เอกสารสัญญา API (OpenAPI)
@@ -19,6 +18,7 @@ apps/
       security/                  MFA และความปลอดภัย
 packages/
   shared/                        ค่ากลางและแบบข้อมูลที่ใช้ร่วมกัน
+  web-core/                      API client, session และ UI shell ที่ใช้ร่วมกันเท่าที่จำเป็น
 database/
   bootstrap/                     SQL สำหรับสร้างฐานข้อมูลครั้งแรก
   migrations/                    SQL ที่อัปเกรดฐานข้อมูลตามลำดับ

@@ -1,0 +1,16 @@
+{
+  "name": "@smart-thapho/web-core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./api": "./src/api.js",
+    "./session": "./src/session.js",
+    "./navigation": "./src/navigation.js",
+    "./workspace": "./src/MunicipalWorkspace.jsx"
+  },
+  "dependencies": {
+    "@smart-thapho/shared": "*",
+    "react": "latest"
+  }
+}

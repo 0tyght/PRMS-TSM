@@ -9,7 +9,7 @@ import { warmWizardRichMenus } from "./modules/line/lineRichMenuWizard.js";
 
 const app = createApp();
 const server = app.listen(config.port, () => {
-  console.log(`PRMS-TSM API listening on http://localhost:${config.port}`);
+  console.log(`Smart Tha Pho API listening on http://localhost:${config.port}`);
 });
 
 

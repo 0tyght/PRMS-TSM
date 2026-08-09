@@ -1,0 +1,20 @@
+{
+  "name": "@smart-thapho/prms-tsm",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174",
+    "build": "vite build",
+    "preview": "vite preview --port 4174"
+  },
+  "dependencies": {
+    "@smart-thapho/shared": "*",
+    "@smart-thapho/web-core": "*",
+    "@vitejs/plugin-react": "latest",
+    "leaflet": "^1.9.4",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest"
+  }
+}

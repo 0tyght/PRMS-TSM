@@ -2,7 +2,7 @@
 
 แพลตฟอร์มระบบงานดิจิทัลของเทศบาลท่าโพธ์ ประกอบด้วยระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง ระบบบริหารจัดการรถเก็บขยะ ระบบบริหารจัดการบรรเทาสาธารณภัย และระบบบริหารจัดการการประปา
 
-ดูภาพรวมแพลตฟอร์มที่ [docs/architecture/SMART_THA_PHO_STRUCTURE.md](docs/architecture/SMART_THA_PHO_STRUCTURE.md) และผังโฟลเดอร์สำหรับผู้พัฒนาที่ [docs/architecture/REPOSITORY_STRUCTURE.md](docs/architecture/REPOSITORY_STRUCTURE.md)
+ดูภาพรวมเว็บทั้ง 4 ระบบที่ [docs/architecture/WEB_APPLICATIONS.md](docs/architecture/WEB_APPLICATIONS.md) และผังโฟลเดอร์สำหรับผู้พัฒนาที่ [docs/architecture/REPOSITORY_STRUCTURE.md](docs/architecture/REPOSITORY_STRUCTURE.md)
 
 เปิด API, Cloudflare Tunnel และอัปเดต LINE Webhook อัตโนมัติด้วย `./start-smart-tha-pho.ps1` ดูรายละเอียดที่ [docs/operations/LINE_OPERATION.md](docs/operations/LINE_OPERATION.md)
 
@@ -10,7 +10,11 @@
 
 ## ช่องทางใช้งานจริง
 
-- `apps/smart-tha-pho` — เว็บเจ้าหน้าที่ Smart Tha Pho และหน้าเข้าสู่ระบบกลาง
+- `apps/portal` — หน้าเข้าสู่ระบบกลาง Smart Tha Pho และตัวเลือกระบบ
+- `apps/prms-tsm` — ระบบทะเบียนและบริหารจัดการสัตว์เลี้ยง (PRMS-TSM)
+- `apps/waste-management` — ระบบบริหารจัดการรถเก็บขยะ
+- `apps/disaster-management` — ระบบบริหารจัดการบรรเทาสาธารณภัย
+- `apps/waterworks-management` — ระบบบริหารจัดการการประปา
 - LINE Official Account — ช่องทางเดียวสำหรับเจ้าของสัตว์เลี้ยงทุกขั้นตอน
 - `apps/api` — API, การยืนยันตัวตน และกฎธุรกิจ
 - `packages/shared` — แบบข้อมูลและค่ากลางที่ใช้ร่วมกัน
