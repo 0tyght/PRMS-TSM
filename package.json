@@ -24,6 +24,7 @@
     "line:audit": "node scripts/line/audit-rich-menu-v12.mjs",
     "line:sync": "powershell -ExecutionPolicy Bypass -File scripts/line/setup-line-rich-menus.ps1",
     "line:webhook:test": "powershell -ExecutionPolicy Bypass -File scripts/line/test-line-webhook.ps1",
+    "seed:waste-demo": "powershell -ExecutionPolicy Bypass -File scripts/database/seed-waste-demo.ps1",
     "maintenance:maps": "node scripts/maintenance/remove-generated-map-coordinates.mjs"
   },
   "devDependencies": {

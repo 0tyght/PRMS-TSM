@@ -132,6 +132,11 @@ function asDateTime(value) {
   return value ? new Date(value) : null;
 }
 
+function asDateOnly(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date(value));
+}
+
 function mapVehicle(row) {
   return {
     id: row.id,
@@ -219,6 +224,45 @@ async function syncServiceUserStop(db, serviceUserId) {
       user.longitude,
     ],
   );
+}
+
+async function assertPlanAssignment(db, input, excludePlanId = null) {
+  const [route] = await db.execute(`SELECT id, is_active AS isActive FROM waste_routes WHERE id = ?`, [input.routeId]);
+  const [vehicle] = await db.execute(`SELECT id, status FROM waste_vehicles WHERE id = ?`, [input.vehicleId]);
+  const [driver] = await db.execute(`SELECT id, is_active AS isActive FROM waste_drivers WHERE id = ?`, [input.driverId]);
+
+  if (!route[0] || !toBoolean(route[0].isActive)) throw httpError(422, "เส้นทางที่เลือกถูกปิดใช้งานหรือไม่มีอยู่ในระบบ");
+  if (!vehicle[0]) throw httpError(422, "ไม่พบรถเก็บขยะที่เลือก");
+  if (["MAINTENANCE", "OUT_OF_SERVICE"].includes(vehicle[0].status)) throw httpError(422, "รถเก็บขยะที่เลือกอยู่ระหว่างซ่อมบำรุงหรือหยุดใช้งาน");
+  if (!driver[0] || !toBoolean(driver[0].isActive)) throw httpError(422, "คนขับรถเก็บขยะที่เลือกถูกปิดใช้งานหรือไม่มีอยู่ในระบบ");
+
+  const startAt = asDateTime(input.scheduledStartAt);
+  const endAt = asDateTime(input.scheduledEndAt);
+  if (startAt && endAt && endAt <= startAt) throw httpError(422, "เวลาสิ้นสุดตามแผนต้องอยู่หลังเวลาเริ่ม");
+
+  const [conflicts] = await db.execute(
+    `SELECT p.id, p.plan_no AS planNo,
+            CASE WHEN p.vehicle_id = ? THEN 'VEHICLE' ELSE 'DRIVER' END AS conflictType
+     FROM waste_operation_plans p
+     WHERE p.scheduled_date = ?
+       AND p.status NOT IN ('CANCELLED')
+       AND (? IS NULL OR p.id <> ?)
+       AND (p.vehicle_id = ? OR p.driver_id = ?)
+       AND (
+         ? IS NULL OR ? IS NULL OR p.scheduled_start_at IS NULL OR p.scheduled_end_at IS NULL
+         OR (? < p.scheduled_end_at AND ? > p.scheduled_start_at)
+       )
+     LIMIT 1`,
+    [
+      input.vehicleId, input.scheduledDate, excludePlanId, excludePlanId,
+      input.vehicleId, input.driverId,
+      startAt, endAt, startAt, endAt,
+    ],
+  );
+  if (conflicts[0]) {
+    const resource = conflicts[0].conflictType === "VEHICLE" ? "รถเก็บขยะ" : "คนขับรถเก็บขยะ";
+    throw httpError(409, `${resource}ถูกมอบหมายในแผน ${conflicts[0].planNo} ช่วงเวลาเดียวกันแล้ว`);
+  }
 }
 
 router.use(authenticate);
@@ -581,9 +625,7 @@ router.post("/plans", requireRole("ADMIN", "OFFICER"), async (req, res, next) =>
     const input = planSchema.parse(req.body);
     const id = crypto.randomUUID();
     await withTransaction(async (db) => {
-      const [vehicleRows] = await db.execute(`SELECT status FROM waste_vehicles WHERE id = ? FOR UPDATE`, [input.vehicleId]);
-      if (!vehicleRows[0]) throw httpError(422, "ไม่พบรถเก็บขยะที่เลือก");
-      if (vehicleRows[0].status === "OUT_OF_SERVICE") throw httpError(422, "รถเก็บขยะที่เลือกไม่พร้อมใช้งาน");
+      await assertPlanAssignment(db, input);
       await db.execute(`INSERT INTO waste_operation_plans (id, plan_no, scheduled_date, route_id, vehicle_id, driver_id, scheduled_start_at, scheduled_end_at, note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, input.planNo, input.scheduledDate, input.routeId, input.vehicleId, input.driverId, asDateTime(input.scheduledStartAt), asDateTime(input.scheduledEndAt), input.note, req.user.sub]);
     });
     await audit(req.user.sub, "CREATE_WASTE_PLAN", "WASTE_PLAN", id, input, req.ip);
@@ -596,14 +638,25 @@ router.patch("/plans/:id", requireRole("ADMIN", "OFFICER"), async (req, res, nex
     const input = planSchema.partial().parse(req.body);
     if (!Object.keys(input).length) throw httpError(422, "กรุณาระบุข้อมูลแผนปฏิบัติงานที่ต้องการปรับปรุง");
     await withTransaction(async (db) => {
-      const [planRows] = await db.execute(`SELECT status FROM waste_operation_plans WHERE id = ? FOR UPDATE`, [req.params.id]);
+      const [planRows] = await db.execute(
+        `SELECT status, plan_no AS planNo, scheduled_date AS scheduledDate, route_id AS routeId,
+                vehicle_id AS vehicleId, driver_id AS driverId,
+                scheduled_start_at AS scheduledStartAt, scheduled_end_at AS scheduledEndAt
+         FROM waste_operation_plans WHERE id = ? FOR UPDATE`,
+        [req.params.id],
+      );
       if (!planRows[0]) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
       if (planRows[0].status !== "SCHEDULED") throw httpError(409, "แก้ไขได้เฉพาะแผนงานที่ยังไม่เริ่มปฏิบัติงาน");
-
-      if (input.vehicleId) {
-        const [vehicleRows] = await db.execute(`SELECT status FROM waste_vehicles WHERE id = ?`, [input.vehicleId]);
-        if (!vehicleRows[0] || vehicleRows[0].status === "OUT_OF_SERVICE") throw httpError(422, "รถเก็บขยะที่เลือกไม่พร้อมใช้งาน");
-      }
+      const current = planRows[0];
+      const merged = {
+        scheduledDate: input.scheduledDate || asDateOnly(current.scheduledDate),
+        routeId: input.routeId || current.routeId,
+        vehicleId: input.vehicleId || current.vehicleId,
+        driverId: input.driverId || current.driverId,
+        scheduledStartAt: input.scheduledStartAt === undefined ? current.scheduledStartAt : input.scheduledStartAt,
+        scheduledEndAt: input.scheduledEndAt === undefined ? current.scheduledEndAt : input.scheduledEndAt,
+      };
+      await assertPlanAssignment(db, merged, req.params.id);
       const fields = {
         planNo: "plan_no", scheduledDate: "scheduled_date", routeId: "route_id", vehicleId: "vehicle_id",
         driverId: "driver_id", scheduledStartAt: "scheduled_start_at", scheduledEndAt: "scheduled_end_at", note: "note",
@@ -635,6 +688,14 @@ router.patch("/plans/:id/status", requireRole("ADMIN", "OFFICER"), async (req, r
         CANCELLED: [],
       };
       if (!allowed[rows[0].status]?.includes(input.status)) throw httpError(409, "ไม่สามารถเปลี่ยนสถานะแผนงานตามลำดับนี้ได้");
+      if (input.status === "IN_PROGRESS") {
+        const [vehicleRows] = await db.execute(`SELECT status FROM waste_vehicles WHERE id = ? FOR UPDATE`, [rows[0].vehicleId]);
+        const [driverRows] = await db.execute(`SELECT d.is_active AS isActive FROM waste_drivers d INNER JOIN waste_operation_plans p ON p.driver_id = d.id WHERE p.id = ?`, [req.params.id]);
+        const [activeRows] = await db.execute(`SELECT plan_no AS planNo FROM waste_operation_plans WHERE vehicle_id = ? AND id <> ? AND status = 'IN_PROGRESS' LIMIT 1`, [rows[0].vehicleId, req.params.id]);
+        if (!vehicleRows[0] || vehicleRows[0].status !== "AVAILABLE") throw httpError(409, "รถเก็บขยะไม่อยู่ในสถานะพร้อมใช้งาน จึงยังเริ่มแผนนี้ไม่ได้");
+        if (!driverRows[0] || !toBoolean(driverRows[0].isActive)) throw httpError(409, "คนขับรถเก็บขยะถูกปิดใช้งาน จึงยังเริ่มแผนนี้ไม่ได้");
+        if (activeRows[0]) throw httpError(409, `รถเก็บขยะกำลังปฏิบัติงานในแผน ${activeRows[0].planNo}`);
+      }
       const timeColumns = input.status === "IN_PROGRESS" ? ", actual_start_at = COALESCE(actual_start_at, NOW())" : input.status === "COMPLETED" ? ", actual_end_at = NOW()" : "";
       await db.execute(`UPDATE waste_operation_plans SET status = ?, note = COALESCE(?, note) ${timeColumns} WHERE id = ?`, [input.status, input.note, req.params.id]);
       if (input.status === "IN_PROGRESS") await db.execute(`UPDATE waste_vehicles SET status = 'IN_SERVICE' WHERE id = ?`, [rows[0].vehicleId]);

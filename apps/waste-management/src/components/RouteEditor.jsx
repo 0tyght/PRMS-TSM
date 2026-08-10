@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import useLeafletResize from "../lib/useLeafletResize.js";
 
 const THA_PHO_CENTER = [16.7744, 100.2254];
 
@@ -81,6 +82,7 @@ export default function RouteEditor({ value, onChange, onResolve }) {
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
   }, []);
+  useLeafletResize(mapRef, rootRef);
 
   useEffect(() => {
     const map = mapRef.current;

@@ -9,6 +9,12 @@ function toTimeInput(value) {
   return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" }).format(date);
 }
 
+const STATUS_CONFIRMATIONS = Object.freeze({
+  IN_PROGRESS: { title: "ยืนยันเริ่มปฏิบัติงาน", detail: "รถและคนขับจะเปลี่ยนเป็นกำลังปฏิบัติงาน และเริ่มรับตำแหน่ง GPS ของแผนนี้", action: "เริ่มปฏิบัติงาน" },
+  COMPLETED: { title: "ยืนยันปิดแผนงาน", detail: "ควรตรวจว่าจุดเก็บและเหตุระหว่างปฏิบัติงานถูกบันทึกครบแล้ว การปิดแผนไม่สามารถย้อนกลับได้", action: "ยืนยันเสร็จสิ้น" },
+  CANCELLED: { title: "ยืนยันยกเลิกแผนงาน", detail: "แผนที่ยกเลิกแล้วไม่สามารถนำกลับมาเริ่มงานได้ หากยังต้องปฏิบัติงานให้สร้างแผนใหม่", action: "ยกเลิกแผนงาน" },
+});
+
 function PlanForm({ resources, date, initial = null, onCancel, onSubmit, saving }) {
   const [scheduledDate, setScheduledDate] = useState(initial?.scheduledDate?.slice?.(0, 10) || date);
   const submit = (event) => {
@@ -31,7 +37,7 @@ function PlanForm({ resources, date, initial = null, onCancel, onSubmit, saving 
     <label>เลขที่แผนปฏิบัติงาน<input name="planNo" required defaultValue={defaultPlanNo} /></label>
     <label>วันที่ปฏิบัติงาน<input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} required /></label>
     <label>เส้นทางเก็บขยะ<select name="routeId" required defaultValue={initial?.routeId || ""}><option value="" disabled>เลือกเส้นทาง</option>{resources.routes.filter((item) => item.isActive || item.id === initial?.routeId).map((item) => <option value={item.id} key={item.id}>{item.routeCode} — {item.routeName} ({formatNumber(item.stopCount)} จุด)</option>)}</select></label>
-    <label>รถเก็บขยะ<select name="vehicleId" required defaultValue={initial?.vehicleId || ""}><option value="" disabled>เลือกรถเก็บขยะ</option>{resources.vehicles.filter((item) => item.status !== "OUT_OF_SERVICE" || item.id === initial?.vehicleId).map((item) => <option value={item.id} key={item.id}>{item.vehicleCode} — {item.registrationNo}</option>)}</select></label>
+    <label>รถเก็บขยะ<select name="vehicleId" required defaultValue={initial?.vehicleId || ""}><option value="" disabled>เลือกรถเก็บขยะ</option>{resources.vehicles.filter((item) => !["MAINTENANCE", "OUT_OF_SERVICE"].includes(item.status) || item.id === initial?.vehicleId).map((item) => <option value={item.id} key={item.id}>{item.vehicleCode} — {item.registrationNo}{item.status === "IN_SERVICE" ? " (กำลังใช้งาน)" : ""}</option>)}</select><small>ระบบจะป้องกันรถหรือคนขับที่มีแผนงานเวลาเดียวกัน</small></label>
     <label>คนขับรถเก็บขยะ<select name="driverId" required defaultValue={initial?.driverId || ""}><option value="" disabled>เลือกคนขับรถเก็บขยะ</option>{resources.drivers.filter((item) => item.isActive || item.id === initial?.driverId).map((item) => <option value={item.id} key={item.id}>{item.fullName}</option>)}</select></label>
     <label>เวลาเริ่มตามแผน<input name="scheduledStartAt" type="time" defaultValue={toTimeInput(initial?.scheduledStartAt)} /></label>
     <label>เวลาสิ้นสุดตามแผน<input name="scheduledEndAt" type="time" defaultValue={toTimeInput(initial?.scheduledEndAt)} /></label>
@@ -49,6 +55,7 @@ export default function PlansPage({ token, navigate }) {
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [statusConfirmation, setStatusConfirmation] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -107,9 +114,10 @@ export default function PlansPage({ token, navigate }) {
     <section className="waste-panel">{loading ? <LoadingState /> : !plans.length ? <EmptyState title="ยังไม่มีแผนปฏิบัติงาน" detail="เริ่มจากจัดเตรียมรถ คนขับ และเส้นทาง แล้วสร้างแผนงานสำหรับวันที่เลือก" actionLabel="สร้างแผนปฏิบัติงาน" onAction={() => setCreateOpen(true)} /> : <div className="waste-plan-list">{plans.map((plan) => <article key={plan.id}>
       <div className="waste-plan-list__date"><strong>{formatDate(plan.scheduledDate, { day: "numeric" })}</strong><span>{formatDate(plan.scheduledDate, { month: "short" })}</span></div>
       <div className="waste-plan-list__main"><header><div><small>{plan.planNo}</small><h2>{plan.routeName}</h2></div><StatusBadge value={plan.status} /></header><dl><div><dt>รถเก็บขยะ</dt><dd>{plan.vehicleCode}</dd></div><div><dt>คนขับ</dt><dd>{plan.driverName}</dd></div><div><dt>จุดเก็บ</dt><dd>{formatNumber(plan.collectedStops)} / {formatNumber(plan.stopTotal)} จุด</dd></div><div><dt>เวลา</dt><dd>{plan.scheduledStartAt ? formatDate(plan.scheduledStartAt, { hour: "2-digit", minute: "2-digit" }) : "ไม่ระบุ"}</dd></div></dl></div>
-      <div className="waste-plan-list__actions">{plan.status === "SCHEDULED" ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => setEditing(plan)}>แก้ไขแผน</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => updateStatus(plan.id, "IN_PROGRESS")}>เริ่มปฏิบัติงาน</button><button type="button" className="waste-button waste-button--quiet" disabled={saving} onClick={() => updateStatus(plan.id, "CANCELLED")}>ยกเลิก</button></> : null}{plan.status === "IN_PROGRESS" || plan.status === "INTERRUPTED" ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate(`tracking?plan=${plan.id}`)}>ติดตาม</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => updateStatus(plan.id, "COMPLETED")}>บันทึกเสร็จสิ้น</button></> : null}</div>
+      <div className="waste-plan-list__actions">{plan.status === "SCHEDULED" ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => setEditing(plan)}>แก้ไขแผน</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => setStatusConfirmation({ plan, status: "IN_PROGRESS" })}>เริ่มปฏิบัติงาน</button><button type="button" className="waste-button waste-button--quiet" disabled={saving} onClick={() => setStatusConfirmation({ plan, status: "CANCELLED" })}>ยกเลิก</button></> : null}{plan.status === "IN_PROGRESS" || plan.status === "INTERRUPTED" ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate(`tracking?plan=${plan.id}`)}>ติดตาม</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => setStatusConfirmation({ plan, status: "COMPLETED" })}>บันทึกเสร็จสิ้น</button></> : null}</div>
     </article>)}</div>}</section>
     {createOpen ? <Modal title="สร้างแผนปฏิบัติงานเก็บขยะ" onClose={() => setCreateOpen(false)}><PlanForm resources={resources} date={date} onCancel={() => setCreateOpen(false)} onSubmit={(input) => savePlan(input)} saving={saving} /></Modal> : null}
     {editing ? <Modal title="แก้ไขแผนปฏิบัติงานเก็บขยะ" onClose={() => setEditing(null)}><PlanForm resources={resources} date={date} initial={editing} onCancel={() => setEditing(null)} onSubmit={(input) => savePlan(input, editing)} saving={saving} /></Modal> : null}
+    {statusConfirmation ? <Modal title={STATUS_CONFIRMATIONS[statusConfirmation.status].title} onClose={() => setStatusConfirmation(null)}><div className="waste-confirmation"><strong>{statusConfirmation.plan.planNo} · {statusConfirmation.plan.routeName}</strong><p>{STATUS_CONFIRMATIONS[statusConfirmation.status].detail}</p><footer><button type="button" className="waste-button waste-button--secondary" onClick={() => setStatusConfirmation(null)}>กลับไปตรวจสอบ</button><button type="button" className={statusConfirmation.status === "CANCELLED" ? "waste-button waste-button--danger" : "waste-button waste-button--primary"} disabled={saving} onClick={() => { const { plan, status } = statusConfirmation; setStatusConfirmation(null); void updateStatus(plan.id, status); }}>{STATUS_CONFIRMATIONS[statusConfirmation.status].action}</button></footer></div></Modal> : null}
   </>;
 }
