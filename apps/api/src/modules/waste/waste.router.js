@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
+import { config } from "../../core/config.js";
 import { pool, withTransaction } from "../../core/db.js";
 import { authenticate, requireRole } from "../../core/middleware.js";
 
@@ -32,6 +33,13 @@ const routeSchema = z.object({
   description: nullableText(500),
   routeGeojson: z.record(z.string(), z.unknown()).optional().nullable(),
   isActive: z.boolean().default(true),
+});
+
+const routePreviewSchema = z.object({
+  waypoints: z.array(z.object({
+    latitude: z.coerce.number().min(-90).max(90),
+    longitude: z.coerce.number().min(-180).max(180),
+  })).min(2).max(50),
 });
 
 const serviceUserSchema = z.object({
@@ -310,6 +318,51 @@ router.get("/routes", requireRole("ADMIN", "OFFICER", "VIEWER"), async (_req, re
        ORDER BY r.is_active DESC, r.route_code`,
     );
     return res.json({ data: rows.map(mapRoute) });
+  } catch (error) { next(error); }
+});
+
+router.post("/routes/preview", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const input = routePreviewSchema.parse(req.body);
+    const coordinates = input.waypoints
+      .map((point) => `${point.longitude.toFixed(7)},${point.latitude.toFixed(7)}`)
+      .join(";");
+    const query = new URLSearchParams({ overview: "full", geometries: "geojson", steps: "false" });
+    let response;
+    try {
+      response = await fetch(`${config.routingApiBaseUrl}/route/v1/driving/${coordinates}?${query}`, {
+        headers: { Accept: "application/json", "User-Agent": "Smart-Tha-Pho/1.0" },
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      throw httpError(502, "ไม่สามารถเชื่อมต่อบริการคำนวณเส้นทางได้ในขณะนี้");
+    }
+    if (!response.ok) throw httpError(502, "ไม่สามารถคำนวณเส้นทางตามถนนได้ในขณะนี้");
+    const result = await response.json();
+    const route = result.routes?.[0];
+    if (result.code !== "Ok" || !route?.geometry) throw httpError(422, "ไม่พบถนนที่เชื่อมต่อระหว่างจุดที่เลือก");
+    return res.json({
+      data: {
+        routeGeojson: {
+          type: "Feature",
+          properties: {
+            waypoints: input.waypoints,
+            distanceMeters: Math.round(route.distance || 0),
+            durationSeconds: Math.round(route.duration || 0),
+            source: "OpenStreetMap / OSRM",
+          },
+          geometry: route.geometry,
+        },
+        distanceMeters: Math.round(route.distance || 0),
+        durationSeconds: Math.round(route.duration || 0),
+        snappedWaypoints: (result.waypoints || []).map((point) => ({
+          name: point.name || "",
+          longitude: point.location?.[0],
+          latitude: point.location?.[1],
+          distanceMeters: point.distance,
+        })),
+      },
+    });
   } catch (error) { next(error); }
 });
 

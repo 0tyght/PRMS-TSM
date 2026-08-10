@@ -9,7 +9,7 @@ const TABS = Object.freeze([
   ["routes", "เส้นทางเก็บขยะ"],
 ]);
 
-function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
+function ResourceForm({ type, initial, onCancel, onSubmit, onResolveRoute, saving }) {
   const editing = Boolean(initial?.id);
   const [routeGeojson, setRouteGeojson] = useState(() => initial?.routeGeojson || null);
 
@@ -69,7 +69,7 @@ function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
         <label>ชื่อเส้นทาง<input name="routeName" required defaultValue={initial?.routeName || ""} placeholder="เช่น เส้นทางหมู่ 1–3" /></label>
         <label>สถานะ<select name="isActive" defaultValue={String(initial?.isActive ?? true)}><option value="true">เปิดใช้งาน</option><option value="false">ปิดใช้งาน</option></select></label>
         <label className="waste-form__wide">รายละเอียดเส้นทาง<textarea name="description" defaultValue={initial?.description || ""} rows="4" placeholder="ระบุพื้นที่ หมู่บ้าน หรือข้อสังเกตสำหรับการปฏิบัติงาน" /></label>
-        <div className="waste-form__wide"><RouteEditor value={routeGeojson} onChange={setRouteGeojson} /></div>
+        <div className="waste-form__wide"><RouteEditor value={routeGeojson} onChange={setRouteGeojson} onResolve={onResolveRoute} /></div>
         <p className="waste-form__hint">เส้นทางจะแสดงบนหน้า Overview ทันทีหลังบันทึก ส่วนจุดเก็บขยะจะผูกกับทะเบียนผู้ใช้บริการในขั้นตอนถัดไป</p>
       </>}
       <footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>ยกเลิก</button><button className="waste-button waste-button--primary" disabled={saving}>{saving ? "กำลังบันทึก" : editing ? "บันทึกการแก้ไข" : "บันทึกข้อมูล"}</button></footer>
@@ -113,6 +113,8 @@ export default function ResourcesPage({ token }) {
 
   useEffect(() => { void load(); }, [load]);
 
+  const resolveRoute = useCallback((waypoints) => api.post("/api/waste/routes/preview", { waypoints }), [api]);
+
   const title = TABS.find(([id]) => id === tab)?.[1] || "ข้อมูลพื้นฐาน";
   const records = data[tab] || [];
   const createLabel = tab === "vehicles" ? "เพิ่มรถเก็บขยะ" : tab === "drivers" ? "เพิ่มคนขับรถเก็บขยะ" : "เพิ่มเส้นทางเก็บขยะ";
@@ -138,6 +140,6 @@ export default function ResourcesPage({ token }) {
     <div className="waste-tabs" role="tablist">{TABS.map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "is-active" : ""} onClick={() => setTab(id)}>{label}<b>{formatNumber(data[id]?.length)}</b></button>)}</div>
     <ErrorNotice error={error} onRetry={load} />
     <section className="waste-panel"><header className="waste-panel__head"><div><p>CONFIGURATION</p><h2>{title}</h2></div><button type="button" className="waste-button waste-button--primary" onClick={() => setModal({ type: tab, item: null })}>+ {createLabel}</button></header>{loading ? <LoadingState /> : !records.length ? <EmptyState title={`ยังไม่มี${title}`} detail="เพิ่มข้อมูลจริงเพื่อใช้สร้างแผนปฏิบัติงานและติดตามการเก็บขยะ" actionLabel={createLabel} onAction={() => setModal({ type: tab, item: null })} /> : <div className="waste-table-wrap"><ResourceTable type={tab} records={records} onEdit={(item) => setModal({ type: tab, item })} /></div>}</section>
-    {modal ? <Modal title={modal.item ? `แก้ไข${modal.type === "vehicles" ? "รถเก็บขยะ" : modal.type === "drivers" ? "คนขับรถเก็บขยะ" : "เส้นทางเก็บขยะ"}` : createLabel} onClose={() => setModal(null)}><ResourceForm type={modal.type} initial={modal.item} onCancel={() => setModal(null)} onSubmit={save} saving={saving} /></Modal> : null}
+    {modal ? <Modal title={modal.item ? `แก้ไข${modal.type === "vehicles" ? "รถเก็บขยะ" : modal.type === "drivers" ? "คนขับรถเก็บขยะ" : "เส้นทางเก็บขยะ"}` : createLabel} onClose={() => setModal(null)}><ResourceForm type={modal.type} initial={modal.item} onCancel={() => setModal(null)} onSubmit={save} onResolveRoute={resolveRoute} saving={saving} /></Modal> : null}
   </>;
 }

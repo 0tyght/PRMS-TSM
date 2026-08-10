@@ -7,7 +7,8 @@
     "./api": "./src/api.js",
     "./session": "./src/session.js",
     "./navigation": "./src/navigation.js",
-    "./workspace": "./src/MunicipalWorkspace.jsx"
+    "./workspace": "./src/MunicipalWorkspace.jsx",
+    "./theme.css": "./src/theme.css"
   },
   "dependencies": {
     "@smart-thapho/shared": "*",

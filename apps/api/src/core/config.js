@@ -144,6 +144,10 @@ export const config = Object.freeze({
 
   privateStorageDir: path.resolve(readText(process.env.PRIVATE_STORAGE_DIR, "./storage/uploads")),
 
+  routingApiBaseUrl: normalizeOrigin(
+    process.env.ROUTING_API_BASE_URL || "https://router.project-osrm.org",
+  ),
+
   origins: Object.freeze([...new Set(origins)]),
 
   db: Object.freeze({

@@ -1,0 +1,202 @@
+:root {
+  --stp-green-950: #0b3512;
+  --stp-green-900: #104b1b;
+  --stp-green-800: #176323;
+  --stp-green-700: #278432;
+  --stp-green-600: #3b9c38;
+  --stp-lime-500: #8dcc1c;
+  --stp-lime-400: #a8e52d;
+  --stp-lime-100: #eef9d5;
+  --stp-ink: #17371d;
+  --stp-muted: #66796a;
+  --stp-line: #dbe7d5;
+  --stp-surface: #f5f8f1;
+  --stp-white: #ffffff;
+  --green: var(--stp-green-800);
+  --green-2: var(--stp-green-700);
+  --line: var(--stp-line);
+  --muted: var(--stp-muted);
+  --white: var(--stp-white);
+  --platform-ink: var(--stp-ink);
+  --platform-muted: var(--stp-muted);
+  --platform-line: var(--stp-line);
+  --platform-surface: var(--stp-surface);
+  --platform-green: var(--stp-green-800);
+  --platform-green-dark: var(--stp-green-900);
+  color: var(--stp-ink);
+  background: var(--stp-surface);
+}
+
+body,
+.platform-login-page,
+.platform-picker-page,
+.system-workspace,
+.municipal-workspace,
+.waste-app,
+.waste-auth-check {
+  background-color: var(--stp-surface);
+}
+
+.platform-login-page__intro {
+  background:
+    radial-gradient(circle at 10% 88%, rgb(168 229 45 / 34%) 0, transparent 30%),
+    radial-gradient(circle at 88% 12%, rgb(141 204 28 / 25%) 0, transparent 28%),
+    linear-gradient(145deg, var(--stp-green-950), var(--stp-green-800) 58%, var(--stp-green-700));
+}
+
+.platform-login-page__copy p,
+.platform-login-card__heading p,
+.system-picker__heading p,
+.system-workspace__heading p,
+.municipal-workspace__heading p {
+  color: var(--stp-lime-500);
+}
+
+.platform-brand__mark,
+.platform-login-card form > button,
+.system-picker__check,
+.municipal-workspace__brand-mark {
+  background: var(--stp-green-800);
+}
+
+.platform-brand--light .platform-brand__mark {
+  color: var(--stp-green-800);
+  background: var(--stp-white);
+  box-shadow: 0 0 0 4px rgb(168 229 45 / 18%);
+}
+
+.system-picker__card:hover,
+.system-picker__card.is-selected {
+  border-color: var(--stp-lime-500);
+}
+
+.system-picker__card.is-selected {
+  box-shadow: 0 0 0 3px var(--stp-lime-100);
+}
+
+.system-picker__mark,
+.system-picker__card--orange .system-picker__mark,
+.system-picker__card--red .system-picker__mark,
+.system-picker__card--blue .system-picker__mark,
+.system-workspace__mark,
+.system-workspace--orange .system-workspace__mark,
+.system-workspace--red .system-workspace__mark,
+.system-workspace--blue .system-workspace__mark,
+.municipal-workspace__heading-mark,
+.municipal-workspace--orange .municipal-workspace__heading-mark,
+.municipal-workspace--red .municipal-workspace__heading-mark,
+.municipal-workspace--blue .municipal-workspace__heading-mark {
+  color: var(--stp-green-800);
+  background: var(--stp-lime-100);
+}
+
+.system-workspace__footer-card,
+.waste-sidebar {
+  background: linear-gradient(180deg, var(--stp-green-900), var(--stp-green-950));
+}
+
+.system-workspace--orange .system-workspace__grid span,
+.system-workspace--red .system-workspace__grid span,
+.system-workspace--blue .system-workspace__grid span {
+  color: var(--stp-green-700);
+}
+
+.waste-brand > span,
+.waste-system-mark > span {
+  color: var(--stp-green-950);
+  background: var(--stp-lime-400);
+}
+
+.waste-system-mark small,
+.waste-sidebar nav i,
+.waste-page-head p,
+.waste-panel__head p,
+.waste-text-button {
+  color: var(--stp-lime-500);
+}
+
+.waste-sidebar nav .is-active i,
+.waste-tabs button.is-active,
+.waste-route-editor header b {
+  color: var(--stp-green-800);
+}
+
+.waste-sidebar nav button.is-active,
+.waste-tabs button.is-active,
+.waste-route-editor header b,
+.waste-state--empty > span,
+.waste-plan-list__date,
+.waste-tracking-stops li > span {
+  background: var(--stp-lime-100);
+}
+
+.waste-tabs button.is-active b {
+  color: var(--stp-green-800);
+  background: #d8edac;
+}
+
+.waste-state--empty > span,
+.waste-plan-list__date,
+.waste-tracking-stops li > span,
+.waste-button--quiet {
+  color: var(--stp-green-700);
+}
+
+.waste-state--loading i {
+  border-top-color: var(--stp-green-700);
+}
+
+.waste-button--primary,
+.primary,
+.help button,
+.login-card form button,
+.action-group .approve,
+.dialog-actions .approve,
+.report-empty button {
+  color: #fff;
+  border-color: var(--stp-green-800);
+  background: var(--stp-green-800);
+  box-shadow: 0 7px 16px rgb(23 99 35 / 18%);
+}
+
+.waste-button--primary:hover,
+.platform-login-card form > button:hover {
+  background: var(--stp-green-900);
+}
+
+.waste-kpis article:nth-child(1),
+.waste-kpis article:nth-child(2),
+.waste-kpis article:nth-child(3),
+.waste-kpis article:nth-child(4) {
+  border-top-color: var(--stp-green-700);
+}
+
+.brand-mark,
+.login-brand {
+  background: linear-gradient(145deg, var(--stp-green-700), var(--stp-green-900));
+}
+
+.sidebar nav button.active,
+.sidebar nav button:hover,
+.placeholder-icon,
+.setting-icon,
+.village-cards i {
+  color: var(--stp-green-800);
+  background: var(--stp-lime-100);
+}
+
+.eyebrow,
+.text-btn,
+.service-btn,
+.export-btn,
+.report-period {
+  color: var(--stp-green-700);
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline-color: rgb(141 204 28 / 40%);
+}
