@@ -159,7 +159,7 @@ router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, 
   try {
     const { date } = z.object({ date: dateSchema.optional() }).parse(req.query);
     const selectedDate = date || new Date().toISOString().slice(0, 10);
-    const [[summary], [activePlans], [incidents], [overdueCharges]] = await Promise.all([
+    const [[summary], [activePlans], [incidents], [overdueCharges], [routes]] = await Promise.all([
       pool.execute(
         `SELECT
           (SELECT COUNT(*) FROM waste_vehicles WHERE status = 'AVAILABLE') AS availableVehicles,
@@ -170,7 +170,7 @@ router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, 
       ),
       pool.execute(
         `SELECT p.id, p.plan_no AS planNo, p.status, p.scheduled_date AS scheduledDate,
-                r.route_name AS routeName, v.vehicle_code AS vehicleCode, v.registration_no AS registrationNo,
+                r.id AS routeId, r.route_name AS routeName, v.vehicle_code AS vehicleCode, v.registration_no AS registrationNo,
                 d.full_name AS driverName, v.last_latitude AS latitude, v.last_longitude AS longitude,
                 v.last_gps_at AS lastGpsAt,
                 (SELECT COUNT(*) FROM waste_route_stops s WHERE s.route_id = p.route_id AND s.is_active = 1) AS stopTotal,
@@ -196,6 +196,17 @@ router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, 
         `SELECT COUNT(*) AS total, COALESCE(SUM(amount), 0) AS amount
          FROM waste_service_charges WHERE status IN ('PENDING', 'OVERDUE') AND due_date < CURDATE()`,
       ),
+      pool.execute(
+        `SELECT r.id, r.route_code AS routeCode, r.route_name AS routeName, r.description,
+                CAST(r.route_geojson AS CHAR) AS routeGeojson, r.is_active AS isActive,
+                COUNT(DISTINCT s.id) AS stopCount, COUNT(DISTINCT u.id) AS serviceUserCount
+         FROM waste_routes r
+         LEFT JOIN waste_route_stops s ON s.route_id = r.id AND s.is_active = 1
+         LEFT JOIN waste_service_users u ON u.route_id = r.id AND u.is_active = 1
+         WHERE r.is_active = 1
+         GROUP BY r.id, r.route_code, r.route_name, r.description, r.route_geojson, r.is_active
+         ORDER BY r.route_code`,
+      ),
     ]);
 
     return res.json({
@@ -210,6 +221,7 @@ router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, 
           overdueAmount: Number(overdueCharges[0].amount || 0),
         },
         activePlans: activePlans.map((row) => ({ ...row, stopTotal: Number(row.stopTotal || 0), collectedStops: Number(row.collectedStops || 0) })),
+        routes: routes.map(mapRoute),
         incidents,
       },
     });

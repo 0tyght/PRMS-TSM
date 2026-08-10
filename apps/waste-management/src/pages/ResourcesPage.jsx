@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createApi } from "@smart-thapho/web-core/api";
 import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, StatusBadge, formatNumber } from "../components/ui.jsx";
+import RouteEditor from "../components/RouteEditor.jsx";
 
 const TABS = Object.freeze([
   ["vehicles", "รถเก็บขยะ"],
@@ -10,6 +11,7 @@ const TABS = Object.freeze([
 
 function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
   const editing = Boolean(initial?.id);
+  const [routeGeojson, setRouteGeojson] = useState(() => initial?.routeGeojson || null);
 
   function submit(event) {
     event.preventDefault();
@@ -40,6 +42,7 @@ function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
         routeCode: value.routeCode,
         routeName: value.routeName,
         description: value.description || null,
+        routeGeojson,
         isActive: value.isActive === "true",
       });
     }
@@ -66,7 +69,8 @@ function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
         <label>ชื่อเส้นทาง<input name="routeName" required defaultValue={initial?.routeName || ""} placeholder="เช่น เส้นทางหมู่ 1–3" /></label>
         <label>สถานะ<select name="isActive" defaultValue={String(initial?.isActive ?? true)}><option value="true">เปิดใช้งาน</option><option value="false">ปิดใช้งาน</option></select></label>
         <label className="waste-form__wide">รายละเอียดเส้นทาง<textarea name="description" defaultValue={initial?.description || ""} rows="4" placeholder="ระบุพื้นที่ หมู่บ้าน หรือข้อสังเกตสำหรับการปฏิบัติงาน" /></label>
-        <p className="waste-form__hint">พิกัดเส้นทางและจุดเก็บขยะจะเพิ่มจากแผนที่ เมื่อเชื่อมอุปกรณ์ GPS และทะเบียนผู้ใช้บริการ</p>
+        <div className="waste-form__wide"><RouteEditor value={routeGeojson} onChange={setRouteGeojson} /></div>
+        <p className="waste-form__hint">เส้นทางจะแสดงบนหน้า Overview ทันทีหลังบันทึก ส่วนจุดเก็บขยะจะผูกกับทะเบียนผู้ใช้บริการในขั้นตอนถัดไป</p>
       </>}
       <footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>ยกเลิก</button><button className="waste-button waste-button--primary" disabled={saving}>{saving ? "กำลังบันทึก" : editing ? "บันทึกการแก้ไข" : "บันทึกข้อมูล"}</button></footer>
     </form>
@@ -82,7 +86,7 @@ function ResourceTable({ type, records, onEdit }) {
     return <table className="waste-table"><thead><tr><th>คนขับรถเก็บขยะ</th><th>โทรศัพท์</th><th>การเชื่อม LINE</th><th>สถานะ</th><th aria-label="การจัดการ" /></tr></thead><tbody>{records.map((item) => <tr key={item.id}><td><strong>{item.fullName}</strong></td><td>{item.phone}</td><td>{item.lineUserId ? "เชื่อมแล้ว" : "ยังไม่เชื่อม"}</td><td><StatusBadge value={item.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><button type="button" className="waste-table-action" onClick={() => onEdit(item)}>แก้ไข</button></td></tr>)}</tbody></table>;
   }
 
-  return <table className="waste-table"><thead><tr><th>เส้นทาง</th><th>รายละเอียด</th><th>จุดเก็บ / ผู้ใช้บริการ</th><th>สถานะ</th><th aria-label="การจัดการ" /></tr></thead><tbody>{records.map((item) => <tr key={item.id}><td><strong>{item.routeCode}</strong><small>{item.routeName}</small></td><td>{item.description || "-"}</td><td>{formatNumber(item.stopCount)} จุด / {formatNumber(item.serviceUserCount)} ราย</td><td><StatusBadge value={item.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><button type="button" className="waste-table-action" onClick={() => onEdit(item)}>แก้ไข</button></td></tr>)}</tbody></table>;
+  return <table className="waste-table"><thead><tr><th>เส้นทาง</th><th>รายละเอียด</th><th>จุดเก็บ / ผู้ใช้บริการ</th><th>สถานะ</th><th aria-label="การจัดการ" /></tr></thead><tbody>{records.map((item) => <tr key={item.id}><td><strong>{item.routeCode}</strong><small>{item.routeName}</small></td><td>{item.description || "-"}</td><td>{formatNumber(item.stopCount)} จุด / {formatNumber(item.serviceUserCount)} ราย</td><td><StatusBadge value={item.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><button type="button" className="waste-table-action" onClick={() => onEdit(item)}>แก้ไขแผนที่</button></td></tr>)}</tbody></table>;
 }
 
 export default function ResourcesPage({ token }) {
