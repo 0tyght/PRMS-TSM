@@ -284,7 +284,7 @@ router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, 
         [selectedDate, selectedDate, selectedDate],
       ),
       pool.execute(
-        `SELECT p.id, p.plan_no AS planNo, p.status, p.scheduled_date AS scheduledDate,
+        `SELECT p.id, p.plan_no AS planNo, p.status, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate,
                 r.id AS routeId, r.route_name AS routeName, v.vehicle_code AS vehicleCode, v.registration_no AS registrationNo,
                 d.full_name AS driverName, v.last_latitude AS latitude, v.last_longitude AS longitude,
                 v.last_gps_at AS lastGpsAt,
@@ -601,7 +601,7 @@ router.get("/plans", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res,
     const { date } = z.object({ date: dateSchema.optional() }).parse(req.query);
     const values = date ? [date] : [];
     const [rows] = await pool.execute(
-      `SELECT p.id, p.plan_no AS planNo, p.scheduled_date AS scheduledDate, p.status,
+      `SELECT p.id, p.plan_no AS planNo, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate, p.status,
               p.scheduled_start_at AS scheduledStartAt, p.scheduled_end_at AS scheduledEndAt,
               p.actual_start_at AS actualStartAt, p.actual_end_at AS actualEndAt, p.note,
               r.id AS routeId, r.route_name AS routeName, v.id AS vehicleId, v.vehicle_code AS vehicleCode,
@@ -800,7 +800,7 @@ router.get("/charges", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, re
     const values = [];
     if (status) { terms.push("c.status = ?"); values.push(status); }
     if (billingPeriod) { terms.push("c.billing_period = ?"); values.push(billingPeriod); }
-    const [rows] = await pool.execute(`SELECT c.id, c.service_user_id AS serviceUserId, u.service_no AS serviceNo, u.full_name AS fullName, u.house_no AS houseNo, c.fee_rate_id AS feeRateId, f.rate_name AS rateName, c.billing_period AS billingPeriod, c.due_date AS dueDate, c.amount, c.status, c.paid_at AS paidAt, c.notice_requested_at AS noticeRequestedAt FROM waste_service_charges c INNER JOIN waste_service_users u ON u.id = c.service_user_id LEFT JOIN waste_fee_rates f ON f.id = c.fee_rate_id ${terms.length ? `WHERE ${terms.join(" AND ")}` : ""} ORDER BY c.due_date DESC, u.full_name`, values);
+    const [rows] = await pool.execute(`SELECT c.id, c.service_user_id AS serviceUserId, u.service_no AS serviceNo, u.full_name AS fullName, u.house_no AS houseNo, c.fee_rate_id AS feeRateId, f.rate_name AS rateName, DATE_FORMAT(c.billing_period, '%Y-%m-%d') AS billingPeriod, DATE_FORMAT(c.due_date, '%Y-%m-%d') AS dueDate, c.amount, c.status, c.paid_at AS paidAt, c.notice_requested_at AS noticeRequestedAt FROM waste_service_charges c INNER JOIN waste_service_users u ON u.id = c.service_user_id LEFT JOIN waste_fee_rates f ON f.id = c.fee_rate_id ${terms.length ? `WHERE ${terms.join(" AND ")}` : ""} ORDER BY c.due_date DESC, u.full_name`, values);
     return res.json({ data: rows.map((row) => ({ ...row, amount: Number(row.amount) })) });
   } catch (error) { next(error); }
 });
@@ -895,7 +895,7 @@ router.get("/reports/operations", requireRole("ADMIN", "OFFICER", "VIEWER"), asy
     const values = [];
     if (from) { conditions.push("p.scheduled_date >= ?"); values.push(from); }
     if (to) { conditions.push("p.scheduled_date <= ?"); values.push(to); }
-    const [rows] = await pool.execute(`SELECT p.plan_no AS planNo, p.scheduled_date AS scheduledDate, r.route_name AS routeName, v.vehicle_code AS vehicleCode, d.full_name AS driverName, p.status, (SELECT COUNT(*) FROM waste_route_stops s WHERE s.route_id = p.route_id AND s.is_active = 1) AS stopTotal, (SELECT COUNT(*) FROM waste_stop_confirmations c WHERE c.plan_id = p.id AND c.status = 'COLLECTED') AS collectedStops FROM waste_operation_plans p INNER JOIN waste_routes r ON r.id = p.route_id INNER JOIN waste_vehicles v ON v.id = p.vehicle_id INNER JOIN waste_drivers d ON d.id = p.driver_id ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""} ORDER BY p.scheduled_date DESC, p.plan_no`, values);
+    const [rows] = await pool.execute(`SELECT p.plan_no AS planNo, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate, r.route_name AS routeName, v.vehicle_code AS vehicleCode, d.full_name AS driverName, p.status, (SELECT COUNT(*) FROM waste_route_stops s WHERE s.route_id = p.route_id AND s.is_active = 1) AS stopTotal, (SELECT COUNT(*) FROM waste_stop_confirmations c WHERE c.plan_id = p.id AND c.status = 'COLLECTED') AS collectedStops FROM waste_operation_plans p INNER JOIN waste_routes r ON r.id = p.route_id INNER JOIN waste_vehicles v ON v.id = p.vehicle_id INNER JOIN waste_drivers d ON d.id = p.driver_id ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""} ORDER BY p.scheduled_date DESC, p.plan_no`, values);
     return res.json({ data: rows.map((row) => ({ ...row, stopTotal: Number(row.stopTotal || 0), collectedStops: Number(row.collectedStops || 0) })) });
   } catch (error) { next(error); }
 });
@@ -903,7 +903,7 @@ router.get("/reports/operations", requireRole("ADMIN", "OFFICER", "VIEWER"), asy
 router.get("/reports/billing", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
   try {
     const { billingPeriod } = z.object({ billingPeriod: dateSchema.optional() }).parse(req.query);
-    const [rows] = await pool.execute(`SELECT c.billing_period AS billingPeriod, c.status, COUNT(*) AS count, COALESCE(SUM(c.amount), 0) AS amount FROM waste_service_charges c ${billingPeriod ? "WHERE c.billing_period = ?" : ""} GROUP BY c.billing_period, c.status ORDER BY c.billing_period DESC, c.status`, billingPeriod ? [billingPeriod] : []);
+    const [rows] = await pool.execute(`SELECT DATE_FORMAT(c.billing_period, '%Y-%m-%d') AS billingPeriod, c.status, COUNT(*) AS count, COALESCE(SUM(c.amount), 0) AS amount FROM waste_service_charges c ${billingPeriod ? "WHERE c.billing_period = ?" : ""} GROUP BY c.billing_period, c.status ORDER BY c.billing_period DESC, c.status`, billingPeriod ? [billingPeriod] : []);
     return res.json({ data: rows.map((row) => ({ ...row, count: Number(row.count), amount: Number(row.amount) })) });
   } catch (error) { next(error); }
 });
