@@ -19,7 +19,7 @@ function ServiceUserForm({ initial, villages, routes, onCancel, onSubmit, saving
       houseNo: value.houseNo,
       villageId: Number(value.villageId),
       addressDetail: value.addressDetail || null,
-      lineUserId: value.lineUserId || null,
+      lineUserId: initial?.lineUserId || null,
       routeId: value.routeId || null,
       latitude: location.latitude,
       longitude: location.longitude,
@@ -36,7 +36,7 @@ function ServiceUserForm({ initial, villages, routes, onCancel, onSubmit, saving
     <label>เส้นทางรับผิดชอบ<select name="routeId" defaultValue={initial?.routeId || ""}><option value="">ยังไม่กำหนด</option>{routes.filter((route) => route.isActive).map((route) => <option key={route.id} value={route.id}>{route.routeCode} — {route.routeName}</option>)}</select><small>เมื่อกำหนดเส้นทาง ระบบจะสร้างจุดเก็บให้อัตโนมัติ</small></label>
     <label className="waste-form__wide">รายละเอียดที่อยู่<textarea name="addressDetail" defaultValue={initial?.addressDetail || ""} rows="2" placeholder="ซอย ถนน หรือจุดสังเกต" /></label>
     <div className="waste-form__wide"><LocationPicker latitude={location.latitude} longitude={location.longitude} onChange={setLocation} /></div>
-    <label className="waste-form__wide">LINE User ID <small>ระบบบันทึกให้อัตโนมัติเมื่อลงทะเบียนผ่าน LINE; เจ้าหน้าที่ไม่จำเป็นต้องกรอกเอง</small><input name="lineUserId" defaultValue={initial?.lineUserId || ""} /></label>
+    {initial ? <div className="waste-form__summary"><strong>การเชื่อมบัญชี LINE</strong><p>{initial.lineUserId ? "เชื่อมบัญชีแล้ว ระบบไม่เปิดให้แก้รหัส LINE ด้วยมือ" : "ยังไม่เชื่อมบัญชี ผู้ใช้บริการสามารถเชื่อมผ่านขั้นตอนใน LINE ได้"}</p></div> : null}
     <label>สถานะ<select name="isActive" defaultValue={String(initial?.isActive ?? true)}><option value="true">รับบริการอยู่</option><option value="false">ปิดบริการ</option></select></label>
     <footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>ยกเลิก</button><button className="waste-button waste-button--primary" disabled={saving}>{saving ? "กำลังบันทึก" : initial ? "บันทึกการแก้ไข" : "เพิ่มผู้ใช้บริการ"}</button></footer>
   </form>;

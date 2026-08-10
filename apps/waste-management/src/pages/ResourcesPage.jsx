@@ -32,7 +32,7 @@ function ResourceForm({ type, initial, onCancel, onSubmit, onResolveRoute, savin
       onSubmit({
         fullName: value.fullName,
         phone: value.phone,
-        lineUserId: value.lineUserId || null,
+        lineUserId: initial?.lineUserId || null,
         isActive: value.isActive === "true",
       });
     }
@@ -61,7 +61,7 @@ function ResourceForm({ type, initial, onCancel, onSubmit, onResolveRoute, savin
       {type === "drivers" && <>
         <label className="waste-form__wide">ชื่อ-นามสกุล<input name="fullName" required defaultValue={initial?.fullName || ""} /></label>
         <label>โทรศัพท์<input name="phone" inputMode="numeric" pattern="0[0-9]{9}" required defaultValue={initial?.phone || ""} /></label>
-        <label>LINE User ID <small>เชื่อมจาก LINE ภายหลังได้</small><input name="lineUserId" defaultValue={initial?.lineUserId || ""} /></label>
+        {initial ? <div className="waste-form__summary"><strong>การเชื่อมบัญชี LINE</strong><p>{initial.lineUserId ? "เชื่อมบัญชีแล้ว หากต้องเปลี่ยนบัญชีให้สร้างรหัสเชื่อมใหม่จากตารางคนขับ" : "ยังไม่เชื่อมบัญชี บันทึกข้อมูลก่อนแล้วสร้างรหัสเชื่อมจากตารางคนขับ"}</p></div> : null}
         <label>สถานะ<select name="isActive" defaultValue={String(initial?.isActive ?? true)}><option value="true">ปฏิบัติงานได้</option><option value="false">ปิดการใช้งาน</option></select></label>
       </>}
       {type === "routes" && <>
