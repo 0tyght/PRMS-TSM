@@ -1,9 +1,9 @@
 export const openApiDocument = {
   openapi: "3.1.0",
   info: {
-    title: "Pet Registration Management API",
+    title: "Smart Tha Pho Municipal Service API",
     version: "1.0.0",
-    description: "API ระบบขึ้นทะเบียนและบริหารจัดการข้อมูลสุนัขและแมว เทศบาลท่าโพธ์",
+    description: "API กลางของระบบบริการเทศบาลท่าโพธ์ รวมระบบทะเบียนสัตว์เลี้ยงและระบบบริหารจัดการรถเก็บขยะ",
   },
   servers: [
     { url: "/api/v1", description: "API contract เวอร์ชัน 1" },
@@ -11,7 +11,7 @@ export const openApiDocument = {
   ],
   tags: [
     { name: "Public" }, { name: "Authentication" },
-    { name: "Admin" }, { name: "Reports" }, { name: "Monitoring" },
+    { name: "Admin" }, { name: "Waste Management" }, { name: "Reports" }, { name: "Monitoring" },
   ],
   components: {
     securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" } },
@@ -62,5 +62,17 @@ export const openApiDocument = {
     "/admin/reports/villages/export/{format}": { get: { tags: ["Reports"], summary: "ส่งออกรายงาน PDF/XLSX", security: [{ bearerAuth: [] }], parameters: [{ in: "path", name: "format", required: true, schema: { enum: ["pdf", "xlsx"] } }, { in: "query", name: "cutoff", schema: { type: "string", format: "date" } }, { in: "query", name: "villageId", schema: { type: "integer" } }], responses: { 200: { description: "Report file" } } } },
     "/admin/reports/{type}/export/{format}": { get: { tags: ["Reports"], summary: "ส่งออกรายงานทะเบียน วัคซีน ทำหมัน SLA หรือคุณภาพข้อมูล", security: [{ bearerAuth: [] }], parameters: [{ in: "path", name: "type", required: true, schema: { enum: ["registry", "vaccination", "sterilization", "submissions", "data-quality"] } }, { in: "path", name: "format", required: true, schema: { enum: ["pdf", "xlsx"] } }], responses: { 200: { description: "Report file" }, 422: { description: "Unsupported format" } } } },
     "/admin/reports/villages": { get: { deprecated: true, tags: ["Reports"], summary: "รายงานรายหมู่บ้านแบบเดิม", security: [{ bearerAuth: [] }], responses: { 200: { description: "Legacy report data" } } } },
+    "/waste/dashboard": { get: { tags: ["Waste Management"], summary: "ภาพรวมงานเก็บขยะและข้อมูลวางแผน", security: [{ bearerAuth: [] }], responses: { 200: { description: "Waste dashboard" } } } },
+    "/waste/vehicles": { get: { tags: ["Waste Management"], summary: "รายการรถเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Vehicle list" } } }, post: { tags: ["Waste Management"], summary: "เพิ่มรถเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 201: { description: "Created" } } } },
+    "/waste/drivers": { get: { tags: ["Waste Management"], summary: "รายการคนขับรถเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Driver list" } } }, post: { tags: ["Waste Management"], summary: "เพิ่มคนขับรถเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 201: { description: "Created" } } } },
+    "/waste/drivers/{id}/line-link-code": { post: { tags: ["Waste Management"], summary: "สร้างรหัสใช้ครั้งเดียวเพื่อเชื่อม LINE คนขับ", security: [{ bearerAuth: [] }], responses: { 201: { description: "Link code created" } } } },
+    "/waste/routes": { get: { tags: ["Waste Management"], summary: "รายการเส้นทางเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Route list" } } }, post: { tags: ["Waste Management"], summary: "เพิ่มเส้นทางเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 201: { description: "Created" } } } },
+    "/waste/routes/preview": { post: { tags: ["Waste Management"], summary: "คำนวณแนวเส้นทางตามถนนจากจุดบนแผนที่", security: [{ bearerAuth: [] }], responses: { 200: { description: "Road-following GeoJSON" } } } },
+    "/waste/routes/{id}/stops": { get: { tags: ["Waste Management"], summary: "รายการจุดเก็บขยะตามลำดับ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Route stops" } } }, put: { tags: ["Waste Management"], summary: "จัดลำดับจุดเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Updated" } } } },
+    "/waste/plans": { get: { tags: ["Waste Management"], summary: "รายการแผนปฏิบัติงาน", security: [{ bearerAuth: [] }], responses: { 200: { description: "Plan list" } } }, post: { tags: ["Waste Management"], summary: "สร้างแผนปฏิบัติงาน", security: [{ bearerAuth: [] }], responses: { 201: { description: "Created" } } } },
+    "/waste/plans/{id}/track": { get: { tags: ["Waste Management"], summary: "ตำแหน่งรถ ประวัติเส้นทาง และสถานะจุดเก็บ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Tracking data" } } } },
+    "/waste/service-users": { get: { tags: ["Waste Management"], summary: "ทะเบียนผู้ใช้บริการเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Service user list" } } }, post: { tags: ["Waste Management"], summary: "เพิ่มผู้ใช้บริการเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 201: { description: "Created" } } } },
+    "/waste/charges": { get: { tags: ["Waste Management"], summary: "รายการค่าบริการเก็บขยะ", security: [{ bearerAuth: [] }], responses: { 200: { description: "Charge list" } } }, post: { tags: ["Waste Management"], summary: "สร้างรายการค่าบริการ", security: [{ bearerAuth: [] }], responses: { 201: { description: "Created" } } } },
+    "/waste/incidents": { get: { tags: ["Waste Management"], summary: "ประวัติเหตุระหว่างปฏิบัติงาน", security: [{ bearerAuth: [] }], responses: { 200: { description: "Incident list" } } }, post: { tags: ["Waste Management"], summary: "บันทึกเหตุระหว่างปฏิบัติงาน", security: [{ bearerAuth: [] }], responses: { 201: { description: "Created" } } } },
   },
 };

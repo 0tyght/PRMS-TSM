@@ -42,6 +42,13 @@ const routePreviewSchema = z.object({
   })).min(2).max(50),
 });
 
+const routeStopsSchema = z.object({
+  stops: z.array(z.object({
+    serviceUserId: z.string().uuid(),
+    sequenceNo: z.coerce.number().int().positive().max(999),
+  })).max(999),
+});
+
 const serviceUserSchema = z.object({
   serviceNo: z.string().trim().min(2).max(30),
   fullName: z.string().trim().min(2).max(150),
@@ -106,6 +113,10 @@ const chargeUpdateSchema = z.object({
   status: z.enum(["PENDING", "PAID", "OVERDUE", "VOID"]),
 });
 
+function hashLinkCode(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
+}
+
 function httpError(status, message) {
   const error = new Error(message);
   error.status = status;
@@ -161,6 +172,55 @@ async function audit(userId, action, entityType, entityId, nextValue, ipAddress)
   );
 }
 
+async function syncServiceUserStop(db, serviceUserId) {
+  const [rows] = await db.execute(
+    `SELECT id, route_id AS routeId, full_name AS fullName, house_no AS houseNo,
+            latitude, longitude, is_active AS isActive
+     FROM waste_service_users WHERE id = ? FOR UPDATE`,
+    [serviceUserId],
+  );
+  const user = rows[0];
+  if (!user) return;
+
+  const [existingRows] = await db.execute(
+    `SELECT id, route_id AS routeId FROM waste_route_stops WHERE service_user_id = ? FOR UPDATE`,
+    [serviceUserId],
+  );
+  const existing = existingRows[0];
+  if (!user.routeId || !toBoolean(user.isActive)) {
+    if (existing) await db.execute(`DELETE FROM waste_route_stops WHERE id = ?`, [existing.id]);
+    return;
+  }
+  if (existing?.routeId === user.routeId) {
+    await db.execute(
+      `UPDATE waste_route_stops SET stop_name = ?, latitude = ?, longitude = ?, is_active = 1 WHERE id = ?`,
+      [`บ้าน ${user.houseNo} · ${user.fullName}`, user.latitude, user.longitude, existing.id],
+    );
+    return;
+  }
+  if (existing) await db.execute(`DELETE FROM waste_route_stops WHERE id = ?`, [existing.id]);
+
+  const [[sequence]] = await db.execute(
+    `SELECT COALESCE(MAX(sequence_no), 0) + 1 AS nextSequence
+     FROM waste_route_stops WHERE route_id = ?`,
+    [user.routeId],
+  );
+  await db.execute(
+    `INSERT INTO waste_route_stops
+      (id, route_id, service_user_id, sequence_no, stop_name, latitude, longitude, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+    [
+      crypto.randomUUID(),
+      user.routeId,
+      serviceUserId,
+      Number(sequence.nextSequence || 1),
+      `บ้าน ${user.houseNo} · ${user.fullName}`,
+      user.latitude,
+      user.longitude,
+    ],
+  );
+}
+
 router.use(authenticate);
 
 router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
@@ -172,9 +232,12 @@ router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, 
         `SELECT
           (SELECT COUNT(*) FROM waste_vehicles WHERE status = 'AVAILABLE') AS availableVehicles,
           (SELECT COUNT(*) FROM waste_vehicles WHERE status = 'MAINTENANCE') AS maintenanceVehicles,
+          (SELECT COUNT(*) FROM waste_operation_plans WHERE scheduled_date = ? AND status = 'SCHEDULED') AS scheduledPlans,
           (SELECT COUNT(*) FROM waste_operation_plans WHERE scheduled_date = ? AND status = 'IN_PROGRESS') AS operatingPlans,
-          (SELECT COUNT(*) FROM waste_operation_plans WHERE scheduled_date = ? AND status = 'COMPLETED') AS completedPlans`,
-        [selectedDate, selectedDate],
+          (SELECT COUNT(*) FROM waste_operation_plans WHERE scheduled_date = ? AND status = 'COMPLETED') AS completedPlans,
+          (SELECT COUNT(*) FROM waste_service_users WHERE is_active = 1 AND route_id IS NULL) AS unassignedServiceUsers,
+          (SELECT COUNT(*) FROM waste_service_users WHERE is_active = 1 AND (latitude IS NULL OR longitude IS NULL)) AS serviceUsersWithoutLocation`,
+        [selectedDate, selectedDate, selectedDate],
       ),
       pool.execute(
         `SELECT p.id, p.plan_no AS planNo, p.status, p.scheduled_date AS scheduledDate,
@@ -223,8 +286,11 @@ router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, 
         summary: {
           availableVehicles: Number(summary[0].availableVehicles || 0),
           maintenanceVehicles: Number(summary[0].maintenanceVehicles || 0),
+          scheduledPlans: Number(summary[0].scheduledPlans || 0),
           operatingPlans: Number(summary[0].operatingPlans || 0),
           completedPlans: Number(summary[0].completedPlans || 0),
+          unassignedServiceUsers: Number(summary[0].unassignedServiceUsers || 0),
+          serviceUsersWithoutLocation: Number(summary[0].serviceUsersWithoutLocation || 0),
           overdueCharges: Number(overdueCharges[0].total || 0),
           overdueAmount: Number(overdueCharges[0].amount || 0),
         },
@@ -302,6 +368,41 @@ router.patch("/drivers/:id", requireRole("ADMIN", "OFFICER"), async (req, res, n
     if (!result.affectedRows) throw httpError(404, "ไม่พบข้อมูลคนขับรถเก็บขยะ");
     await audit(req.user.sub, "UPDATE_WASTE_DRIVER", "WASTE_DRIVER", req.params.id, input, req.ip);
     return res.json({ data: { id: req.params.id, ...input } });
+  } catch (error) { next(error); }
+});
+
+router.post("/drivers/:id/line-link-code", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const [rows] = await pool.execute(`SELECT id, full_name AS fullName FROM waste_drivers WHERE id = ?`, [req.params.id]);
+    if (!rows[0]) throw httpError(404, "ไม่พบข้อมูลคนขับรถเก็บขยะ");
+
+    let code;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const candidate = String(crypto.randomInt(100000, 1000000));
+      const [duplicates] = await pool.execute(
+        `SELECT id FROM waste_driver_link_codes
+         WHERE code_hash = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1`,
+        [hashLinkCode(candidate)],
+      );
+      if (!duplicates.length) { code = candidate; break; }
+    }
+    if (!code) throw httpError(503, "ไม่สามารถสร้างรหัสเชื่อม LINE ได้ กรุณาลองอีกครั้ง");
+
+    const id = crypto.randomUUID();
+    await withTransaction(async (db) => {
+      await db.execute(
+        `UPDATE waste_driver_link_codes SET used_at = NOW()
+         WHERE driver_id = ? AND used_at IS NULL`,
+        [req.params.id],
+      );
+      await db.execute(
+        `INSERT INTO waste_driver_link_codes (id, driver_id, code_hash, expires_at, created_by)
+         VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), ?)`,
+        [id, req.params.id, hashLinkCode(code), req.user.sub],
+      );
+    });
+    await audit(req.user.sub, "CREATE_WASTE_DRIVER_LINE_CODE", "WASTE_DRIVER", req.params.id, { expiresInMinutes: 15 }, req.ip);
+    return res.status(201).json({ data: { code, driverName: rows[0].fullName, expiresInMinutes: 15 } });
   } catch (error) { next(error); }
 });
 
@@ -391,6 +492,66 @@ router.patch("/routes/:id", requireRole("ADMIN", "OFFICER"), async (req, res, ne
   } catch (error) { next(error); }
 });
 
+router.get("/routes/:id/stops", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
+  try {
+    const [routeRows] = await pool.execute(`SELECT id FROM waste_routes WHERE id = ?`, [req.params.id]);
+    if (!routeRows[0]) throw httpError(404, "ไม่พบข้อมูลเส้นทางเก็บขยะ");
+    const [rows] = await pool.execute(
+      `SELECT s.id, s.service_user_id AS serviceUserId, s.sequence_no AS sequenceNo,
+              s.stop_name AS stopName, s.latitude, s.longitude,
+              u.service_no AS serviceNo, u.full_name AS fullName, u.house_no AS houseNo,
+              v.village_no AS villageNo
+       FROM waste_route_stops s
+       LEFT JOIN waste_service_users u ON u.id = s.service_user_id
+       LEFT JOIN villages v ON v.id = u.village_id
+       WHERE s.route_id = ? AND s.is_active = 1
+       ORDER BY s.sequence_no`,
+      [req.params.id],
+    );
+    return res.json({ data: rows.map((row) => ({ ...row, sequenceNo: Number(row.sequenceNo) })) });
+  } catch (error) { next(error); }
+});
+
+router.put("/routes/:id/stops", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const input = routeStopsSchema.parse(req.body);
+    const ids = input.stops.map((stop) => stop.serviceUserId);
+    if (new Set(ids).size !== ids.length) throw httpError(422, "ผู้ใช้บริการแต่ละรายต้องอยู่ในจุดเก็บเพียงหนึ่งตำแหน่ง");
+    if (new Set(input.stops.map((stop) => stop.sequenceNo)).size !== input.stops.length) throw httpError(422, "ลำดับจุดเก็บต้องไม่ซ้ำกัน");
+
+    await withTransaction(async (db) => {
+      const [routeRows] = await db.execute(`SELECT id FROM waste_routes WHERE id = ? FOR UPDATE`, [req.params.id]);
+      if (!routeRows[0]) throw httpError(404, "ไม่พบข้อมูลเส้นทางเก็บขยะ");
+
+      if (ids.length) {
+        const placeholders = ids.map(() => "?").join(",");
+        const [users] = await db.execute(
+          `SELECT id, full_name AS fullName, house_no AS houseNo, latitude, longitude
+           FROM waste_service_users
+           WHERE route_id = ? AND is_active = 1 AND id IN (${placeholders})`,
+          [req.params.id, ...ids],
+        );
+        if (users.length !== ids.length) throw httpError(422, "มีผู้ใช้บริการที่ไม่ได้อยู่ในเส้นทางนี้หรือปิดบริการแล้ว");
+        const byId = new Map(users.map((user) => [user.id, user]));
+        await db.execute(`DELETE FROM waste_route_stops WHERE route_id = ?`, [req.params.id]);
+        for (const stop of input.stops.slice().sort((a, b) => a.sequenceNo - b.sequenceNo)) {
+          const user = byId.get(stop.serviceUserId);
+          await db.execute(
+            `INSERT INTO waste_route_stops
+              (id, route_id, service_user_id, sequence_no, stop_name, latitude, longitude, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+            [crypto.randomUUID(), req.params.id, user.id, stop.sequenceNo, `บ้าน ${user.houseNo} · ${user.fullName}`, user.latitude, user.longitude],
+          );
+        }
+      } else {
+        await db.execute(`DELETE FROM waste_route_stops WHERE route_id = ?`, [req.params.id]);
+      }
+    });
+    await audit(req.user.sub, "REORDER_WASTE_ROUTE_STOPS", "WASTE_ROUTE", req.params.id, input, req.ip);
+    return res.json({ data: { routeId: req.params.id, stopCount: input.stops.length } });
+  } catch (error) { next(error); }
+});
+
 router.get("/plans", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
   try {
     const { date } = z.object({ date: dateSchema.optional() }).parse(req.query);
@@ -430,12 +591,55 @@ router.post("/plans", requireRole("ADMIN", "OFFICER"), async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
+router.patch("/plans/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const input = planSchema.partial().parse(req.body);
+    if (!Object.keys(input).length) throw httpError(422, "กรุณาระบุข้อมูลแผนปฏิบัติงานที่ต้องการปรับปรุง");
+    await withTransaction(async (db) => {
+      const [planRows] = await db.execute(`SELECT status FROM waste_operation_plans WHERE id = ? FOR UPDATE`, [req.params.id]);
+      if (!planRows[0]) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
+      if (planRows[0].status !== "SCHEDULED") throw httpError(409, "แก้ไขได้เฉพาะแผนงานที่ยังไม่เริ่มปฏิบัติงาน");
+
+      if (input.vehicleId) {
+        const [vehicleRows] = await db.execute(`SELECT status FROM waste_vehicles WHERE id = ?`, [input.vehicleId]);
+        if (!vehicleRows[0] || vehicleRows[0].status === "OUT_OF_SERVICE") throw httpError(422, "รถเก็บขยะที่เลือกไม่พร้อมใช้งาน");
+      }
+      const fields = {
+        planNo: "plan_no", scheduledDate: "scheduled_date", routeId: "route_id", vehicleId: "vehicle_id",
+        driverId: "driver_id", scheduledStartAt: "scheduled_start_at", scheduledEndAt: "scheduled_end_at", note: "note",
+      };
+      const values = [];
+      const sets = Object.entries(input).map(([key, value]) => {
+        values.push(["scheduledStartAt", "scheduledEndAt"].includes(key) ? asDateTime(value) : value);
+        return `${fields[key]} = ?`;
+      });
+      values.push(req.params.id);
+      await db.execute(`UPDATE waste_operation_plans SET ${sets.join(", ")} WHERE id = ?`, values);
+    });
+    await audit(req.user.sub, "UPDATE_WASTE_PLAN", "WASTE_PLAN", req.params.id, input, req.ip);
+    return res.json({ data: { id: req.params.id, ...input } });
+  } catch (error) { next(error); }
+});
+
 router.patch("/plans/:id/status", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
   try {
     const input = planStatusSchema.parse(req.body);
-    const timeColumns = input.status === "IN_PROGRESS" ? ", actual_start_at = COALESCE(actual_start_at, NOW())" : input.status === "COMPLETED" ? ", actual_end_at = NOW()" : "";
-    const [result] = await pool.execute(`UPDATE waste_operation_plans SET status = ?, note = COALESCE(?, note) ${timeColumns} WHERE id = ?`, [input.status, input.note, req.params.id]);
-    if (!result.affectedRows) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
+    await withTransaction(async (db) => {
+      const [rows] = await db.execute(`SELECT status, vehicle_id AS vehicleId FROM waste_operation_plans WHERE id = ? FOR UPDATE`, [req.params.id]);
+      if (!rows[0]) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
+      const allowed = {
+        SCHEDULED: ["IN_PROGRESS", "CANCELLED"],
+        IN_PROGRESS: ["COMPLETED", "INTERRUPTED", "CANCELLED"],
+        INTERRUPTED: ["IN_PROGRESS", "COMPLETED", "CANCELLED"],
+        COMPLETED: [],
+        CANCELLED: [],
+      };
+      if (!allowed[rows[0].status]?.includes(input.status)) throw httpError(409, "ไม่สามารถเปลี่ยนสถานะแผนงานตามลำดับนี้ได้");
+      const timeColumns = input.status === "IN_PROGRESS" ? ", actual_start_at = COALESCE(actual_start_at, NOW())" : input.status === "COMPLETED" ? ", actual_end_at = NOW()" : "";
+      await db.execute(`UPDATE waste_operation_plans SET status = ?, note = COALESCE(?, note) ${timeColumns} WHERE id = ?`, [input.status, input.note, req.params.id]);
+      if (input.status === "IN_PROGRESS") await db.execute(`UPDATE waste_vehicles SET status = 'IN_SERVICE' WHERE id = ?`, [rows[0].vehicleId]);
+      if (["COMPLETED", "CANCELLED"].includes(input.status)) await db.execute(`UPDATE waste_vehicles SET status = 'AVAILABLE' WHERE id = ? AND status = 'IN_SERVICE'`, [rows[0].vehicleId]);
+    });
     await audit(req.user.sub, "UPDATE_WASTE_PLAN_STATUS", "WASTE_PLAN", req.params.id, input, req.ip);
     return res.json({ data: { id: req.params.id, ...input } });
   } catch (error) { next(error); }
@@ -469,7 +673,10 @@ router.post("/service-users", requireRole("ADMIN", "OFFICER"), async (req, res, 
   try {
     const input = serviceUserSchema.parse(req.body);
     const id = crypto.randomUUID();
-    await pool.execute(`INSERT INTO waste_service_users (id, service_no, full_name, phone, house_no, village_id, address_detail, line_user_id, route_id, latitude, longitude, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, input.serviceNo, input.fullName, input.phone, input.houseNo, input.villageId, input.addressDetail, input.lineUserId, input.routeId, input.latitude, input.longitude, input.isActive]);
+    await withTransaction(async (db) => {
+      await db.execute(`INSERT INTO waste_service_users (id, service_no, full_name, phone, house_no, village_id, address_detail, line_user_id, route_id, latitude, longitude, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, input.serviceNo, input.fullName, input.phone, input.houseNo, input.villageId, input.addressDetail, input.lineUserId, input.routeId, input.latitude, input.longitude, input.isActive]);
+      await syncServiceUserStop(db, id);
+    });
     await audit(req.user.sub, "CREATE_WASTE_SERVICE_USER", "WASTE_SERVICE_USER", id, input, req.ip);
     return res.status(201).json({ data: { id, ...input } });
   } catch (error) { next(error); }
@@ -483,8 +690,11 @@ router.patch("/service-users/:id", requireRole("ADMIN", "OFFICER"), async (req, 
     const values = [];
     const sets = Object.entries(input).map(([key, value]) => { values.push(value); return `${fields[key]} = ?`; });
     values.push(req.params.id);
-    const [result] = await pool.execute(`UPDATE waste_service_users SET ${sets.join(", ")} WHERE id = ?`, values);
-    if (!result.affectedRows) throw httpError(404, "ไม่พบผู้ใช้บริการเก็บขยะ");
+    await withTransaction(async (db) => {
+      const [result] = await db.execute(`UPDATE waste_service_users SET ${sets.join(", ")} WHERE id = ?`, values);
+      if (!result.affectedRows) throw httpError(404, "ไม่พบผู้ใช้บริการเก็บขยะ");
+      await syncServiceUserStop(db, req.params.id);
+    });
     await audit(req.user.sub, "UPDATE_WASTE_SERVICE_USER", "WASTE_SERVICE_USER", req.params.id, input, req.ip);
     return res.json({ data: { id: req.params.id, ...input } });
   } catch (error) { next(error); }
@@ -553,6 +763,39 @@ router.patch("/charges/:id", requireRole("ADMIN", "OFFICER"), async (req, res, n
     if (!result.affectedRows) throw httpError(404, "ไม่พบรายการค่าบริการ");
     await audit(req.user.sub, "UPDATE_WASTE_CHARGE", "WASTE_SERVICE_CHARGE", req.params.id, input, req.ip);
     return res.json({ data: { id: req.params.id, ...input, paidAt } });
+  } catch (error) { next(error); }
+});
+
+router.post("/charges/:id/notice", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT c.id, c.amount, c.due_date AS dueDate, c.status,
+              u.id AS serviceUserId, u.full_name AS fullName, u.line_user_id AS lineUserId
+       FROM waste_service_charges c
+       INNER JOIN waste_service_users u ON u.id = c.service_user_id
+       WHERE c.id = ?`,
+      [req.params.id],
+    );
+    const charge = rows[0];
+    if (!charge) throw httpError(404, "ไม่พบรายการค่าบริการ");
+    if (!["PENDING", "OVERDUE"].includes(charge.status)) throw httpError(409, "ส่งแจ้งเตือนได้เฉพาะรายการที่รอชำระหรือค้างชำระ");
+    if (!charge.lineUserId) throw httpError(422, "ผู้ใช้บริการรายนี้ยังไม่ได้เชื่อมบัญชี LINE");
+
+    const notificationId = crypto.randomUUID();
+    const dueDate = new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeZone: "Asia/Bangkok" }).format(new Date(charge.dueDate));
+    const amount = Number(charge.amount).toLocaleString("th-TH", { style: "currency", currency: "THB" });
+    const message = `แจ้งค่าบริการเก็บขยะ\nคุณ${charge.fullName}\nยอดชำระ ${amount}\nกำหนดชำระ ${dueDate}\nตรวจสอบรายละเอียดได้โดยพิมพ์ “ค่าบริการขยะ”`;
+    await withTransaction(async (db) => {
+      await db.execute(
+        `INSERT INTO waste_line_notifications
+          (id, line_user_id, service_user_id, charge_id, notification_type, message_text)
+         VALUES (?, ?, ?, ?, 'CHARGE_NOTICE', ?)`,
+        [notificationId, charge.lineUserId, charge.serviceUserId, charge.id, message],
+      );
+      await db.execute(`UPDATE waste_service_charges SET notice_requested_at = NOW() WHERE id = ?`, [charge.id]);
+    });
+    await audit(req.user.sub, "QUEUE_WASTE_CHARGE_NOTICE", "WASTE_SERVICE_CHARGE", charge.id, { notificationId }, req.ip);
+    return res.status(202).json({ data: { notificationId, status: "PENDING" } });
   } catch (error) { next(error); }
 });
 

@@ -6,6 +6,7 @@ import {
 } from "./modules/line/lineNotifications.js";
 import { cleanupNativeLineState } from "./modules/line/lineNativeCitizen.js";
 import { warmWizardRichMenus } from "./modules/line/lineRichMenuWizard.js";
+import { cleanupWasteLineState } from "./modules/line/wasteLine.js";
 
 const app = createApp();
 const server = app.listen(config.port, () => {
@@ -73,11 +74,14 @@ async function scanVaccinationReminders() {
 
 async function cleanupNativeWorkflow() {
   try {
-    const result = await cleanupNativeLineState();
+    const [result, wasteResult] = await Promise.all([cleanupNativeLineState(), cleanupWasteLineState()]);
     if (result.attachments || result.sessions || result.events) {
       console.log(
         `[line-native] cleanup attachments=${result.attachments} sessions=${result.sessions} events=${result.events}`,
       );
+    }
+    if (wasteResult.sessions || wasteResult.linkCodes) {
+      console.log(`[line-waste] cleanup sessions=${wasteResult.sessions} linkCodes=${wasteResult.linkCodes}`);
     }
   } catch (error) {
     console.error(

@@ -16,6 +16,7 @@ import {
   handleWizardControl,
   showWizardMainMenu,
 } from "./lineRichMenuWizard.js";
+import { handleWasteLineEvent } from "./wasteLine.js";
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
 
@@ -130,6 +131,15 @@ async function processEvent(event) {
       return;
     }
 
+    const wasteResult = await handleWasteLineEvent(event);
+    if (wasteResult.handled) {
+      if (event.replyToken && wasteResult.messages?.length) {
+        await reply(event.replyToken, wasteResult.messages);
+      }
+      await completeLineWebhookEvent(event);
+      return;
+    }
+
     const state = await loadState(lineUserId);
 
     if (event.type === "follow") {
@@ -139,8 +149,8 @@ async function processEvent(event) {
             textMessage(
               state.linked
                 ? `ยินดีต้อนรับกลับ ${state.owner?.fullName || ""}
-เลือกบริการจาก Rich Menu ด้านล่างได้ทันที`
-                : "ยินดีต้อนรับสู่ ThaPho PET\nทุกขั้นตอนเลือกจาก Rich Menu ด้านล่าง โดยไม่ต้องเปิดเว็บไซต์",
+เลือกบริการทะเบียนสัตว์เลี้ยงจาก Rich Menu หรือพิมพ์ “เมนูขยะ” เพื่อใช้บริการเก็บขยะ`
+                : "ยินดีต้อนรับสู่ Smart Tha Pho\nเลือกบริการทะเบียนสัตว์เลี้ยงจาก Rich Menu หรือพิมพ์ “เมนูขยะ” เพื่อใช้บริการเก็บขยะ โดยไม่ต้องเปิดเว็บไซต์",
             ),
             buildCitizenStatusFlex(state),
           ])
