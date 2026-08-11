@@ -463,7 +463,13 @@ function createCitizenToken(lineProfile, ownerId = null) {
 
 function createStaffToken(user) {
   return jwt.sign(
-    { sub: user.id, name: user.full_name, role: user.role, villageId: user.villageId || null },
+    {
+      sub: user.id,
+      name: user.full_name,
+      role: user.role,
+      villageId: user.villageId || null,
+      staffSession: true,
+    },
     config.jwtSecret,
     { expiresIn: "30m" },
   );

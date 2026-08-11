@@ -2,21 +2,60 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { ZodError } from "zod";
 import { config } from "./config.js";
+import { pool } from "./db.js";
 
-export function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
 
   if (!token) {
     return res.status(401).json({ message: "กรุณาเข้าสู่ระบบ" });
   }
 
+  let payload;
   try {
-    req.user = jwt.verify(token, config.jwtSecret);
-    return next();
+    payload = jwt.verify(token, config.jwtSecret);
   } catch {
     return res
       .status(401)
       .json({ message: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" });
+  }
+
+  // Staff tokens are checked against the current account on every request so
+  // suspending an account or changing its role takes effect immediately.
+  // Tokens without this marker remain supported for internal integrations and
+  // expire naturally; all newly issued staff tokens include the marker.
+  if (!payload.staffSession) {
+    req.user = payload;
+    return next();
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      `
+        SELECT id, full_name, email, role, scope_village_id AS villageId
+        FROM users
+        WHERE id = ?
+          AND is_active = 1
+        LIMIT 1
+      `,
+      [payload.sub],
+    );
+    const account = rows[0];
+    if (!account) {
+      return res.status(401).json({ message: "บัญชีถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ" });
+    }
+
+    req.user = {
+      ...payload,
+      sub: account.id,
+      name: account.full_name,
+      email: account.email,
+      role: account.role,
+      villageId: account.villageId || null,
+    };
+    return next();
+  } catch (error) {
+    return next(error);
   }
 }
 
