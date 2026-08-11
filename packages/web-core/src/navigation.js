@@ -42,16 +42,27 @@ export function getSystemUrl(systemId) {
   return new URL(`${route}/`, getPortalUrl()).href;
 }
 
-export function openSystemApplication(systemId, token = "") {
+export function getSystemPickerUrl() {
+  const target = new URL(getPortalUrl());
+  target.searchParams.set("switch", "1");
+  return target.href;
+}
+
+export function openSystemApplication(systemId, token = "", { replace = false } = {}) {
   const targetUrl = getSystemUrl(systemId);
 
+  const navigate = (url) => {
+    if (replace) window.location.replace(url);
+    else window.location.assign(url);
+  };
+
   if (!isLocalhost() || !token) {
-    window.location.assign(targetUrl);
+    navigate(targetUrl);
     return;
   }
 
   const target = new URL(targetUrl);
   target.searchParams.set("smart_thapho_session", token);
   target.searchParams.set("smart_thapho_system", systemId);
-  window.location.assign(target.href);
+  navigate(target.href);
 }

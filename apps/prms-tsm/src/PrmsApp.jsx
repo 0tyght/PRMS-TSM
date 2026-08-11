@@ -4,7 +4,7 @@ import PageErrorBoundary from "./components/layout/PageErrorBoundary.jsx";
 import { ADMIN_MENU } from "./config/navigation.js";
 import { useHashPage } from "./hooks/useHashPage.js";
 import { clearSession, getAccessToken, readSessionUser } from "@smart-thapho/web-core/session";
-import { getPortalUrl } from "@smart-thapho/web-core/navigation";
+import { getPortalUrl, getSystemPickerUrl } from "@smart-thapho/web-core/navigation";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage.jsx"));
 const OwnersPage = lazy(() => import("./pages/OwnersPage.jsx"));
@@ -37,7 +37,7 @@ export default function PrmsApp() {
 
   if (!token) return <main className="prms-auth-check">กำลังนำกลับไปยังหน้าเข้าสู่ระบบ…</main>;
 
-  const returnToPortal = () => window.location.assign(getPortalUrl());
+  const returnToPortal = () => window.location.assign(getSystemPickerUrl());
   const logout = () => {
     clearSession();
     window.location.assign(getPortalUrl());

@@ -45,6 +45,10 @@ export function setActiveSystem(systemId) {
   sessionStorage.setItem(ACTIVE_SYSTEM_KEY, systemId);
 }
 
+export function getActiveSystem() {
+  return sessionStorage.getItem(ACTIVE_SYSTEM_KEY) || "";
+}
+
 export function clearSession() {
   sessionStorage.removeItem(ACCESS_TOKEN_KEY);
   sessionStorage.removeItem(ACTIVE_SYSTEM_KEY);

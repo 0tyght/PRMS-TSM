@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { clearSession, getAccessToken, readSessionUser } from "@smart-thapho/web-core/session";
-import { getPortalUrl } from "@smart-thapho/web-core/navigation";
+import { getPortalUrl, getSystemPickerUrl } from "@smart-thapho/web-core/navigation";
 import WasteLayout from "./components/WasteLayout.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import PlansPage from "./pages/PlansPage.jsx";
@@ -42,5 +42,5 @@ export default function WasteManagementApp() {
   if (!token) return <main className="waste-auth-check">กำลังตรวจสอบสิทธิ์เข้าใช้งาน</main>;
 
   const logout = () => { clearSession(); window.location.assign(getPortalUrl()); };
-  return <WasteLayout page={page} navigate={navigate} user={user} onSwitchSystem={() => window.location.assign(getPortalUrl())} onLogout={logout}><Page token={token} navigate={navigate} planId={query.get("plan")} /></WasteLayout>;
+  return <WasteLayout page={page} navigate={navigate} user={user} onSwitchSystem={() => window.location.assign(getSystemPickerUrl())} onLogout={logout}><Page token={token} navigate={navigate} planId={query.get("plan")} /></WasteLayout>;
 }
