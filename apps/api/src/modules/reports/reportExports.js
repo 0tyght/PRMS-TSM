@@ -70,7 +70,7 @@ export function createTabularReportPdf({ title, headers, rows }, metadata) {
 }
 
 export function createVillageReportXlsx(rows, metadata) {
-  const headers = ["หมู่", "ชื่อหมู่บ้าน", "สัตว์ทั้งหมด", "สุนัข", "แมว", "ฉีดวัคซีน", "ทำหมัน", "คำขอรอตรวจ", "เหตุเปิดอยู่"];
+  const headers = ["หมู่", "ชื่อหมู่บ้าน", "สัตว์ทั้งหมด", "สุนัข", "แมว", "ฉีดวัคซีน", "ทำหมัน", "ข้อมูลรอตรวจ", "เหตุเปิดอยู่"];
   const values = rows.map((row) => [
     Number(row.villageNo), row.villageName, Number(row.totalPets), Number(row.dogs), Number(row.cats),
     Number(row.vaccinated), Number(row.sterilized), Number(row.pending), Number(row.openCases),
@@ -126,7 +126,7 @@ export function createVillageReportPdf(rows, metadata) {
       values.forEach((value, index) => document.text(String(value ?? 0), columns[index] + 4, y + 7, { width: widths[index] - 8, align: index > 1 ? "right" : "left" }));
       y += 25;
     });
-    document.fillColor("#687e76").fontSize(8).text("แสดงเฉพาะสัตว์ที่คำขอได้รับอนุมัติแล้ว", 34, y + 14);
+    document.fillColor("#687e76").fontSize(8).text("แสดงเฉพาะสัตว์ที่ข้อมูลได้รับการรับรองแล้ว", 34, y + 14);
     document.end();
   });
 }

@@ -23,12 +23,17 @@ export default function PrmsApp() {
   const token = getAccessToken();
   const user = useMemo(() => readSessionUser(token), [token]);
   const { page, navigate } = useHashPage();
-  const title = useMemo(() => ADMIN_MENU.find((item) => item.id === page)?.label || "ภาพรวม", [page]);
-  const Page = PAGE_COMPONENTS[page] || DashboardPage;
+  const permittedPage = page === "settings" && user?.role !== "ADMIN" ? "dashboard" : page;
+  const title = useMemo(() => ADMIN_MENU.find((item) => item.id === permittedPage)?.label || "ภาพรวม", [permittedPage]);
+  const Page = PAGE_COMPONENTS[permittedPage] || DashboardPage;
 
   useEffect(() => {
     if (!token) window.location.replace(getPortalUrl());
   }, [token]);
+
+  useEffect(() => {
+    if (page === "settings" && user?.role !== "ADMIN") navigate("dashboard");
+  }, [navigate, page, user?.role]);
 
   if (!token) return <main className="prms-auth-check">กำลังนำกลับไปยังหน้าเข้าสู่ระบบ…</main>;
 
@@ -39,8 +44,8 @@ export default function PrmsApp() {
   };
 
   return (
-    <AdminLayout page={page} navigate={navigate} title={title} user={user} onLogout={logout} onSwitchSystem={returnToPortal}>
-      <PageErrorBoundary key={page} onRecover={() => navigate("dashboard")}>
+    <AdminLayout page={permittedPage} navigate={navigate} title={title} user={user} onLogout={logout} onSwitchSystem={returnToPortal}>
+      <PageErrorBoundary key={permittedPage} onRecover={() => navigate("dashboard")}>
         <Suspense fallback={<PageLoading />}><Page token={token} navigate={navigate} /></Suspense>
       </PageErrorBoundary>
     </AdminLayout>

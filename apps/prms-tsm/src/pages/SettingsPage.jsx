@@ -99,6 +99,9 @@ export default function SettingsPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [savingId, setSavingId] = useState(null);
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [userForm, setUserForm] = useState({ fullName: "", email: "", password: "", role: "OFFICER", villageId: "" });
+  const [newVillage, setNewVillage] = useState({ villageNo: "", name: "" });
 
   const load = async () => {
     setLoading(true);
@@ -107,7 +110,7 @@ export default function SettingsPage({ token }) {
     const [systemResult, userResult, villageResult] = await Promise.allSettled([
       api.get("/api/admin/system-status"),
       api.get("/api/admin/users"),
-      api.get("/api/public/villages"),
+      api.get("/api/admin/villages"),
     ]);
 
     if (systemResult.status === "fulfilled") {
@@ -168,6 +171,57 @@ export default function SettingsPage({ token }) {
           ? error.message
           : "ไม่สามารถอัปเดตผู้ใช้งานได้",
       );
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const createUser = async (event) => {
+    event.preventDefault();
+    setSavingId("new-user");
+    setMessage("");
+    try {
+      const created = await api.post("/api/admin/users", {
+        ...userForm,
+        villageId: userForm.role === "ADMIN" || !userForm.villageId ? null : Number(userForm.villageId),
+      });
+      setUsers((current) => [created, ...current]);
+      setUserForm({ fullName: "", email: "", password: "", role: "OFFICER", villageId: "" });
+      setShowUserForm(false);
+    } catch (error) {
+      setMessage(error.message || "ไม่สามารถเพิ่มบัญชีเจ้าหน้าที่ได้");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const createVillage = async (event) => {
+    event.preventDefault();
+    setSavingId("new-village");
+    setMessage("");
+    try {
+      const created = await api.post("/api/admin/villages", {
+        villageNo: Number(newVillage.villageNo),
+        name: newVillage.name,
+      });
+      setVillages((current) => [...current, created].sort((a, b) => Number(a.villageNo) - Number(b.villageNo)));
+      setNewVillage({ villageNo: "", name: "" });
+    } catch (error) {
+      setMessage(error.message || "ไม่สามารถเพิ่มหมู่บ้านได้");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const updateVillage = async (village, changes) => {
+    const next = { villageNo: Number(village.villageNo), name: village.name, isActive: Boolean(village.isActive), ...changes };
+    setSavingId(`village-${village.id}`);
+    setMessage("");
+    try {
+      await api.patch(`/api/admin/villages/${village.id}`, next);
+      setVillages((current) => current.map((item) => item.id === village.id ? { ...item, ...next } : item));
+    } catch (error) {
+      setMessage(error.message || "ไม่สามารถอัปเดตหมู่บ้านได้");
     } finally {
       setSavingId(null);
     }
@@ -338,11 +392,14 @@ export default function SettingsPage({ token }) {
               กำหนดระดับสิทธิ์ พื้นที่รับผิดชอบ และสถานะการเข้าใช้งาน
             </p>
           </div>
+          <div className="settings-users-actions">
+          <button type="button" className="prms-button prms-button--primary" onClick={() => setShowUserForm(true)}>+ เพิ่มบัญชีเจ้าหน้าที่</button>
           <div className="settings-users-card__count">
             <strong>
               {totalUsers.toLocaleString("th-TH")}
             </strong>
             <span>บัญชีทั้งหมด</span>
+          </div>
           </div>
         </header>
 
@@ -479,6 +536,14 @@ export default function SettingsPage({ token }) {
           />
         )}
       </section>
+
+      <section className="settings-users-card settings-villages-card">
+        <header className="settings-users-card__head"><div><span>Area Management</span><h2>ข้อมูลหมู่บ้าน</h2><p>กำหนดชื่อ เลขหมู่ และสถานะที่ใช้กับแบบฟอร์ม ตัวกรอง แดชบอร์ด และแผนที่</p></div></header>
+        <form className="settings-village-create" onSubmit={createVillage}><label>เลขหมู่<input type="number" min="1" max="99" value={newVillage.villageNo} onChange={(event) => setNewVillage({ ...newVillage, villageNo: event.target.value })} required /></label><label>ชื่อที่แสดง<input value={newVillage.name} onChange={(event) => setNewVillage({ ...newVillage, name: event.target.value })} placeholder="เช่น หมู่ที่ 12" required /></label><button type="submit" className="prms-button prms-button--primary" disabled={savingId === "new-village"}>{savingId === "new-village" ? "กำลังเพิ่ม…" : "เพิ่มหมู่บ้าน"}</button></form>
+        <div className="settings-village-grid">{villages.map((village) => <article key={village.id} className={!village.isActive ? "is-disabled" : ""}><div><strong>หมู่ {village.villageNo}</strong><span>{village.name}</span></div><button type="button" className={`settings-user-status ${village.isActive ? "is-active" : "is-disabled"}`} disabled={savingId === `village-${village.id}`} onClick={() => void updateVillage(village, { isActive: !village.isActive })}><i /><span>{village.isActive ? "ใช้งาน" : "ปิดใช้งาน"}</span></button></article>)}</div>
+      </section>
+
+      {showUserForm ? <div className="modal-backdrop" role="presentation"><form className="service-dialog core-dialog" onSubmit={createUser}><div className="dialog-head"><div><p className="eyebrow">บัญชีเจ้าหน้าที่</p><h2>เพิ่มบัญชีใหม่</h2></div><button type="button" aria-label="ปิด" onClick={() => setShowUserForm(false)}>×</button></div><div className="core-form-grid"><label>ชื่อ–นามสกุล<input value={userForm.fullName} onChange={(event) => setUserForm({ ...userForm, fullName: event.target.value })} required /></label><label>อีเมล<input type="email" value={userForm.email} onChange={(event) => setUserForm({ ...userForm, email: event.target.value })} required /></label><label>รหัสผ่านเริ่มต้น<input type="password" minLength="8" value={userForm.password} onChange={(event) => setUserForm({ ...userForm, password: event.target.value })} required /></label><label>บทบาท<select value={userForm.role} onChange={(event) => setUserForm({ ...userForm, role: event.target.value, villageId: event.target.value === "ADMIN" ? "" : userForm.villageId })}><option value="ADMIN">ผู้ดูแลระบบ</option><option value="OFFICER">เจ้าหน้าที่</option><option value="VIEWER">ผู้ตรวจสอบ</option></select></label>{userForm.role !== "ADMIN" ? <label>พื้นที่รับผิดชอบ<select value={userForm.villageId} onChange={(event) => setUserForm({ ...userForm, villageId: event.target.value })}><option value="">ทุกหมู่บ้าน</option>{villages.filter((village) => village.isActive).map((village) => <option key={village.id} value={village.id}>{village.name}</option>)}</select></label> : null}</div><p className="core-form-note">แจ้งรหัสผ่านเริ่มต้นผ่านช่องทางที่ปลอดภัย และให้เจ้าหน้าที่เปลี่ยนรหัสผ่านก่อนใช้งานจริง</p><div className="dialog-actions"><button type="button" onClick={() => setShowUserForm(false)}>ยกเลิก</button><button type="submit" className="approve" disabled={savingId === "new-user"}>{savingId === "new-user" ? "กำลังเพิ่ม…" : "เพิ่มบัญชี"}</button></div></form></div> : null}
     </div>
   );
 }

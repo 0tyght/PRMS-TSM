@@ -164,7 +164,7 @@ test("builds streamlined owner main menu without duplicate add-pet shortcut", ()
       ["postback", "wizard=switched&target=pets", "สัตว์ของฉัน"],
       ["postback", "wizard=switched&target=health", "สุขภาพสัตว์"],
       ["postback", "wizard=switched&target=status", "แจ้งสถานะสัตว์"],
-      ["postback", "wizard=switched&target=requests", "คำขอของฉัน"],
+      ["postback", "wizard=switched&target=requests", "ข้อมูลที่ส่ง"],
       ["postback", "wizard=switched&target=owner", "ข้อมูลเจ้าของ"],
     ],
   );
@@ -175,7 +175,7 @@ test("builds streamlined owner main menu without duplicate add-pet shortcut", ()
 test("keeps each static submenu focused on one real-world task group", () => {
   assert.deepEqual(actionData(buildStaticSubmenuDefinition("pets").choices), ["action=pets", "action=register", "action=pet_update"]);
   assert.deepEqual(actionData(buildStaticSubmenuDefinition("health").choices), ["action=vaccination", "action=sterilization", "action=pets"]);
-  assert.deepEqual(actionData(buildStaticSubmenuDefinition("status").choices), ["action=status_pick_MISSING", "action=status_pick_ACTIVE", "action=status_pick_DECEASED", "action=transfer_select"]);
+  assert.deepEqual(actionData(buildStaticSubmenuDefinition("status").choices), ["action=status_pick_MISSING", "action=status_pick_ACTIVE", "action=status_pick_DECEASED", "action=status_pick_MOVED_OUT", "action=transfer_select"]);
   assert.deepEqual(actionData(buildStaticSubmenuDefinition("owner").choices), ["action=profile", "action=location", "action=contact"]);
 });
 

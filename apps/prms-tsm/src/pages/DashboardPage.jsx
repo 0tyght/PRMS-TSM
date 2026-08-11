@@ -136,7 +136,7 @@ function AreaSummary({ row, selected, onClear, pending, overdue, dueSoon, naviga
     pending > 0 && {
       tone: "amber",
       title: `${pending.toLocaleString("th-TH")} ข้อมูลรอตรวจ`,
-      detail: "ตรวจข้อมูลจาก LINE และเว็บไซต์",
+      detail: "ตรวจข้อมูลที่ประชาชนส่งผ่าน LINE",
       route: "registrations",
     },
     overdue > 0 && {
@@ -242,7 +242,7 @@ function LatestCitizenData({ items, navigate }) {
       <header className="v6-card-head">
         <div>
           <span><Icon name="line" /> ช่องทางประชาชน</span>
-          <h2>ข้อมูลล่าสุดจาก LINE และเว็บไซต์</h2>
+          <h2>ข้อมูลล่าสุดจาก LINE Official Account</h2>
           <p>เปิดดูรายการเพื่อรับตรวจ ส่งกลับแก้ไข หรือรับรองเข้าทะเบียน</p>
         </div>
         <button type="button" onClick={() => navigate("registrations")}>เปิดศูนย์รับข้อมูล</button>
@@ -269,7 +269,7 @@ function LatestCitizenData({ items, navigate }) {
       ) : (
         <div className="v6-empty-compact">
           <strong>ยังไม่มีข้อมูลใหม่</strong>
-          <span>เมื่อประชาชนส่งข้อมูลผ่าน LINE หรือเว็บไซต์ ระบบจะแสดงที่นี่</span>
+          <span>เมื่อประชาชนส่งข้อมูลผ่าน LINE Official Account ระบบจะแสดงที่นี่</span>
         </div>
       )}
     </section>

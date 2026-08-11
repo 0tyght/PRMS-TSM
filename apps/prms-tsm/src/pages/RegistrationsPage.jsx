@@ -90,7 +90,7 @@ function displayValue(field, value) {
   if (value === null || value === undefined || value === "") return "—";
   if (field === "species") return SPECIES_LABELS[value] || value;
   if (field === "sex") return SEX_LABELS[value] || value;
-  if (field === "status") return ({ ACTIVE: "ปกติ", MISSING: "สูญหาย", DECEASED: "เสียชีวิต", TRANSFERRED: "โอนเจ้าของ" })[value] || value;
+  if (field === "status") return ({ ACTIVE: "ปกติ", MISSING: "สูญหาย", DECEASED: "เสียชีวิต", TRANSFERRED: "โอนเจ้าของ", MOVED_OUT: "ย้ายออกจากพื้นที่" })[value] || value;
   if (["birthDate", "vaccinatedAt", "nextDueAt", "sterilizedAt", "effectiveAt", "transferredAt"].includes(field)) {
     return formatThaiDate(value);
   }
@@ -110,7 +110,7 @@ function isUrgent(item) {
 }
 
 function sourceLabel(item) {
-  return item.sourceType === "CITIZEN_SUBMISSION" ? "LINE Official Account" : "คำขอขึ้นทะเบียน";
+  return item.sourceType === "CITIZEN_SUBMISSION" ? "LINE Official Account" : "ข้อมูลขึ้นทะเบียน";
 }
 
 function Icon({ name }) {
@@ -291,7 +291,7 @@ function ChangeDetail({ detail, onDownload }) {
             })}
           </div>
         ) : (
-          <p className="inbox-inline-note">ไม่พบข้อมูลเปรียบเทียบในคำขอนี้</p>
+          <p className="inbox-inline-note">ไม่พบข้อมูลเดิมสำหรับเปรียบเทียบในรายการนี้</p>
         )}
       </section>
       <section className="inbox-detail-section">
@@ -312,7 +312,7 @@ function ChangeDetail({ detail, onDownload }) {
             ))}
           </div>
         ) : (
-          <p className="inbox-inline-note">ไม่มีรูปหรือหลักฐานแนบมากับคำขอนี้</p>
+          <p className="inbox-inline-note">ไม่มีรูปหรือหลักฐานแนบมากับรายการนี้</p>
         )}
       </section>
     </>
@@ -340,7 +340,7 @@ function DetailPanel({
         <div className="inbox-detail-empty">
           <span><Icon name="line" /></span>
           <strong>เลือกข้อมูลเพื่อตรวจสอบ</strong>
-          <p>รายละเอียดจาก LINE และคำขอขึ้นทะเบียนจะแสดงในพื้นที่นี้</p>
+          <p>รายละเอียดข้อมูลที่ส่งจาก LINE จะแสดงในพื้นที่นี้</p>
         </div>
       ) : (
         <>
@@ -370,7 +370,7 @@ function DetailPanel({
 
               <div className="inbox-detail-scroll">
                 <section className="inbox-detail-section inbox-detail-timeline">
-                  <h3>ข้อมูลคำขอ</h3>
+                  <h3>ข้อมูลที่ส่งให้ตรวจสอบ</h3>
                   <InfoGrid
                     entries={[
                       ["ส่งข้อมูลเมื่อ", formatThaiDate(detail.submittedAt, true)],
@@ -622,7 +622,7 @@ export default function RegistrationsPage({ token }) {
       <Notice message={message} />
 
       <section className="inbox-summary-grid">
-        <SummaryCard label="งานที่ยังไม่เสร็จ" value={pendingTotal} detail="รวมทุกช่องทางรับข้อมูล" tone="primary" />
+        <SummaryCard label="งานที่ยังไม่เสร็จ" value={pendingTotal} detail="ข้อมูลจาก LINE Official Account" tone="primary" />
         <SummaryCard label="รอตรวจสอบ" value={summary.submitted} detail="ยังไม่มีเจ้าหน้าที่รับงาน" tone="amber" />
         <SummaryCard label="กำลังตรวจ" value={summary.underReview} detail="อยู่ระหว่างตรวจข้อมูลและหลักฐาน" tone="blue" />
         <SummaryCard label="รอเจ้าของแก้ไข" value={summary.needMoreInfo} detail="แจ้งผลกลับผ่าน LINE แล้ว" tone="rose" />

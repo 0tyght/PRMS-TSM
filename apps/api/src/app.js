@@ -72,13 +72,31 @@ const REGISTRATION_TRANSITIONS = Object.freeze({
   NEED_MORE_INFO: ["UNDER_REVIEW", "APPROVED", "REJECTED"],
 });
 
-const ownerUpdateSchema = z.object({
+const PET_STATUS_TRANSITIONS = Object.freeze({
+  ACTIVE: ["MISSING", "MOVED_OUT", "DECEASED"],
+  MISSING: ["ACTIVE", "MOVED_OUT", "DECEASED"],
+  MOVED_OUT: ["ACTIVE"],
+  DECEASED: ["ACTIVE"],
+  TRANSFERRED: ["ACTIVE"],
+});
+
+const ownerCreateSchema = z.object({
   fullName: z.string().trim().min(2).max(150),
+  nationalId: z.string().regex(/^\d{13}$/).optional().or(z.literal("")),
   phone: z.string().regex(/^0\d{9}$/),
-  lineUserId: z.string().trim().max(100).optional().default(""),
   houseNo: z.string().trim().min(1).max(30),
   villageId: z.coerce.number().int().positive(),
   addressDetail: z.string().trim().max(255).optional().default(""),
+  latitude: z.coerce.number().min(-90).max(90).nullable().optional().default(null),
+  longitude: z.coerce.number().min(-180).max(180).nullable().optional().default(null),
+});
+
+const ownerUpdateSchema = ownerCreateSchema.omit({
+  nationalId: true,
+  latitude: true,
+  longitude: true,
+}).extend({
+  isActive: z.boolean(),
 });
 
 const staffUpdateSchema = z.object({
@@ -87,8 +105,36 @@ const staffUpdateSchema = z.object({
   villageId: z.coerce.number().int().positive().nullable().optional().default(null),
 });
 
+const staffCreateSchema = z.object({
+  fullName: z.string().trim().min(2).max(150),
+  email: z.string().trim().email().max(190).transform((value) => value.toLowerCase()),
+  password: z.string().min(8).max(128),
+  role: z.enum(["ADMIN", "OFFICER", "VIEWER"]),
+  villageId: z.coerce.number().int().positive().nullable().optional().default(null),
+});
+
+const villageCreateSchema = z.object({
+  villageNo: z.coerce.number().int().min(1).max(99),
+  name: z.string().trim().min(2).max(120),
+});
+
+const villageUpdateSchema = villageCreateSchema.extend({
+  isActive: z.boolean(),
+});
+
+const petRecordSchema = z.object({
+  ownerId: z.string().uuid(),
+  petName: z.string().trim().min(1).max(100),
+  species: z.enum(["DOG", "CAT"]),
+  sex: z.enum(["MALE", "FEMALE", "UNKNOWN"]),
+  breed: z.string().trim().max(100).optional().default(""),
+  color: z.string().trim().max(100).optional().default(""),
+  birthDate: z.string().date().optional().or(z.literal("")),
+  microchipNo: z.string().trim().max(50).optional().default(""),
+});
+
 const petStatusUpdateSchema = z.object({
-  status: z.enum(["ACTIVE", "MISSING", "TRANSFERRED", "DECEASED"]),
+  status: z.enum(["ACTIVE", "MISSING", "MOVED_OUT", "DECEASED"]),
   effectiveAt: z.string().date(),
   note: z.string().trim().min(2).max(500),
 });
@@ -146,7 +192,7 @@ const citizenSubmissionSchema = z.discriminatedUnion("subjectType", [
   }),
   z.object({
     subjectType: z.literal("PET_STATUS"),
-    status: z.enum(["ACTIVE", "MISSING", "TRANSFERRED", "DECEASED"]),
+    status: z.enum(["ACTIVE", "MISSING", "MOVED_OUT", "DECEASED"]),
     effectiveAt: z.string().date(),
     reason: z.string().trim().min(2).max(500),
   }),
@@ -445,7 +491,7 @@ async function findOwner(db, input) {
   if (input.nationalId) {
     const [rows] = await db.execute(
       `
-        SELECT id, household_id AS householdId, deleted_at AS deletedAt
+        SELECT id, household_id AS householdId, deleted_at AS deletedAt, is_active AS isActive
         FROM owners
         WHERE national_id_hash = ?
         LIMIT 1
@@ -459,7 +505,7 @@ async function findOwner(db, input) {
 
   const [rows] = await db.execute(
     `
-      SELECT id, household_id AS householdId, deleted_at AS deletedAt
+      SELECT id, household_id AS householdId, deleted_at AS deletedAt, is_active AS isActive
       FROM owners
       WHERE deleted_at IS NULL
         AND phone = ?
@@ -559,6 +605,9 @@ async function findOrCreateOwner(db, input) {
     : null;
 
   if (existingOwner) {
+    if (!Boolean(Number(existingOwner.isActive))) {
+      throw createHttpError(403, "ทะเบียนเจ้าของสัตว์ถูกระงับ กรุณาติดต่อเจ้าหน้าที่เทศบาล");
+    }
     await db.execute(
       `
         UPDATE owners
@@ -773,7 +822,7 @@ async function createPublicRegistration(db, input, attachment = null) {
     [
       crypto.randomUUID(),
       petId,
-      "สร้างสถานะเริ่มต้นจากคำขอขึ้นทะเบียนของประชาชน",
+      "สร้างสถานะเริ่มต้นจากข้อมูลขึ้นทะเบียนที่ประชาชนส่ง",
     ],
   );
 
@@ -794,7 +843,7 @@ async function createPublicRegistration(db, input, attachment = null) {
       crypto.randomUUID(),
       petId,
       owner.ownerId,
-      "บันทึกเจ้าของเริ่มต้นจากคำขอขึ้นทะเบียนของประชาชน",
+      "บันทึกเจ้าของเริ่มต้นจากข้อมูลขึ้นทะเบียนที่ประชาชนส่ง",
     ],
   );
 
@@ -956,7 +1005,7 @@ async function loadOperationalReport(type, cutoffDate, villageId = null) {
        ORDER BY submittedAt DESC`,
       [cutoffDate, villageId, villageId],
     );
-    return { title: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานคำขอและ SLA เทศบาลท่าโพธ์", sheetName: "คำขอและ SLA", headers: ["เลขคำขอ", "ประเภท", "สถานะ", "เจ้าของ", "สัตว์", "หมู่", "วันที่ยื่น", "อายุคำขอ (วัน)"], rows: rows.map((r) => [r.referenceNo, r.requestType, r.status, r.ownerName, r.petName, r.villageNo, dateCell(r.submittedAt), Number(r.ageDays || 0)]) };
+    return { title: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง รายงานข้อมูลที่ส่งตรวจสอบและ SLA เทศบาลท่าโพธ์", sheetName: "ข้อมูลที่ส่งและ SLA", headers: ["เลขอ้างอิง", "ประเภท", "สถานะ", "เจ้าของ", "สัตว์", "หมู่", "วันที่ส่ง", "อายุรายการ (วัน)"], rows: rows.map((r) => [r.referenceNo, r.requestType, r.status, r.ownerName, r.petName, r.villageNo, dateCell(r.submittedAt), Number(r.ageDays || 0)]) };
   }
   if (type === "data-quality") {
     const [rows] = await pool.execute(
@@ -1164,7 +1213,7 @@ export function createApp() {
         );
 
         if (!rows[0]) {
-          return res.status(404).json({ message: "ไม่พบเลขที่คำขอ" });
+          return res.status(404).json({ message: "ไม่พบเลขอ้างอิงข้อมูล" });
         }
 
         return res.json({ data: rows[0] });
@@ -1186,7 +1235,7 @@ export function createApp() {
       const { idToken } = z.object({ idToken: z.string().min(20).max(5000) }).parse(req.body);
       const profile = await verifyLineIdToken(idToken);
       const [rows] = await pool.execute(
-        "SELECT id, full_name AS fullName FROM owners WHERE line_user_id = ? AND deleted_at IS NULL LIMIT 1",
+        "SELECT id, full_name AS fullName FROM owners WHERE line_user_id = ? AND is_active = TRUE AND deleted_at IS NULL LIMIT 1",
         [profile.sub],
       );
       const owner = rows[0] || null;
@@ -1215,12 +1264,12 @@ export function createApp() {
             `SELECT o.id, o.full_name AS fullName, o.line_user_id AS lineUserId
              FROM registrations r
              INNER JOIN owners o ON o.id = r.owner_id
-             WHERE r.reference_no = ? AND o.phone = ? AND o.deleted_at IS NULL
+             WHERE r.reference_no = ? AND o.phone = ? AND o.is_active = TRUE AND o.deleted_at IS NULL
              LIMIT 1 FOR UPDATE`,
             [input.referenceNo, input.phone],
           );
           const owner = rows[0];
-          if (!owner) throw createHttpError(404, "ไม่พบข้อมูลที่ตรงกับเลขคำขอและเบอร์โทรศัพท์");
+          if (!owner) throw createHttpError(404, "ไม่พบข้อมูลที่ตรงกับเลขอ้างอิงและเบอร์โทรศัพท์");
           if (owner.lineUserId && owner.lineUserId !== req.user.lineUserId) {
             throw createHttpError(409, "ทะเบียนนี้เชื่อมกับบัญชี LINE อื่นแล้ว");
           }
@@ -1253,7 +1302,7 @@ export function createApp() {
                   v.village_no AS villageNo, v.name_th AS villageName
            FROM owners o INNER JOIN households h ON h.id = o.household_id
            INNER JOIN villages v ON v.id = h.village_id
-           WHERE o.id = ? AND o.line_user_id = ? AND o.deleted_at IS NULL LIMIT 1`,
+           WHERE o.id = ? AND o.line_user_id = ? AND o.is_active = TRUE AND o.deleted_at IS NULL LIMIT 1`,
           [req.user.ownerId, req.user.lineUserId],
         );
         if (!ownerRows[0]) throw createHttpError(403, "ไม่สามารถเข้าถึงทะเบียนเจ้าของนี้ได้");
@@ -1293,7 +1342,7 @@ export function createApp() {
     requireRole("CITIZEN"),
     async (req, res, next) => {
       try {
-        if (!req.user.ownerId) throw createHttpError(403, "กรุณาเชื่อมทะเบียนเจ้าของกับ LINE ก่อนส่งคำขอ");
+        if (!req.user.ownerId) throw createHttpError(403, "กรุณาเชื่อมทะเบียนเจ้าของกับ LINE ก่อนส่งข้อมูล");
         const input = citizenSubmissionSchema.parse(req.body);
         validateCitizenSubmissionDates(input);
 
@@ -1315,7 +1364,7 @@ export function createApp() {
              LIMIT 1 FOR UPDATE`,
             [pet.id, input.subjectType],
           );
-          if (pendingRows[0]) throw createHttpError(409, `มีคำขอประเภทนี้อยู่ระหว่างดำเนินการแล้ว (${pendingRows[0].referenceNo})`);
+          if (pendingRows[0]) throw createHttpError(409, `มีข้อมูลประเภทนี้อยู่ระหว่างดำเนินการแล้ว (${pendingRows[0].referenceNo})`);
 
           let current = null;
           if (input.subjectType === "PET_UPDATE") {
@@ -1379,7 +1428,7 @@ export function createApp() {
           [req.params.id, req.user.ownerId],
         );
         const submission = rows[0];
-        if (!submission) throw createHttpError(404, "ไม่พบคำขอหรือไม่มีสิทธิ์เข้าถึง");
+        if (!submission) throw createHttpError(404, "ไม่พบข้อมูลรายการนี้หรือไม่มีสิทธิ์เข้าถึง");
         return res.json({ data: { ...submission, proposedPayload: parseJsonObject(submission.proposedPayload) } });
       } catch (error) {
         next(error);
@@ -1408,12 +1457,12 @@ export function createApp() {
             [req.params.id, req.user.ownerId],
           );
           const submission = rows[0];
-          if (!submission) throw createHttpError(404, "ไม่พบคำขอหรือไม่มีสิทธิ์เข้าถึง");
+          if (!submission) throw createHttpError(404, "ไม่พบข้อมูลรายการนี้หรือไม่มีสิทธิ์เข้าถึง");
           if (submission.status !== "NEED_MORE_INFO" || Number(submission.version) !== version) {
-            throw createHttpError(409, "คำขอถูกดำเนินการหรือมีการเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลล่าสุด");
+            throw createHttpError(409, "ข้อมูลถูกดำเนินการหรือมีการเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลล่าสุด");
           }
           if (submission.subjectType !== input.subjectType) {
-            throw createHttpError(422, "ไม่สามารถเปลี่ยนประเภทคำขอเดิมได้");
+            throw createHttpError(422, "ไม่สามารถเปลี่ยนประเภทข้อมูลเดิมได้");
           }
           if (input.subjectType === "PET_STATUS" && input.status === submission.petStatus) {
             throw createHttpError(422, "สถานะที่แจ้งตรงกับสถานะปัจจุบันแล้ว");
@@ -1461,7 +1510,7 @@ export function createApp() {
              WHERE id = ? AND owner_id = ? AND version = ? AND status IN ('SUBMITTED','NEED_MORE_INFO')`,
             [req.params.id, req.user.ownerId, version],
           );
-          if (!result.affectedRows) throw createHttpError(409, "คำขอถูกดำเนินการหรือมีการเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลล่าสุด");
+          if (!result.affectedRows) throw createHttpError(409, "ข้อมูลถูกดำเนินการหรือมีการเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลล่าสุด");
           await db.execute(
             `INSERT INTO audit_logs
               (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
@@ -1566,9 +1615,9 @@ export function createApp() {
       try {
         challenge = jwt.verify(input.challengeToken, config.jwtSecret);
       } catch {
-        throw createHttpError(401, "คำขอยืนยันตัวตนหมดอายุ กรุณาเข้าสู่ระบบใหม่");
+        throw createHttpError(401, "รหัสยืนยันตัวตนหมดอายุ กรุณาเข้าสู่ระบบใหม่");
       }
-      if (challenge.purpose !== "MFA_LOGIN") throw createHttpError(401, "คำขอยืนยันตัวตนไม่ถูกต้อง");
+      if (challenge.purpose !== "MFA_LOGIN") throw createHttpError(401, "รหัสยืนยันตัวตนไม่ถูกต้อง");
       const [rows] = await pool.execute(
         `SELECT id, full_name, email, role, scope_village_id AS villageId,
                 mfa_secret_encrypted AS mfaSecretEncrypted, mfa_enabled AS mfaEnabled
@@ -1694,6 +1743,141 @@ export function createApp() {
     }
   });
 
+  app.get(
+    "/api/admin/villages",
+    authenticate,
+    requireRole("ADMIN"),
+    async (_req, res, next) => {
+      try {
+        const [rows] = await pool.query(
+          `SELECT id, village_no AS villageNo, name_th AS name,
+                  is_active AS isActive, created_at AS createdAt
+           FROM villages ORDER BY village_no`,
+        );
+        return res.json({ data: rows });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/villages",
+    authenticate,
+    requireRole("ADMIN"),
+    async (req, res, next) => {
+      try {
+        const input = villageCreateSchema.parse(req.body);
+        const [duplicateRows] = await pool.execute(
+          "SELECT id FROM villages WHERE village_no = ? LIMIT 1",
+          [input.villageNo],
+        );
+        if (duplicateRows[0]) throw createHttpError(409, "มีเลขหมู่บ้านนี้อยู่แล้ว");
+        const [result] = await pool.execute(
+          "INSERT INTO villages (village_no, name_th, is_active) VALUES (?, ?, TRUE)",
+          [input.villageNo, input.name],
+        );
+        await pool.execute(
+          `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+           VALUES (?, ?, 'CREATE_VILLAGE', 'VILLAGE', ?, ?, ?)`,
+          [crypto.randomUUID(), req.user.sub, String(result.insertId), JSON.stringify(input), req.ip],
+        );
+        return res.status(201).json({ data: { id: result.insertId, ...input, isActive: true } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/admin/villages/:id",
+    authenticate,
+    requireRole("ADMIN"),
+    async (req, res, next) => {
+      try {
+        const input = villageUpdateSchema.parse(req.body);
+        const result = await withTransaction(async (db) => {
+          const [rows] = await db.execute(
+            "SELECT id, village_no AS villageNo, name_th AS name, is_active AS isActive FROM villages WHERE id = ? LIMIT 1 FOR UPDATE",
+            [req.params.id],
+          );
+          if (!rows[0]) throw createHttpError(404, "ไม่พบข้อมูลหมู่บ้าน");
+          const [duplicateRows] = await db.execute(
+            "SELECT id FROM villages WHERE village_no = ? AND id <> ? LIMIT 1",
+            [input.villageNo, req.params.id],
+          );
+          if (duplicateRows[0]) throw createHttpError(409, "มีเลขหมู่บ้านนี้อยู่แล้ว");
+          if (!input.isActive) {
+            const [usageRows] = await db.execute(
+              `SELECT COUNT(*) AS total FROM households
+               WHERE village_id = ? AND deleted_at IS NULL`,
+              [req.params.id],
+            );
+            if (Number(usageRows[0]?.total || 0) > 0) {
+              throw createHttpError(409, "หมู่บ้านนี้มีข้อมูลครัวเรือนใช้งานอยู่ จึงยังปิดใช้งานไม่ได้");
+            }
+          }
+          await db.execute(
+            "UPDATE villages SET village_no = ?, name_th = ?, is_active = ? WHERE id = ?",
+            [input.villageNo, input.name, input.isActive, req.params.id],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, 'UPDATE_VILLAGE', 'VILLAGE', ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, req.params.id, JSON.stringify(rows[0]), JSON.stringify(input), req.ip],
+          );
+          return { id: Number(req.params.id), ...input };
+        });
+        return res.json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/owners",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const input = ownerCreateSchema.parse(req.body);
+        resolveAreaVillage(req, input.villageId);
+        const result = await withTransaction(async (db) => {
+          await ensureVillageExists(db, input.villageId);
+          const [duplicateRows] = await db.execute(
+            `SELECT id FROM owners
+             WHERE deleted_at IS NULL AND (
+               phone = ? OR (? IS NOT NULL AND national_id_hash = ?)
+             ) LIMIT 1 FOR UPDATE`,
+            [input.phone, input.nationalId ? hashNationalId(input.nationalId) : null, input.nationalId ? hashNationalId(input.nationalId) : null],
+          );
+          if (duplicateRows[0]) throw createHttpError(409, "มีเจ้าของสัตว์เลี้ยงที่ใช้เบอร์โทรศัพท์หรือเลขบัตรนี้อยู่แล้ว");
+          const householdId = await findOrCreateHousehold(db, {
+            ...input,
+            ownerName: input.fullName,
+          });
+          const id = crypto.randomUUID();
+          await db.execute(
+            `INSERT INTO owners
+              (id, household_id, full_name, national_id_hash, national_id_last4, phone, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, TRUE)`,
+            [id, householdId, input.fullName, hashNationalId(input.nationalId), input.nationalId ? input.nationalId.slice(-4) : null, input.phone],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+             VALUES (?, ?, 'CREATE_OWNER', 'OWNER', ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, id, JSON.stringify({ ...input, nationalId: input.nationalId ? `xxxxxxxxx${input.nationalId.slice(-4)}` : "" }), req.ip],
+          );
+          return { id, ...input, nationalId: input.nationalId ? `xxxxxxxxx${input.nationalId.slice(-4)}` : null, isActive: true };
+        });
+        return res.status(201).json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   app.get("/api/admin/owners", authenticate, async (req, res, next) => {
     try {
       const pagination = getPagination(req.query);
@@ -1713,6 +1897,7 @@ export function createApp() {
             END AS nationalId,
             o.line_user_id IS NOT NULL AS linkedLine,
             o.consent_at AS consentAt,
+            o.is_active AS isActive,
             h.house_no AS houseNo,
             h.address_detail AS addressDetail,
             v.id AS villageId,
@@ -1765,6 +1950,7 @@ export function createApp() {
             CASE WHEN o.national_id_last4 IS NULL THEN NULL ELSE CONCAT('xxxxxxxxx', o.national_id_last4) END AS nationalId,
             o.line_user_id AS lineUserId,
             o.consent_at AS consentAt,
+            o.is_active AS isActive,
             h.house_no AS houseNo,
             h.address_detail AS addressDetail,
             h.latitude,
@@ -2054,7 +2240,7 @@ export function createApp() {
            WHERE s.id = ? AND (? IS NULL OR v.id = ?) LIMIT 1`,
           [req.params.id, villageId, villageId],
         );
-        if (!rows[0]) throw createHttpError(404, "ไม่พบคำขอหรือไม่มีสิทธิ์เข้าถึง");
+        if (!rows[0]) throw createHttpError(404, "ไม่พบข้อมูลรายการนี้หรือไม่มีสิทธิ์เข้าถึง");
         const attachments = await listNativeAttachments("CITIZEN_SUBMISSION", req.params.id);
         return res.json({ data: { ...rows[0], current: parseJsonObject(rows[0].currentPayload), proposed: parseJsonObject(rows[0].proposedPayload), currentPayload: undefined, proposedPayload: undefined, attachments } });
       } catch (error) {
@@ -2084,14 +2270,14 @@ export function createApp() {
             [req.params.id, villageId, villageId],
           );
           const submission = rows[0];
-          if (!submission) throw createHttpError(404, "ไม่พบคำขอหรือไม่มีสิทธิ์เข้าถึง");
-          if (Number(submission.version) !== input.version) throw createHttpError(409, "คำขอถูกแก้ไขโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุด");
+          if (!submission) throw createHttpError(404, "ไม่พบข้อมูลรายการนี้หรือไม่มีสิทธิ์เข้าถึง");
+          if (Number(submission.version) !== input.version) throw createHttpError(409, "ข้อมูลถูกแก้ไขโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุด");
           const allowed = {
             SUBMITTED: ["UNDER_REVIEW", "NEED_MORE_INFO", "APPROVED", "REJECTED"],
             UNDER_REVIEW: ["NEED_MORE_INFO", "APPROVED", "REJECTED"],
             NEED_MORE_INFO: ["UNDER_REVIEW", "APPROVED", "REJECTED"],
           };
-          if (!(allowed[submission.status] || []).includes(input.status)) throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะคำขอตามลำดับนี้ได้");
+          if (!(allowed[submission.status] || []).includes(input.status)) throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะข้อมูลตามลำดับนี้ได้");
           if (input.status === "APPROVED") await applyCitizenSubmission(db, submission, req.user.sub);
           await db.execute(
             `UPDATE citizen_submissions
@@ -2104,7 +2290,7 @@ export function createApp() {
              VALUES (?, ?, 'REVIEW_CITIZEN_SUBMISSION', 'CITIZEN_SUBMISSION', ?, ?, ?, ?)`,
             [crypto.randomUUID(), req.user.sub, submission.id, JSON.stringify({ status: submission.status, version: submission.version }), JSON.stringify({ status: input.status, note: input.note, version: input.version + 1 }), req.ip],
           );
-          const labels = { UNDER_REVIEW: "เจ้าหน้าที่รับตรวจสอบคำขอแล้ว", NEED_MORE_INFO: "กรุณาแก้ไขหรือส่งข้อมูลเพิ่มเติม", APPROVED: "คำขอได้รับอนุมัติแล้ว", REJECTED: "คำขอไม่ได้รับอนุมัติ" };
+          const labels = { UNDER_REVIEW: "เจ้าหน้าที่เริ่มตรวจสอบข้อมูลแล้ว", NEED_MORE_INFO: "กรุณาแก้ไขหรือส่งข้อมูลเพิ่มเติม", APPROVED: "ข้อมูลได้รับการรับรองแล้ว", REJECTED: "ข้อมูลไม่ผ่านการรับรอง" };
           const queued = shouldSendRealtimeStatusNotification(input.status)
             ? await enqueueLineNotification(db, {
               ownerId: submission.ownerId,
@@ -2112,7 +2298,7 @@ export function createApp() {
               entityId: submission.id,
               lineUserId: submission.lineUserId,
               templateCode: `CITIZEN_SUBMISSION_${input.status}`,
-              message: `ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง เทศบาลท่าโพธ์\n${labels[input.status]}\nเลขที่คำขอ ${submission.referenceNo}${input.note ? `\nหมายเหตุ: ${input.note}` : ""}`,
+              message: `ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง เทศบาลท่าโพธ์\n${labels[input.status]}\nเลขอ้างอิง ${submission.referenceNo}${input.note ? `\nหมายเหตุ: ${input.note}` : ""}`,
             })
             : { id: null, status: "SKIPPED_NON_ACTIONABLE" };
           return { ...submission, status: input.status, version: input.version + 1, notificationId: queued.id, queuedStatus: queued.status };
@@ -2138,7 +2324,7 @@ export function createApp() {
           await ensureVillageExists(db, input.villageId);
           const [rows] = await db.execute(
             `SELECT id, household_id AS householdId, full_name AS fullName,
-                    phone, line_user_id AS lineUserId
+                    phone, is_active AS isActive
              FROM owners WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
             [req.params.id],
           );
@@ -2153,9 +2339,9 @@ export function createApp() {
           );
           await db.execute(
             `UPDATE owners
-             SET full_name = ?, phone = ?, line_user_id = NULLIF(?, '')
+             SET full_name = ?, phone = ?, is_active = ?
              WHERE id = ?`,
-            [input.fullName, input.phone, input.lineUserId, req.params.id],
+            [input.fullName, input.phone, input.isActive, req.params.id],
           );
           await db.execute(
             `INSERT INTO audit_logs
@@ -2225,6 +2411,43 @@ export function createApp() {
            ORDER BY users.is_active DESC, users.full_name`,
         );
         return res.json({ data: rows });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/users",
+    authenticate,
+    requireRole("ADMIN"),
+    async (req, res, next) => {
+      try {
+        const input = staffCreateSchema.parse(req.body);
+        const villageId = input.role === "ADMIN" ? null : input.villageId;
+        const result = await withTransaction(async (db) => {
+          if (villageId) await ensureVillageExists(db, villageId);
+          const [duplicateRows] = await db.execute(
+            "SELECT id FROM users WHERE email = ? LIMIT 1 FOR UPDATE",
+            [input.email],
+          );
+          if (duplicateRows[0]) throw createHttpError(409, "อีเมลนี้มีบัญชีเจ้าหน้าที่อยู่แล้ว");
+          const id = crypto.randomUUID();
+          const passwordHash = await bcrypt.hash(input.password, 12);
+          await db.execute(
+            `INSERT INTO users
+              (id, full_name, email, password_hash, role, scope_village_id, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, TRUE)`,
+            [id, input.fullName, input.email, passwordHash, input.role, villageId],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+             VALUES (?, ?, 'CREATE_STAFF', 'USER', ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, id, JSON.stringify({ fullName: input.fullName, email: input.email, role: input.role, villageId }), req.ip],
+          );
+          return { id, fullName: input.fullName, email: input.email, role: input.role, villageId, isActive: true, lastLoginAt: null };
+        });
+        return res.status(201).json({ data: result });
       } catch (error) {
         next(error);
       }
@@ -2398,7 +2621,7 @@ export function createApp() {
         [req.params.id, villageId, villageId],
       );
       const registration = rows[0];
-      if (!registration) return res.status(404).json({ message: "ไม่พบคำขอขึ้นทะเบียน" });
+      if (!registration) return res.status(404).json({ message: "ไม่พบข้อมูลขึ้นทะเบียน" });
 
       const [attachments] = await pool.execute(
         `SELECT id, file_name AS fileName, mime_type AS mimeType,
@@ -2451,10 +2674,10 @@ export function createApp() {
       try {
         const { status, note } = registrationStatusSchema.parse(req.body);
         const statusText = {
-          UNDER_REVIEW: "เจ้าหน้าที่รับตรวจสอบคำขอแล้ว",
-          NEED_MORE_INFO: "คำขอต้องแก้ไขหรือเพิ่มข้อมูล",
-          APPROVED: "คำขอได้รับอนุมัติแล้ว",
-          REJECTED: "คำขอไม่ได้รับอนุมัติ",
+          UNDER_REVIEW: "เจ้าหน้าที่เริ่มตรวจสอบข้อมูลแล้ว",
+          NEED_MORE_INFO: "ข้อมูลต้องแก้ไขหรือเพิ่มเติม",
+          APPROVED: "ข้อมูลได้รับการรับรองแล้ว",
+          REJECTED: "ข้อมูลไม่ผ่านการรับรอง",
         }[status] || status;
 
         const result = await withTransaction(async (db) => {
@@ -2480,12 +2703,12 @@ export function createApp() {
           const registration = registrationRows[0];
 
           if (!registration) {
-            throw createHttpError(404, "ไม่พบคำขอขึ้นทะเบียน");
+            throw createHttpError(404, "ไม่พบข้อมูลขึ้นทะเบียน");
           }
 
           const allowedStatuses = REGISTRATION_TRANSITIONS[registration.oldStatus] || [];
           if (!allowedStatuses.includes(status)) {
-            throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะคำขอตามลำดับงานนี้ได้");
+            throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะข้อมูลตามลำดับงานนี้ได้");
           }
 
           await db.execute(
@@ -2624,7 +2847,7 @@ export function createApp() {
               entityId: registration.id,
               lineUserId: registration.lineUserId,
               templateCode: `REGISTRATION_${status}`,
-              message: `ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง เทศบาลท่าโพธ์\n${statusText}\nเลขที่คำขอ ${registration.referenceNo}${note ? `\nหมายเหตุ: ${note}` : ""}`,
+              message: `ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง เทศบาลท่าโพธ์\n${statusText}\nเลขอ้างอิง ${registration.referenceNo}${note ? `\nหมายเหตุ: ${note}` : ""}`,
             })
             : { id: null, status: "SKIPPED_NON_ACTIONABLE" };
 
@@ -2640,6 +2863,115 @@ export function createApp() {
         const notification = result.queuedStatus === "PENDING" ? await deliverLineNotification(result.notificationId) : { status: result.queuedStatus };
 
         return res.json({ data: { id: result.id, status: result.status, notification: notification.status } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/pets",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const input = petRecordSchema.parse(req.body);
+        ensureOccurredDate(input.birthDate, "วันเกิดโดยประมาณ");
+        const data = await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "OWNER", input.ownerId);
+          const [ownerRows] = await db.execute(
+            "SELECT id FROM owners WHERE id = ? AND deleted_at IS NULL AND is_active = TRUE LIMIT 1 FOR UPDATE",
+            [input.ownerId],
+          );
+          if (!ownerRows[0]) throw createHttpError(404, "ไม่พบเจ้าของสัตว์เลี้ยงที่เปิดใช้งาน");
+          if (input.microchipNo) {
+            const [chipRows] = await db.execute(
+              "SELECT id FROM pets WHERE microchip_no = ? AND deleted_at IS NULL LIMIT 1",
+              [input.microchipNo],
+            );
+            if (chipRows[0]) throw createHttpError(409, "หมายเลขไมโครชิปนี้ถูกใช้แล้ว");
+          }
+          const id = crypto.randomUUID();
+          const registrationId = crypto.randomUUID();
+          const referenceNo = createReferenceNo();
+          const registrationNo = createRegistrationNo(referenceNo);
+          await db.execute(
+            `INSERT INTO pets
+              (id, owner_id, registration_no, microchip_no, name, species, sex,
+               breed, color, birth_date, status, registered_at)
+             VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), 'ACTIVE', NOW())`,
+            [id, input.ownerId, registrationNo, input.microchipNo, input.petName, input.species, input.sex, input.breed, input.color, input.birthDate || ""],
+          );
+          await db.execute(
+            `INSERT INTO registrations
+              (id, reference_no, owner_id, pet_id, status, review_note, reviewed_by, submitted_at, reviewed_at)
+             VALUES (?, ?, ?, ?, 'APPROVED', 'บันทึกโดยเจ้าหน้าที่ ณ สำนักงานเทศบาล', ?, NOW(), NOW())`,
+            [registrationId, referenceNo, input.ownerId, id, req.user.sub],
+          );
+          await db.execute(
+            `INSERT INTO pet_status_history
+              (id, pet_id, old_status, new_status, effective_at, note, recorded_by)
+             VALUES (?, ?, NULL, 'ACTIVE', CURDATE(), 'เพิ่มทะเบียนโดยเจ้าหน้าที่', ?)`,
+            [crypto.randomUUID(), id, req.user.sub],
+          );
+          await db.execute(
+            `INSERT INTO pet_owner_history
+              (id, pet_id, previous_owner_id, new_owner_id, transferred_at, reason, recorded_by)
+             VALUES (?, ?, NULL, ?, CURDATE(), 'เจ้าของเริ่มต้นจากการเพิ่มทะเบียนโดยเจ้าหน้าที่', ?)`,
+            [crypto.randomUUID(), id, input.ownerId, req.user.sub],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+             VALUES (?, ?, 'CREATE_PET_REGISTRY', 'PET', ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, id, JSON.stringify({ ...input, registrationNo }), req.ip],
+          );
+          return { id, registrationNo, status: "ACTIVE", ...input };
+        });
+        return res.status(201).json({ data });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/admin/pets/:id",
+    authenticate,
+    requireRole("ADMIN", "OFFICER"),
+    async (req, res, next) => {
+      try {
+        const input = petRecordSchema.omit({ ownerId: true }).parse(req.body);
+        ensureOccurredDate(input.birthDate, "วันเกิดโดยประมาณ");
+        const data = await withTransaction(async (db) => {
+          await assertEntityAreaAccess(db, req, "PET", req.params.id);
+          const [rows] = await db.execute(
+            `SELECT id, name AS petName, species, sex, breed, color,
+                    birth_date AS birthDate, microchip_no AS microchipNo
+             FROM pets WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
+            [req.params.id],
+          );
+          if (!rows[0]) throw createHttpError(404, "ไม่พบข้อมูลสัตว์เลี้ยง");
+          if (input.microchipNo) {
+            const [chipRows] = await db.execute(
+              "SELECT id FROM pets WHERE microchip_no = ? AND id <> ? AND deleted_at IS NULL LIMIT 1",
+              [input.microchipNo, req.params.id],
+            );
+            if (chipRows[0]) throw createHttpError(409, "หมายเลขไมโครชิปนี้ถูกใช้แล้ว");
+          }
+          await db.execute(
+            `UPDATE pets SET name = ?, species = ?, sex = ?, breed = NULLIF(?, ''),
+                    color = NULLIF(?, ''), birth_date = NULLIF(?, ''), microchip_no = NULLIF(?, '')
+             WHERE id = ?`,
+            [input.petName, input.species, input.sex, input.breed, input.color, input.birthDate || "", input.microchipNo, req.params.id],
+          );
+          await db.execute(
+            `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, 'UPDATE_PET_REGISTRY', 'PET', ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.sub, req.params.id, JSON.stringify(rows[0]), JSON.stringify(input), req.ip],
+          );
+          return { id: req.params.id, ...input };
+        });
+        return res.json({ data });
       } catch (error) {
         next(error);
       }
@@ -2832,6 +3164,9 @@ export function createApp() {
           const pet = rows[0];
           if (!pet) throw createHttpError(404, "ไม่พบข้อมูลสัตว์");
           if (pet.status === input.status) throw createHttpError(409, "สัตว์มีสถานะนี้อยู่แล้ว");
+          if (!(PET_STATUS_TRANSITIONS[pet.status] || []).includes(input.status)) {
+            throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะสัตว์ตามลำดับงานนี้ได้");
+          }
 
           await db.execute("UPDATE pets SET status = ? WHERE id = ?", [input.status, req.params.id]);
           await db.execute(

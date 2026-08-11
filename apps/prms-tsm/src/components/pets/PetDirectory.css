@@ -361,6 +361,11 @@
   color: #346a92;
 }
 
+.pet-status-badge.moved-out {
+  background: #f0eee7;
+  color: #6f6141;
+}
+
 .pet-status-badge.deceased {
   background: #eef1f0;
   color: #5f706a;
@@ -623,6 +628,34 @@
   opacity: 0.6;
 }
 
+.pet-page-actions,
+.pet-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pet-row-actions .pet-secondary-button,
+.pet-row-actions .pet-service-button {
+  min-height: 34px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.pet-registry-dialog {
+  width: min(680px, 100%);
+}
+
+.pet-registry-note {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f2f7f5;
+  color: #536b63;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
 @media (max-width: 1280px) {
   .pet-filter-panel {
     grid-template-columns:
@@ -683,6 +716,12 @@
   .pet-dialog-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .pet-page-actions,
+  .pet-row-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

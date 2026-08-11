@@ -248,11 +248,11 @@ export function buildCitizenStatusFlex(state) {
   const summary = state.linked
     ? [
         countLine("สัตว์ในทะเบียน", counts.pets),
-        countLine("คำขอรอดำเนินการ", counts.pending),
+        countLine("ข้อมูลรอตรวจสอบ", counts.pending),
         countLine("ต้องแก้ไขข้อมูล", counts.needsAttention),
         countLine("วัคซีนใกล้ครบกำหนด", counts.vaccinationDue),
       ].join("\n")
-    : "ลงทะเบียนสัตว์ ติดตามคำขอ หรือเชื่อมทะเบียนเดิมได้จากเมนูด้านล่าง";
+    : "ลงทะเบียนสัตว์ ติดตามข้อมูลที่ส่ง หรือเชื่อมทะเบียนเดิมได้จากเมนูด้านล่าง";
 
   return {
     type: "flex",

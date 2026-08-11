@@ -10,7 +10,7 @@ const MENU_GROUPS = [
 
 const MENU_COPY = {
   dashboard: "สถานการณ์และงานสำคัญ",
-  registrations: "ข้อมูลใหม่จาก LINE และเว็บไซต์",
+  registrations: "ข้อมูลใหม่จาก LINE Official Account",
   owners: "ครัวเรือน เจ้าของ และบัญชี LINE",
   pets: "ทะเบียนสุนัขและแมวรายตัว",
   services: "วัคซีน ทำหมัน และงานติดตาม",
@@ -83,7 +83,7 @@ function Brand() {
   );
 }
 
-function Sidebar({ page, navigate, open, close, onSwitchSystem }) {
+function Sidebar({ page, navigate, open, close, onSwitchSystem, user }) {
   const menuMap = useMemo(
     () => new Map(ADMIN_MENU.map((item) => [item.id, item])),
     [],
@@ -105,7 +105,7 @@ function Sidebar({ page, navigate, open, close, onSwitchSystem }) {
         </div>
 
         <div className="v6-sidebar__scroll">
-          {MENU_GROUPS.map((group) => (
+          {MENU_GROUPS.map((group) => ({ ...group, ids: group.ids.filter((id) => id !== "settings" || user?.role === "ADMIN") })).filter((group) => group.ids.length).map((group) => (
             <section className="v6-menu-group" key={group.label}>
               <p>{group.label}</p>
               <nav aria-label={group.label}>
@@ -189,7 +189,7 @@ function Topbar({ title, user, navigate, onMenu, onLogout, onSwitchSystem }) {
           <span>{String(user?.name || "จท").slice(0, 2)}</span>
           <div>
             <strong>{user?.name || "เจ้าหน้าที่เทศบาล"}</strong>
-            <small>{user?.role === "ADMIN" ? "ผู้ดูแลระบบ" : "เจ้าหน้าที่"}</small>
+            <small>{user?.role === "ADMIN" ? "ผู้ดูแลระบบ" : user?.role === "VIEWER" ? "ผู้ตรวจสอบ" : "เจ้าหน้าที่"}</small>
           </div>
         </div>
 
@@ -229,6 +229,7 @@ export default function AdminLayout({ page, navigate, title, user, onLogout, onS
         open={menuOpen}
         close={() => setMenuOpen(false)}
         onSwitchSystem={onSwitchSystem}
+        user={user}
       />
       <Topbar
         title={title}

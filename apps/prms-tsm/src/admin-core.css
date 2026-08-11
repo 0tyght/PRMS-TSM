@@ -55,6 +55,9 @@
 .core-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .core-form-grid label { color: #38544a; font-size: 12px; font-weight: 700; }
 .core-form-grid label.full { grid-column: 1 / -1; }
+.core-form-note { margin: 0; padding: 10px 12px; border-radius: 9px; background: #f2f7f5; color: #536b63; font-size: 11px; font-weight: 500; line-height: 1.55; }
+.core-form-note.full { grid-column: 1 / -1; }
+.core-table tr.is-muted-row td { background: #f7f8f8; color: #65756f; }
 .core-form-grid input,
 .core-form-grid select { width: 100%; min-height: 42px; margin-top: 5px; padding: 0 11px; border: 1px solid #cfddd7; border-radius: 9px; font: inherit; }
 .core-users-panel { margin-top: 14px; }

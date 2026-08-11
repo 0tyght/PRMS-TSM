@@ -77,14 +77,14 @@ test("groups owner services into visible postback selections", () => {
       ["postback", "wizard=switched&target=pets", "สัตว์ของฉัน"],
       ["postback", "wizard=switched&target=health", "สุขภาพสัตว์"],
       ["postback", "wizard=switched&target=status", "แจ้งสถานะสัตว์"],
-      ["postback", "wizard=switched&target=requests", "คำขอของฉัน"],
+      ["postback", "wizard=switched&target=requests", "ข้อมูลที่ส่ง"],
       ["postback", "wizard=switched&target=owner", "ข้อมูลเจ้าของ"],
     ],
   );
   assert.equal(actions.every((item) => item.type === "postback"), true);
 });
 
-test("keeps lost and deceased actions under the pet status submenu", () => {
+test("keeps lost, deceased, and moved-out actions under the pet status submenu", () => {
   const actions = buildStatusMenuActions({
     id: 42,
     petName: "โบ้",
@@ -107,6 +107,14 @@ test("keeps lost and deceased actions under the pet status submenu", () => {
     parsed.some((item) =>
       item.action === "status_set" &&
       item.value === "DECEASED",
+    ),
+    true,
+  );
+
+  assert.equal(
+    parsed.some((item) =>
+      item.action === "status_set" &&
+      item.value === "MOVED_OUT",
     ),
     true,
   );

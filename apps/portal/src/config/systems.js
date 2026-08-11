@@ -6,7 +6,7 @@ const WORKSPACES = Object.freeze({
     mark: "สล",
     route: "dashboard",
     integrationLabel: "เชื่อมต่อ API ทะเบียนสัตว์เลี้ยงแล้ว",
-    groups: ["คำขอขึ้นทะเบียน", "ทะเบียนสัตว์เลี้ยง", "บริการสาธารณสุข", "แผนที่ภาพรวม"],
+    groups: ["ข้อมูลขึ้นทะเบียน", "ทะเบียนสัตว์เลี้ยง", "บริการสาธารณสุข", "แผนที่ภาพรวม"],
   }),
   waste: Object.freeze({
     accent: "orange",

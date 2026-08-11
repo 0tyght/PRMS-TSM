@@ -22,7 +22,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const FLOW_LABELS = Object.freeze({
   REGISTER: "ลงทะเบียนสัตว์เลี้ยง",
   LINK: "เชื่อมทะเบียนกับ LINE",
-  TRACK: "ติดตามคำขอ",
+  TRACK: "ติดตามข้อมูลที่ส่ง",
   VACCINATION: "แจ้งข้อมูลวัคซีน",
   STERILIZATION: "แจ้งข้อมูลทำหมัน",
   PET_STATUS: "แจ้งสถานะสัตว์เลี้ยง",
@@ -54,6 +54,7 @@ const PET_STATUS_LABELS = Object.freeze({
   MISSING: "สูญหาย",
   DECEASED: "เสียชีวิต",
   TRANSFERRED: "โอนเจ้าของ",
+  MOVED_OUT: "ย้ายออกจากพื้นที่",
 });
 const SUBJECT_LABELS = Object.freeze({
   PET_UPDATE: "แก้ไขข้อมูลสัตว์เลี้ยง",
@@ -445,7 +446,7 @@ async function loadOwnerByLineUserId(lineUserId, db = pool) {
      FROM owners o
      INNER JOIN households h ON h.id = o.household_id AND h.deleted_at IS NULL
      INNER JOIN villages v ON v.id = h.village_id
-     WHERE o.line_user_id = ? AND o.deleted_at IS NULL
+     WHERE o.line_user_id = ? AND o.is_active = TRUE AND o.deleted_at IS NULL
      LIMIT 1`,
     [lineUserId],
   );
@@ -471,7 +472,7 @@ async function loadPet(lineUserId, petId, db = pool, { forUpdate = false } = {})
             o.full_name AS ownerName
      FROM pets p
      INNER JOIN owners o ON o.id = p.owner_id AND o.deleted_at IS NULL
-     WHERE p.id = ? AND o.line_user_id = ? AND p.deleted_at IS NULL
+     WHERE p.id = ? AND o.line_user_id = ? AND o.is_active = TRUE AND p.deleted_at IS NULL
      LIMIT 1${forUpdate ? " FOR UPDATE" : ""}`,
     [petId, lineUserId],
   );
@@ -484,11 +485,15 @@ function petEligibilityClause(action) {
   }
 
   if (action === "status_apply_MISSING") {
-    return "AND p.status NOT IN ('MISSING','DECEASED','TRANSFERRED')";
+    return "AND p.status NOT IN ('MISSING','DECEASED','TRANSFERRED','MOVED_OUT')";
   }
 
   if (action === "status_apply_DECEASED") {
-    return "AND p.status NOT IN ('DECEASED','TRANSFERRED')";
+    return "AND p.status NOT IN ('DECEASED','TRANSFERRED','MOVED_OUT')";
+  }
+
+  if (action === "status_apply_MOVED_OUT") {
+    return "AND p.status NOT IN ('DECEASED','TRANSFERRED','MOVED_OUT')";
   }
 
   if (action === "transfer_pet") {
@@ -508,6 +513,7 @@ function petPickerTitle(action) {
     status_apply_MISSING: "เลือกสัตว์ที่ต้องการแจ้งสูญหาย",
     status_apply_ACTIVE: "เลือกสัตว์ที่สูญหายและพบแล้ว",
     status_apply_DECEASED: "เลือกสัตว์ที่ต้องการแจ้งเสียชีวิต",
+    status_apply_MOVED_OUT: "เลือกสัตว์ที่ต้องการแจ้งย้ายออกจากพื้นที่",
     transfer_pet: "เลือกสัตว์ที่ต้องการโอนเจ้าของ",
   };
 
@@ -524,7 +530,7 @@ async function loadPets(lineUserId, page = 0, action = "pet_detail") {
             (SELECT MAX(vr.next_due_at) FROM vaccination_records vr WHERE vr.pet_id = p.id) AS nextVaccinationDueAt
      FROM pets p
      INNER JOIN owners o ON o.id = p.owner_id AND o.deleted_at IS NULL
-     WHERE o.line_user_id = ? AND p.deleted_at IS NULL
+     WHERE o.line_user_id = ? AND o.is_active = TRUE AND p.deleted_at IS NULL
        ${eligibility}
      ORDER BY p.created_at DESC
      LIMIT 500`,
@@ -654,7 +660,7 @@ async function createOrLinkOwner(db, lineUserId, draft) {
     const [rows] = await db.execute(
       `SELECT o.id, o.household_id AS householdId
        FROM owners o
-       WHERE o.id = ? AND o.line_user_id = ? AND o.deleted_at IS NULL
+       WHERE o.id = ? AND o.line_user_id = ? AND o.is_active = TRUE AND o.deleted_at IS NULL
        LIMIT 1 FOR UPDATE`,
       [draft.ownerId, lineUserId],
     );
@@ -670,7 +676,7 @@ async function createOrLinkOwner(db, lineUserId, draft) {
 
   await ensureVillage(db, draft.villageId);
   const [ownerRows] = await db.execute(
-    `SELECT id, household_id AS householdId, line_user_id AS lineUserId
+    `SELECT id, household_id AS householdId, line_user_id AS lineUserId, is_active AS isActive
      FROM owners
      WHERE deleted_at IS NULL AND phone = ? AND full_name = ?
      ORDER BY created_at ASC LIMIT 1 FOR UPDATE`,
@@ -678,6 +684,9 @@ async function createOrLinkOwner(db, lineUserId, draft) {
   );
   const existing = ownerRows[0];
   if (existing) {
+    if (!Boolean(Number(existing.isActive))) {
+      throw new Error("ทะเบียนเจ้าของสัตว์ถูกระงับ กรุณาติดต่อเจ้าหน้าที่เทศบาล");
+    }
     if (existing.lineUserId && existing.lineUserId !== lineUserId) {
       throw new Error("ทะเบียนนี้เชื่อมกับบัญชี LINE อื่นอยู่แล้ว กรุณาติดต่อเจ้าหน้าที่");
     }
@@ -889,7 +898,7 @@ async function registrationPrompt(session) {
   if (step === "PHOTO") return [photoPrompt()];
   if (step === "CONFIRM") {
     return [confirmationFlex(
-      "คำขอลงทะเบียนสัตว์เลี้ยง",
+      "ข้อมูลขึ้นทะเบียนสัตว์เลี้ยง",
       [
         `เจ้าของ: ${draft.ownerName}`,
         `โทรศัพท์: ${draft.phone}`,
@@ -945,10 +954,10 @@ async function handleRegistrationSession(event, session, params) {
       messages: [
         textMessage(
           result.duplicate
-            ? `พบคำขอที่ส่งไว้แล้ว\nเลขอ้างอิง: ${result.referenceNo}\nสถานะ: ${STATUS_LABELS[result.status] || result.status}`
-            : `ส่งคำขอลงทะเบียนเรียบร้อย\nเลขอ้างอิง: ${result.referenceNo}\nเจ้าหน้าที่จะตรวจสอบและแจ้งผลผ่าน LINE`,
+            ? `พบข้อมูลที่ส่งไว้แล้ว\nเลขอ้างอิง: ${result.referenceNo}\nสถานะ: ${STATUS_LABELS[result.status] || result.status}`
+            : `ส่งข้อมูลขึ้นทะเบียนเรียบร้อย\nเลขอ้างอิง: ${result.referenceNo}\nเจ้าหน้าที่จะตรวจสอบและแจ้งผลผ่าน LINE`,
           quickReply([
-            postbackAction("ดูคำขอ", "action=requests_all", "ดูคำขอของฉัน"),
+            postbackAction("ดูข้อมูลที่ส่ง", "action=requests_all", "ดูข้อมูลที่ฉันส่ง"),
             postbackAction("เพิ่มสัตว์อีก", "action=register", "ลงทะเบียนสัตว์เพิ่ม"),
             postbackAction("เมนู", "action=menu", "เปิดเมนู"),
           ]),
@@ -1040,7 +1049,7 @@ async function handleReferenceFlow(event, session) {
     if (text.length < 8 || text.length > 30) throw new Error("เลขอ้างอิงไม่ถูกต้อง");
     draft.referenceNo = text;
     const updated = await updateSession(session, "PHONE", draft);
-    return { messages: [textMessage("พิมพ์เบอร์โทรศัพท์ของเจ้าของที่ใช้ส่งคำขอ", cancelQuickReply())] };
+    return { messages: [textMessage("พิมพ์เบอร์โทรศัพท์ของเจ้าของที่ใช้ส่งข้อมูล", cancelQuickReply())] };
   }
   if (session.currentStep === "PHONE" && text) {
     const phone = normalizeThaiPhone(text);
@@ -1051,12 +1060,12 @@ async function handleReferenceFlow(event, session) {
           `SELECT r.reference_no AS referenceNo, r.status, o.id AS ownerId,
                   o.full_name AS ownerName, o.line_user_id AS lineUserId
            FROM registrations r
-           INNER JOIN owners o ON o.id = r.owner_id AND o.deleted_at IS NULL
+            INNER JOIN owners o ON o.id = r.owner_id AND o.is_active = TRUE AND o.deleted_at IS NULL
            WHERE r.reference_no = ? AND o.phone = ? LIMIT 1 FOR UPDATE`,
           [draft.referenceNo, phone],
         );
         const row = rows[0];
-        if (!row) throw new Error("ไม่พบคำขอที่ตรงกับเลขอ้างอิงและเบอร์โทรศัพท์");
+        if (!row) throw new Error("ไม่พบข้อมูลที่ตรงกับเลขอ้างอิงและเบอร์โทรศัพท์");
         if (row.lineUserId && row.lineUserId !== session.lineUserId) {
           throw new Error("ทะเบียนนี้เชื่อมกับบัญชี LINE อื่นแล้ว กรุณาติดต่อเจ้าหน้าที่");
         }
@@ -1086,7 +1095,7 @@ async function handleReferenceFlow(event, session) {
       [draft.referenceNo, phone],
     );
     const row = rows[0];
-    if (!row) throw new Error("ไม่พบคำขอที่ตรงกับเลขอ้างอิงและเบอร์โทรศัพท์");
+    if (!row) throw new Error("ไม่พบข้อมูลที่ตรงกับเลขอ้างอิงและเบอร์โทรศัพท์");
     await clearSession(session.lineUserId);
     return { messages: [textMessage([
       `เลขอ้างอิง: ${row.referenceNo}`,
@@ -1096,7 +1105,7 @@ async function handleReferenceFlow(event, session) {
       row.reviewNote ? `ข้อความจากเจ้าหน้าที่: ${row.reviewNote}` : "",
     ].filter(Boolean).join("\n"), quickReply([
       postbackAction("เชื่อมทะเบียน", "action=link", "เชื่อมทะเบียนกับ LINE"),
-      postbackAction("ติดตามอีกคำขอ", "action=track", "ติดตามคำขออื่น"),
+      postbackAction("ติดตามรายการอื่น", "action=track", "ติดตามข้อมูลรายการอื่น"),
       postbackAction("เมนู", "action=menu", "เปิดเมนู"),
     ]))] };
   }
@@ -1388,7 +1397,7 @@ async function handlePetStatusSession(event, session, params) {
   }
   if (params.session === "status_edit") next = "STATUS";
   else if (session.currentStep === "STATUS" && params.session === "pet_status") {
-    if (!["MISSING", "ACTIVE", "DECEASED"].includes(params.value)) throw new Error("สถานะไม่ถูกต้อง");
+    if (!["MISSING", "ACTIVE", "DECEASED", "MOVED_OUT"].includes(params.value)) throw new Error("สถานะไม่ถูกต้อง");
     draft.status = params.value;
     next = "DATE";
   } else if (session.currentStep === "DATE" && params.session === "status_date") {
@@ -1754,9 +1763,9 @@ async function handleProfileSession(event, session, params) {
 
 function submissionSuccessMessage(result) {
   return textMessage(
-    `ส่ง${SUBJECT_LABELS[result.subjectType] || "คำขอ"}เรียบร้อย\nเลขอ้างอิง: ${result.referenceNo}\nเจ้าหน้าที่จะตรวจสอบและแจ้งผลผ่าน LINE`,
+    `ส่ง${SUBJECT_LABELS[result.subjectType] || "ข้อมูล"}เรียบร้อย\nเลขอ้างอิง: ${result.referenceNo}\nเจ้าหน้าที่จะตรวจสอบและแจ้งผลผ่าน LINE`,
     quickReply([
-      postbackAction("ดูคำขอ", "action=requests_all", "ดูคำขอของฉัน"),
+      postbackAction("ดูข้อมูลที่ส่ง", "action=requests_all", "ดูข้อมูลที่ฉันส่ง"),
       postbackAction("เมนู", "action=menu", "เปิดเมนู"),
     ]),
   );
@@ -1814,10 +1823,10 @@ async function listRequests(lineUserId, filter = "ALL", page = 0) {
   );
 
   const emptyLabels = {
-    NEED_MORE_INFO: "ไม่มีคำขอที่เจ้าหน้าที่ขอข้อมูลเพิ่มเติม",
-    PENDING: "ไม่มีคำขอที่กำลังรอตรวจสอบ",
-    FINISHED: "ยังไม่มีคำขอที่ดำเนินการเสร็จแล้ว",
-    ALL: "ยังไม่มีคำขอในบัญชีนี้",
+    NEED_MORE_INFO: "ไม่มีข้อมูลที่เจ้าหน้าที่ขอให้แก้ไขหรือเพิ่มเติม",
+    PENDING: "ไม่มีข้อมูลที่กำลังรอตรวจสอบ",
+    FINISHED: "ยังไม่มีข้อมูลที่ดำเนินการเสร็จแล้ว",
+    ALL: "ยังไม่มีข้อมูลที่ส่งไว้ในบัญชีนี้",
   };
 
   if (!pageRows.length) {
@@ -1840,7 +1849,7 @@ async function listRequests(lineUserId, filter = "ALL", page = 0) {
       paddingAll: "16px",
       spacing: "sm",
       contents: [
-        { type: "text", text: row.petName || "รายการคำขอ", weight: "bold", size: "md", wrap: true },
+        { type: "text", text: row.petName || "รายการข้อมูล", weight: "bold", size: "md", wrap: true },
         { type: "text", text: row.referenceNo, size: "xs", color: "#64748B", wrap: true },
         {
           type: "text",
@@ -1866,7 +1875,7 @@ async function listRequests(lineUserId, filter = "ALL", page = 0) {
   const choices = pageRows.map((row) => {
     const kind = row.requestType === "REGISTER_PET" ? "REGISTRATION" : "SUBMISSION";
     return postbackAction(
-      `${row.petName || "คำขอ"} ${row.referenceNo}`,
+      `${row.petName || "รายการ"} ${row.referenceNo}`,
       `action=request_detail&kind=${kind}&id=${row.id}&filter=${normalizedFilter}&page=${normalizedPage}`,
       `${row.referenceNo} • ${STATUS_LABELS[row.status] || row.status}`,
     );
@@ -1876,20 +1885,20 @@ async function listRequests(lineUserId, filter = "ALL", page = 0) {
     choices.push(postbackAction(
       "หน้าก่อน",
       `action=requests_page&filter=${normalizedFilter}&page=${normalizedPage - 1}`,
-      "ดูคำขอหน้าก่อน",
+      "ดูข้อมูลหน้าก่อน",
     ));
   }
   if (normalizedPage + 1 < totalPages) {
     choices.push(postbackAction(
       "หน้าถัดไป",
       `action=requests_page&filter=${normalizedFilter}&page=${normalizedPage + 1}`,
-      "ดูคำขอหน้าถัดไป",
+      "ดูข้อมูลหน้าถัดไป",
     ));
   }
 
   return [{
     type: "flex",
-    altText: `คำขอของฉัน หน้า ${normalizedPage + 1}/${totalPages} • ทั้งหมด ${totalRows} รายการ`,
+    altText: `ข้อมูลที่ฉันส่ง หน้า ${normalizedPage + 1}/${totalPages} • ทั้งหมด ${totalRows} รายการ`,
     contents: { type: "carousel", contents: bubbles },
     quickReply: quickReply(choices),
   }];
@@ -1923,11 +1932,11 @@ async function requestDetailMessages(lineUserId, kind, id, filter = "ALL", page 
       [id, owner.id],
     );
   } else {
-    throw new Error("ประเภทคำขอไม่ถูกต้อง");
+    throw new Error("ประเภทข้อมูลไม่ถูกต้อง");
   }
 
   const item = rows[0];
-  if (!item) throw new Error("ไม่พบคำขอนี้หรือไม่มีสิทธิ์ดูข้อมูล");
+  if (!item) throw new Error("ไม่พบข้อมูลรายการนี้หรือไม่มีสิทธิ์ดูข้อมูล");
   const requestLabel = item.requestLabel || SUBJECT_LABELS[item.requestType] || item.requestType;
   const actions = [];
 
@@ -1940,20 +1949,20 @@ async function requestDetailMessages(lineUserId, kind, id, filter = "ALL", page 
   }
   if (["SUBMITTED", "NEED_MORE_INFO"].includes(item.status)) {
     actions.push(postbackAction(
-      "ยกเลิกคำขอ",
+      "ยกเลิกรายการ",
       `action=cancel_request&kind=${normalizedKind}&id=${item.id}`,
       `ยกเลิก ${item.referenceNo}`,
     ));
   }
   actions.push(postbackAction(
-    "กลับรายการคำขอ",
+    "กลับรายการข้อมูล",
     `action=requests_page&filter=${encodeURIComponent(filter)}&page=${Math.max(0, Number(page) || 0)}`,
-    "กลับรายการคำขอ",
+    "กลับรายการข้อมูล",
   ));
 
   return [{
     type: "flex",
-    altText: `รายละเอียดคำขอ ${item.referenceNo}`,
+    altText: `รายละเอียดข้อมูล ${item.referenceNo}`,
     contents: {
       type: "bubble",
       size: "kilo",
@@ -1986,7 +1995,7 @@ async function requestDetailMessages(lineUserId, kind, id, filter = "ALL", page 
 
 async function startResubmit(lineUserId, kind, id) {
   const owner = await assertOwner(lineUserId);
-  if (!["REGISTRATION", "SUBMISSION"].includes(kind)) throw new Error("ประเภทคำขอไม่ถูกต้อง");
+  if (!["REGISTRATION", "SUBMISSION"].includes(kind)) throw new Error("ประเภทข้อมูลไม่ถูกต้อง");
   const table = kind === "REGISTRATION" ? "registrations" : "citizen_submissions";
   const [rows] = await pool.execute(
     `SELECT id, reference_no AS referenceNo, status, review_note AS reviewNote, version
@@ -1994,7 +2003,7 @@ async function startResubmit(lineUserId, kind, id) {
     [id, owner.id],
   );
   const item = rows[0];
-  if (!item || item.status !== "NEED_MORE_INFO") throw new Error("คำขอนี้ไม่ได้อยู่ในสถานะที่ส่งข้อมูลเพิ่มได้");
+  if (!item || item.status !== "NEED_MORE_INFO") throw new Error("ข้อมูลรายการนี้ไม่ได้อยู่ในสถานะที่ส่งข้อมูลเพิ่มได้");
   await saveSession(lineUserId, "RESUBMIT", "DETAIL", { kind, id, ...item });
   return [textMessage(`เจ้าหน้าที่ขอข้อมูลเพิ่มเติม:\n${item.reviewNote || "กรุณาเพิ่มรายละเอียด"}\n\nพิมพ์ข้อมูลที่ต้องการส่งเพิ่มเติม`, cancelQuickReply())];
 }
@@ -2029,7 +2038,7 @@ async function handleResubmitSession(event, session, params) {
            WHERE id = ? AND owner_id = ? AND status = 'NEED_MORE_INFO' AND version = ?`,
           [draft.id, owner.id, draft.version],
         );
-        if (!result.affectedRows) throw new Error("คำขอมีการเปลี่ยนแปลง กรุณาโหลดรายการใหม่");
+        if (!result.affectedRows) throw new Error("ข้อมูลมีการเปลี่ยนแปลง กรุณาโหลดรายการใหม่");
       } else {
         const [rows] = await db.execute(
           `SELECT proposed_payload AS proposedPayload FROM citizen_submissions
@@ -2037,7 +2046,7 @@ async function handleResubmitSession(event, session, params) {
            LIMIT 1 FOR UPDATE`,
           [draft.id, owner.id, draft.version],
         );
-        if (!rows[0]) throw new Error("คำขอมีการเปลี่ยนแปลง กรุณาโหลดรายการใหม่");
+        if (!rows[0]) throw new Error("ข้อมูลมีการเปลี่ยนแปลง กรุณาโหลดรายการใหม่");
         const proposed = { ...parseJson(rows[0].proposedPayload, {}), additionalInfo: draft.additionalInfo };
         await db.execute(
           `UPDATE citizen_submissions SET status = 'SUBMITTED', review_note = NULL,
@@ -2055,7 +2064,7 @@ async function handleResubmitSession(event, session, params) {
     });
     await clearSession(session.lineUserId);
     return { refreshState: true, messages: [textMessage(`ส่งข้อมูลเพิ่มเติมสำหรับ ${draft.referenceNo} เรียบร้อย`, quickReply([
-      postbackAction("ดูคำขอ", "action=requests_all", "ดูคำขอของฉัน"),
+      postbackAction("ดูข้อมูลที่ส่ง", "action=requests_all", "ดูข้อมูลที่ฉันส่ง"),
       postbackAction("เมนู", "action=menu", "เปิดเมนู"),
     ]))] };
   }
@@ -2077,22 +2086,22 @@ async function handleResubmitSession(event, session, params) {
 
 async function cancelRequest(lineUserId, kind, id, confirmed = false) {
   if (!confirmed) {
-    return [textMessage("ยืนยันยกเลิกคำขอนี้หรือไม่ การยกเลิกแล้วไม่สามารถย้อนกลับได้", quickReply([
-      postbackAction("ยืนยันยกเลิก", `action=cancel_request_confirm&kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`, "ยืนยันยกเลิกคำขอ"),
-      postbackAction("ไม่ยกเลิก", "action=requests", "กลับไปดูคำขอ"),
+    return [textMessage("ยืนยันยกเลิกรายการนี้หรือไม่ การยกเลิกแล้วไม่สามารถย้อนกลับได้", quickReply([
+      postbackAction("ยืนยันยกเลิก", `action=cancel_request_confirm&kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`, "ยืนยันยกเลิกรายการ"),
+      postbackAction("ไม่ยกเลิก", "action=requests", "กลับไปดูข้อมูลที่ส่ง"),
     ]))];
   }
   const owner = await assertOwner(lineUserId);
   const table = kind === "REGISTRATION" ? "registrations" : "citizen_submissions";
-  if (!["registrations", "citizen_submissions"].includes(table)) throw new Error("ประเภทคำขอไม่ถูกต้อง");
+  if (!["registrations", "citizen_submissions"].includes(table)) throw new Error("ประเภทข้อมูลไม่ถูกต้อง");
   const [result] = await pool.execute(
     `UPDATE ${table} SET status = 'CANCELLED', version = version + 1
      WHERE id = ? AND owner_id = ? AND status IN ('SUBMITTED','NEED_MORE_INFO')`,
     [id, owner.id],
   );
-  if (!result.affectedRows) throw new Error("คำขอนี้ถูกดำเนินการแล้วหรือไม่สามารถยกเลิกได้");
-  return [textMessage("ยกเลิกคำขอเรียบร้อย", quickReply([
-    postbackAction("ดูคำขอ", "action=requests_all", "ดูคำขอของฉัน"),
+  if (!result.affectedRows) throw new Error("ข้อมูลรายการนี้ถูกดำเนินการแล้วหรือไม่สามารถยกเลิกได้");
+  return [textMessage("ยกเลิกรายการเรียบร้อย", quickReply([
+    postbackAction("ดูข้อมูลที่ส่ง", "action=requests_all", "ดูข้อมูลที่ฉันส่ง"),
     postbackAction("เมนู", "action=menu", "เปิดเมนู"),
   ]))];
 }
@@ -2149,7 +2158,7 @@ function ownerMenuMessage() {
 
 function actionCenterMessage(state) {
   const actions = [
-    postbackAction("คำขอที่ต้องแก้", "action=requests_need_info", "ดูคำขอที่ต้องดำเนินการ"),
+    postbackAction("ข้อมูลที่ต้องแก้", "action=requests_need_info", "ดูข้อมูลที่ต้องดำเนินการ"),
   ];
 
   if (Number(state?.counts?.vaccinationDue || 0) > 0) {
@@ -2185,7 +2194,7 @@ export function buildStatusMenuActions(pet) {
   const petId = encodeURIComponent(String(pet?.id || ""));
   const actions = [];
 
-  if (!["MISSING", "DECEASED", "TRANSFERRED"].includes(status)) {
+  if (!["MISSING", "DECEASED", "TRANSFERRED", "MOVED_OUT"].includes(status)) {
     actions.push(
       postbackAction(
         "แจ้งสูญหาย",
@@ -2205,12 +2214,22 @@ export function buildStatusMenuActions(pet) {
     );
   }
 
-  if (!["DECEASED", "TRANSFERRED"].includes(status)) {
+  if (!["DECEASED", "TRANSFERRED", "MOVED_OUT"].includes(status)) {
     actions.push(
       postbackAction(
         "แจ้งเสียชีวิต",
         `action=status_set&petId=${petId}&value=DECEASED`,
         `แจ้ง ${pet?.petName || "สัตว์เลี้ยง"} เสียชีวิต`,
+      ),
+    );
+  }
+
+  if (!["DECEASED", "TRANSFERRED", "MOVED_OUT"].includes(status)) {
+    actions.push(
+      postbackAction(
+        "แจ้งย้ายออก",
+        `action=status_set&petId=${petId}&value=MOVED_OUT`,
+        `แจ้ง ${pet?.petName || "สัตว์เลี้ยง"} ย้ายออกจากพื้นที่เทศบาลท่าโพธ์`,
       ),
     );
   }
@@ -2246,7 +2265,7 @@ function statusMenuMessage(pet) {
       `สถานะปัจจุบัน: ${statusLabel}`,
       "",
       "เลือกสถานะที่ต้องการแจ้ง",
-      "การแจ้งสูญหาย พบแล้ว หรือเสียชีวิต อยู่ในเมนูย่อยนี้ทั้งหมด",
+      "แจ้งสูญหาย พบแล้ว เสียชีวิต หรือย้ายออกจากพื้นที่ได้จากเมนูนี้",
     ].join("\n"),
     quickReply(buildStatusMenuActions(pet)),
   );
@@ -2259,9 +2278,9 @@ function servicesMessage() {
     "• ส่งตำแหน่งบ้านจากแผนที่ของ LINE",
     "• แนบรูปจากกล้องหรือคลังภาพ",
     "• แจ้งวัคซีนและทำหมัน",
-    "• แจ้งสูญหาย เสียชีวิต หรือกลับมาปกติ",
+    "• แจ้งสูญหาย เสียชีวิต ย้ายออก หรือกลับมาปกติ",
     "• แก้ไขข้อมูลและขอโอนเจ้าของ",
-    "• ติดตาม ส่งข้อมูลเพิ่ม และยกเลิกคำขอ",
+    "• ติดตาม ส่งข้อมูลเพิ่ม หรือยกเลิกรายการที่ส่ง",
     "• รับผลตรวจสอบและการแจ้งเตือนผ่าน LINE",
   ].join("\n"), quickReply([
     postbackAction("เริ่มลงทะเบียน", "action=register", "ลงทะเบียนสัตว์เลี้ยง"),
@@ -2275,7 +2294,7 @@ function contactMessage() {
     "กรุณาใช้ช่องทางติดต่อทางการที่แสดงในโปรไฟล์ LINE Official Account นี้",
     "เพื่อความปลอดภัย กรุณาอย่าส่งรหัสผ่าน รหัส OTP หรือข้อมูลบัตรประชาชนในแชต",
   ].join("\n"), quickReply([
-    postbackAction("คำขอของฉัน", "action=requests", "ดูคำขอของฉัน"),
+    postbackAction("ข้อมูลที่ส่ง", "action=requests", "ดูข้อมูลที่ฉันส่ง"),
     postbackAction("เมนู", "action=menu", "เปิดเมนู"),
   ]));
 }
@@ -2331,7 +2350,7 @@ async function handleAction(event, state, params) {
   if (action.startsWith("status_pick_")) {
     const nextStatus = action.slice("status_pick_".length);
 
-    if (!["MISSING", "ACTIVE", "DECEASED"].includes(nextStatus)) {
+    if (!["MISSING", "ACTIVE", "DECEASED", "MOVED_OUT"].includes(nextStatus)) {
       throw new Error("สถานะสัตว์ไม่ถูกต้อง");
     }
 
@@ -2393,7 +2412,7 @@ async function handleAction(event, state, params) {
 
   if (action === "status_set") {
     const nextStatus = String(params.value || "");
-    if (!["MISSING", "ACTIVE", "DECEASED"].includes(nextStatus)) {
+    if (!["MISSING", "ACTIVE", "DECEASED", "MOVED_OUT"].includes(nextStatus)) {
       throw new Error("สถานะสัตว์ไม่ถูกต้อง");
     }
 
@@ -2674,7 +2693,7 @@ export function commandToAction(command, state = null) {
   if (["คำขอของฉัน", "สถานะคำขอ", "รายการคำขอ"].some((word) => value.includes(word))) {
     return state?.linked ? "requests_menu" : "track";
   }
-  if (["สูญหาย", "พบแล้ว", "เสียชีวิต", "แจ้งสถานะ", "สถานะสัตว์"].some((word) => value.includes(word))) return "status_menu";
+  if (["สูญหาย", "พบแล้ว", "เสียชีวิต", "ย้ายออก", "แจ้งสถานะ", "สถานะสัตว์"].some((word) => value.includes(word))) return "status_menu";
   if (["ลงทะเบียน", "ขึ้นทะเบียน", "เพิ่มสัตว์"].some((word) => value.includes(word))) return "register";
   if (["เชื่อมทะเบียน", "ผูกทะเบียน"].some((word) => value.includes(word))) return "link";
   if (["ติดตาม", "เลขอ้างอิง"].some((word) => value.includes(word))) return state?.linked ? "requests_menu" : "track";

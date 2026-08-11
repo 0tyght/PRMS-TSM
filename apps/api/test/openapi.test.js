@@ -6,6 +6,7 @@ const documentedPaths = [
   "/openapi.json", "/health", "/health/live", "/health/ready",
   "/public/villages", "/public/registrations", "/public/registrations/{referenceNo}", "/auth/login",
   "/admin/dashboard", "/admin/owners", "/admin/owners/{id}", "/admin/users", "/admin/users/{id}",
+  "/admin/villages", "/admin/villages/{id}",
   "/admin/system-status", "/admin/registrations", "/admin/registrations/{id}", "/admin/registrations/{id}/status",
   "/admin/attachments/{id}",
   "/admin/citizen-submissions", "/admin/citizen-submissions/{id}", "/admin/citizen-submissions/{id}/status",
@@ -20,4 +21,10 @@ const documentedPaths = [
 test("publishes OpenAPI 3.1 documentation for every supported route family", () => {
   assert.equal(openApiDocument.openapi, "3.1.0");
   for (const path of documentedPaths) assert.ok(openApiDocument.paths[path], `missing OpenAPI path ${path}`);
+  assert.ok(openApiDocument.paths["/admin/owners"].post);
+  assert.ok(openApiDocument.paths["/admin/pets"].post);
+  assert.ok(openApiDocument.paths["/admin/pets/{id}"].patch);
+  assert.ok(openApiDocument.paths["/admin/users"].post);
+  assert.ok(openApiDocument.paths["/admin/villages"].post);
+  assert.ok(openApiDocument.paths["/admin/villages/{id}"].patch);
 });

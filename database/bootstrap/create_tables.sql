@@ -174,6 +174,8 @@ CREATE TABLE IF NOT EXISTS owners (
 
     consent_at DATETIME NULL,
 
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     updated_at TIMESTAMP NOT NULL
@@ -247,6 +249,7 @@ CREATE TABLE IF NOT EXISTS pets (
         'ACTIVE',
         'MISSING',
         'TRANSFERRED',
+        'MOVED_OUT',
         'DECEASED'
     ) NOT NULL DEFAULT 'ACTIVE',
 
@@ -387,7 +390,7 @@ CREATE TABLE IF NOT EXISTS citizen_submissions (
     reference_no VARCHAR(30) NOT NULL,
     owner_id CHAR(36) NOT NULL,
     pet_id CHAR(36) NOT NULL,
-    subject_type ENUM('PET_UPDATE','VACCINATION','STERILIZATION','PET_STATUS') NOT NULL,
+    subject_type ENUM('PET_UPDATE','VACCINATION','STERILIZATION','PET_STATUS','OWNER_TRANSFER') NOT NULL,
     current_payload JSON NULL,
     proposed_payload JSON NOT NULL,
     status ENUM('DRAFT','SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO','APPROVED','REJECTED','CANCELLED') NOT NULL DEFAULT 'SUBMITTED',
@@ -705,6 +708,7 @@ CREATE TABLE IF NOT EXISTS pet_status_history (
         'ACTIVE',
         'MISSING',
         'TRANSFERRED',
+        'MOVED_OUT',
         'DECEASED'
     ) NULL,
 
@@ -712,6 +716,7 @@ CREATE TABLE IF NOT EXISTS pet_status_history (
         'ACTIVE',
         'MISSING',
         'TRANSFERRED',
+        'MOVED_OUT',
         'DECEASED'
     ) NOT NULL,
 
