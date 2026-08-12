@@ -1039,7 +1039,12 @@ export class SmartThaPhoApiApplication {
   const app = this.expressFactory();
   app.set("trust proxy", 1);
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      // GitHub Pages and the public API are separate HTTPS origins.
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    }),
+  );
   app.use(requestContext);
   app.use(
     cors({

@@ -30,6 +30,23 @@ test("serves the versioned API contract without breaking the legacy path", async
   assert.equal((await legacy.json()).status, "alive");
 });
 
+test("allows municipal frontends to consume API responses across origins", async (t) => {
+  const server = createApp().listen(0, "127.0.0.1");
+  await new Promise((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/health/live`, {
+    headers: { Origin: "https://0tyght.github.io" },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://0tyght.github.io");
+  assert.equal(response.headers.get("cross-origin-resource-policy"), "cross-origin");
+});
+
 test("retires the citizen web API in favor of LINE OA", async (t) => {
   const server = createApp().listen(0, "127.0.0.1");
   await new Promise((resolve, reject) => {
