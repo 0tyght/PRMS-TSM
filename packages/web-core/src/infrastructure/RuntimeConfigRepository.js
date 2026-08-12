@@ -3,11 +3,19 @@ const DEFAULT_CONFIG_SOURCES = Object.freeze([
   () => "https://raw.githubusercontent.com/0tyght/PRMS-TSM/main/runtime-config.json",
 ]);
 
+const DEFAULT_BUILD_TIME_API_BASE = import.meta.env?.VITE_API_BASE_URL || "";
+
 export class RuntimeConfigRepository {
-  constructor({ fetchImplementation = fetch, sources = DEFAULT_CONFIG_SOURCES, locationObject = location } = {}) {
+  constructor({
+    fetchImplementation = fetch,
+    sources = DEFAULT_CONFIG_SOURCES,
+    locationObject = location,
+    buildTimeApiBase = DEFAULT_BUILD_TIME_API_BASE,
+  } = {}) {
     this.fetchImplementation = fetchImplementation;
     this.sources = sources;
     this.locationObject = locationObject;
+    this.buildTimeApiBase = buildTimeApiBase;
     this.pending = undefined;
   }
 
@@ -30,6 +38,9 @@ export class RuntimeConfigRepository {
   }
 
   async #load() {
+    const bundledApiBase = this.normalizeApiBase(this.buildTimeApiBase);
+    if (bundledApiBase) return bundledApiBase;
+
     for (const source of this.sources) {
       try {
         const response = await this.fetchImplementation(source(), { cache: "no-store" });
@@ -43,4 +54,3 @@ export class RuntimeConfigRepository {
     return "";
   }
 }
-
