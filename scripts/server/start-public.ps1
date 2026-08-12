@@ -474,6 +474,7 @@ if (-not (Test-HealthReady $publicHealth)) {
 
 $configJson = [ordered]@{
     apiBaseUrl = "{0}/api" -f $tunnelUrl
+    portalApiBaseUrl = "http://127.0.0.1:4100/api"
     portalUrl = "https://0tyght.github.io/PRMS-TSM/"
     updatedAt = (
         Get-Date

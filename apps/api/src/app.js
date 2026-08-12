@@ -1039,6 +1039,13 @@ export class SmartThaPhoApiApplication {
   const app = this.expressFactory();
   app.set("trust proxy", 1);
 
+  app.use((req, res, next) => {
+    if (req.get("Access-Control-Request-Private-Network") === "true") {
+      res.setHeader("Access-Control-Allow-Private-Network", "true");
+    }
+    next();
+  });
+
   app.use(
     helmet({
       // GitHub Pages and the public API are separate HTTPS origins.

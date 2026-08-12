@@ -44,7 +44,7 @@ jobs:
 
       - name: Embed current API URL in web bundles
         run: |
-          node -e 'const fs = require("fs"); const config = JSON.parse(fs.readFileSync("runtime-config.json", "utf8")); fs.appendFileSync(process.env.GITHUB_ENV, "VITE_API_BASE_URL=" + config.apiBaseUrl + "\n");'
+          node -e 'const fs = require("fs"); const config = JSON.parse(fs.readFileSync("runtime-config.json", "utf8")); fs.appendFileSync(process.env.GITHUB_ENV, "VITE_API_BASE_URL=" + (config.portalApiBaseUrl || config.apiBaseUrl) + "\n");'
 
       - name: Build municipal web applications
         run: npm run build

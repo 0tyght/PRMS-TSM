@@ -46,7 +46,8 @@ export class RuntimeConfigRepository {
       try {
         const response = await this.fetchImplementation(source(), { cache: "no-store" });
         if (!response.ok) continue;
-        const apiBase = this.normalizeApiBase((await response.json()).apiBaseUrl);
+        const config = await response.json();
+        const apiBase = this.normalizeApiBase(config.portalApiBaseUrl || config.apiBaseUrl);
         if (apiBase) return apiBase;
       } catch {
         // Continue with the next configured source.

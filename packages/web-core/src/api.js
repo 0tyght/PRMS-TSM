@@ -87,12 +87,18 @@ export class ApiClient {
     }
 
     try {
-      return await this.fetchImplementation(`${apiBase}${normalizeApiPath(path)}`, {
+      const requestOptions = {
         ...options,
         headers,
         signal: controller.signal,
         cache: "no-store",
-      });
+      };
+
+      if (["localhost", "127.0.0.1"].includes(new URL(apiBase).hostname)) {
+        requestOptions.targetAddressSpace = "loopback";
+      }
+
+      return await this.fetchImplementation(`${apiBase}${normalizeApiPath(path)}`, requestOptions);
     } finally {
       window.clearTimeout(timeoutId);
     }

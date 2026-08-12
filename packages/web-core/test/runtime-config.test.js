@@ -37,6 +37,25 @@ test("RuntimeConfigRepository falls back to the deployed runtime file", async ()
   assert.equal(await repository.getApiBase(), "https://fallback.example.com/api");
 });
 
+test("RuntimeConfigRepository uses the local portal API without changing the public webhook API", async () => {
+  const repository = new RuntimeConfigRepository({
+    buildTimeApiBase: "",
+    locationObject: publicLocation,
+    sources: [() => "https://example.com/runtime-config.json"],
+    fetchImplementation: async () => ({
+      ok: true,
+      async json() {
+        return {
+          apiBaseUrl: "https://line-webhook.example.com/api",
+          portalApiBaseUrl: "http://127.0.0.1:4100/api",
+        };
+      },
+    }),
+  });
+
+  assert.equal(await repository.getApiBase(), "http://127.0.0.1:4100/api");
+});
+
 test("RuntimeConfigRepository rejects insecure public API URLs", async () => {
   const repository = new RuntimeConfigRepository({
     buildTimeApiBase: "http://public.example.com/api",
@@ -66,6 +85,29 @@ test("ApiClient bypasses the ngrok browser interstitial for API requests", async
 
     await client.fetchOnce("https://smart-tha-pho.ngrok-free.dev/api", "/health");
     assert.equal(requestedHeaders.get("ngrok-skip-browser-warning"), "true");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("ApiClient identifies loopback requests for Chrome Local Network Access", async () => {
+  const originalWindow = globalThis.window;
+  let requestedOptions;
+  globalThis.window = { setTimeout, clearTimeout };
+
+  try {
+    const client = new ApiClient({
+      fetchImplementation: async (_url, options) => {
+        requestedOptions = options;
+        return new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    await client.fetchOnce("http://127.0.0.1:4100/api", "/health");
+    assert.equal(requestedOptions.targetAddressSpace, "loopback");
   } finally {
     globalThis.window = originalWindow;
   }

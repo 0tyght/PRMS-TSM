@@ -45,6 +45,22 @@ test("allows municipal frontends to consume API responses across origins", async
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("access-control-allow-origin"), "https://0tyght.github.io");
   assert.equal(response.headers.get("cross-origin-resource-policy"), "cross-origin");
+
+  const privateNetworkPreflight = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/v1/auth/login`,
+    {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://0tyght.github.io",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type",
+        "Access-Control-Request-Private-Network": "true",
+      },
+    },
+  );
+
+  assert.equal(privateNetworkPreflight.status, 204);
+  assert.equal(privateNetworkPreflight.headers.get("access-control-allow-private-network"), "true");
 });
 
 test("retires the citizen web API in favor of LINE OA", async (t) => {
