@@ -32,7 +32,11 @@ export class RuntimeConfigRepository {
   }
 
   async getApiBase(forceRefresh = false) {
-    if (["localhost", "127.0.0.1"].includes(this.locationObject.hostname)) return "/api";
+    const hostname = String(this.locationObject.hostname || "").toLowerCase();
+    if (
+      ["localhost", "127.0.0.1"].includes(hostname) ||
+      hostname.endsWith(".ngrok-free.dev")
+    ) return "/api";
     if (forceRefresh) this.pending = undefined;
     if (!this.pending) this.pending = this.#load();
     return this.pending;

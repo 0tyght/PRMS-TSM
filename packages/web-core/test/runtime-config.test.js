@@ -56,6 +56,21 @@ test("RuntimeConfigRepository uses the local portal API without changing the pub
   assert.equal(await repository.getApiBase(), "http://127.0.0.1:4100/api");
 });
 
+test("RuntimeConfigRepository uses the same-origin API on the public development tunnel", async () => {
+  const repository = new RuntimeConfigRepository({
+    fetchImplementation: async () => {
+      throw new Error("runtime config must not be fetched for a same-origin tunnel");
+    },
+    locationObject: {
+      hostname: "example.ngrok-free.dev",
+      origin: "https://example.ngrok-free.dev",
+    },
+    buildTimeApiBase: "https://another.example/api",
+  });
+
+  assert.equal(await repository.getApiBase(), "/api");
+});
+
 test("RuntimeConfigRepository rejects insecure public API URLs", async () => {
   const repository = new RuntimeConfigRepository({
     buildTimeApiBase: "http://public.example.com/api",
@@ -70,7 +85,7 @@ test("RuntimeConfigRepository rejects insecure public API URLs", async () => {
 test("ApiClient bypasses the ngrok browser interstitial for API requests", async () => {
   const originalWindow = globalThis.window;
   let requestedHeaders;
-  globalThis.window = { setTimeout, clearTimeout };
+  globalThis.window = { setTimeout, clearTimeout, location: { origin: "https://portal.example" } };
 
   try {
     const client = new ApiClient({
@@ -93,7 +108,7 @@ test("ApiClient bypasses the ngrok browser interstitial for API requests", async
 test("ApiClient identifies loopback requests for Chrome Local Network Access", async () => {
   const originalWindow = globalThis.window;
   let requestedOptions;
-  globalThis.window = { setTimeout, clearTimeout };
+  globalThis.window = { setTimeout, clearTimeout, location: { origin: "https://portal.example" } };
 
   try {
     const client = new ApiClient({
@@ -110,5 +125,60 @@ test("ApiClient identifies loopback requests for Chrome Local Network Access", a
     assert.equal(requestedOptions.targetAddressSpace, "loopback");
   } finally {
     globalThis.window = originalWindow;
+  }
+});
+
+test("ApiClient resolves a same-origin relative API base before sending the request", async () => {
+  const originalWindow = globalThis.window;
+  let requestedUrl = "";
+  globalThis.window = {
+    setTimeout,
+    clearTimeout,
+    location: { origin: "https://smart-tha-pho.ngrok-free.dev" },
+  };
+
+  try {
+    const client = new ApiClient({
+      fetchImplementation: async (url) => {
+        requestedUrl = url;
+        return new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    await client.fetchOnce("/api", "/auth/login");
+    assert.equal(requestedUrl, "/api/auth/login");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("ApiClient binds the browser fetch function to the global object", async () => {
+  const originalWindow = globalThis.window;
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.window = {
+    setTimeout,
+    clearTimeout,
+    location: { origin: "https://smart-tha-pho.ngrok-free.dev" },
+  };
+  globalThis.fetch = function () {
+    assert.equal(this, globalThis);
+    called = true;
+    return Promise.resolve(new Response("{}", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+  };
+
+  try {
+    const client = new ApiClient();
+    await client.fetchOnce("/api", "/health");
+    assert.equal(called, true);
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.fetch = originalFetch;
   }
 });

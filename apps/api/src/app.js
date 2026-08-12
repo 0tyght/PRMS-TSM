@@ -3805,6 +3805,15 @@ export class SmartThaPhoApiApplication {
   );
 
   app.use("/api/waste", wasteRouter);
+
+  // Development deployments expose the staff portal and API through one
+  // origin. This avoids cross-origin and local-network browser restrictions
+  // while keeping every application under its own path.
+  app.use(express.static(config.publicSiteDir, {
+    index: "index.html",
+    fallthrough: true,
+    maxAge: config.nodeEnv === "production" ? "1h" : 0,
+  }));
   app.use(errorHandler);
 
   return app;

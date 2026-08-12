@@ -198,6 +198,84 @@ function Invoke-DatabaseMigrations {
     }
 }
 
+function Publish-StaffPortal {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$RuntimeDirectory
+    )
+
+    Write-Host "Building Smart Tha Pho web applications..." -ForegroundColor Cyan
+    $previousPublicSite = $env:SMART_THA_PHO_PUBLIC_SITE
+    Push-Location $Root
+    try {
+        $env:SMART_THA_PHO_PUBLIC_SITE = "true"
+        & npm.cmd run build
+        if ($LASTEXITCODE -ne 0) { throw "Web application build failed." }
+    }
+    finally {
+        $env:SMART_THA_PHO_PUBLIC_SITE = $previousPublicSite
+        Pop-Location
+    }
+
+    $siteDirectory = Join-Path $RuntimeDirectory "site"
+    if ((Split-Path -Parent $siteDirectory) -ne $RuntimeDirectory) {
+        throw "Public site directory is outside the Smart Tha Pho runtime directory."
+    }
+    if (Test-Path -LiteralPath $siteDirectory) {
+        Remove-Item -LiteralPath $siteDirectory -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $siteDirectory -Force | Out-Null
+
+    $applications = [ordered]@{
+        "portal" = ""
+        "prms-tsm" = "prms-tsm"
+        "waste-management" = "waste-management"
+        "disaster-management" = "disaster-management"
+        "waterworks-management" = "waterworks-management"
+    }
+
+    foreach ($application in $applications.GetEnumerator()) {
+        $source = Join-Path $Root ("apps\{0}\dist" -f $application.Key)
+        if (-not (Test-Path -LiteralPath (Join-Path $source "index.html"))) {
+            throw ("Build output is missing for {0}." -f $application.Key)
+        }
+        $destination = if ([string]::IsNullOrWhiteSpace($application.Value)) {
+            $siteDirectory
+        }
+        else {
+            Join-Path $siteDirectory $application.Value
+        }
+        New-Item -ItemType Directory -Path $destination -Force | Out-Null
+        Copy-Item -Path (Join-Path $source "*") -Destination $destination -Recurse -Force
+    }
+
+    Write-Host "Web applications ready." -ForegroundColor Green
+    return $siteDirectory
+}
+
+function Restart-SmartThaPhoApi {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    $listeners = @(Get-NetTCPConnection -LocalPort 4100 -State Listen -ErrorAction SilentlyContinue)
+    foreach ($listener in $listeners) {
+        $process = Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f $listener.OwningProcess) -ErrorAction SilentlyContinue
+        if ($null -eq $process) { continue }
+        if ([string]$process.CommandLine -notlike "*apps/api/src/server.js*") {
+            throw ("Port 4100 is already used by another process (PID {0})." -f $listener.OwningProcess)
+        }
+        Write-Host "Restarting Smart Tha Pho API..." -ForegroundColor Yellow
+        Stop-Process -Id $listener.OwningProcess -Force -ErrorAction Stop
+        Wait-Process -Id $listener.OwningProcess -Timeout 10 -ErrorAction SilentlyContinue
+    }
+
+    Start-Process `
+        -FilePath "node.exe" `
+        -ArgumentList @("apps/api/src/server.js") `
+        -WorkingDirectory $Root `
+        -WindowStyle Hidden |
+    Out-Null
+}
+
 $root = (
     Resolve-Path (
         Join-Path $PSScriptRoot "..\\.."
@@ -229,20 +307,12 @@ Write-Host `
 Invoke-DatabaseMigrations -Root $root
 Write-Host "Database migrations ready." -ForegroundColor Green
 
+$siteDir = Publish-StaffPortal -Root $root -RuntimeDirectory $runtimeDir
+Restart-SmartThaPhoApi -Root $root
+
 $localHealth = Get-LocalHealth
 
 if (-not (Test-HealthReady $localHealth)) {
-    if ($null -eq $localHealth) {
-        Start-Process `
-            -FilePath "node.exe" `
-            -ArgumentList @(
-                "apps/api/src/server.js"
-            ) `
-            -WorkingDirectory $root `
-            -WindowStyle Hidden |
-        Out-Null
-    }
-
     $localDeadline = (Get-Date).AddSeconds(30)
 
     do {
@@ -474,8 +544,8 @@ if (-not (Test-HealthReady $publicHealth)) {
 
 $configJson = [ordered]@{
     apiBaseUrl = "{0}/api" -f $tunnelUrl
-    portalApiBaseUrl = "http://127.0.0.1:4100/api"
-    portalUrl = "https://0tyght.github.io/PRMS-TSM/"
+    portalApiBaseUrl = "{0}/api" -f $tunnelUrl
+    portalUrl = "{0}/" -f $tunnelUrl
     updatedAt = (
         Get-Date
     ).ToUniversalTime().ToString("o")
@@ -489,6 +559,8 @@ ConvertTo-Json
         New-Object Text.UTF8Encoding($false)
     )
 )
+
+Copy-Item -LiteralPath $configPath -Destination (Join-Path $siteDir "runtime-config.json") -Force
 
 if (-not $SkipGitPush) {
     & git -C $root add runtime-config.json
@@ -520,5 +592,5 @@ if (-not $SkipGitPush) {
 
 Write-Host ""
 Write-Host "Smart Tha Pho is ready." -ForegroundColor Green
-Write-Host "Platform: https://0tyght.github.io/PRMS-TSM/" -ForegroundColor Green
+Write-Host ("Platform: {0}/" -f $tunnelUrl) -ForegroundColor Green
 Write-Host ("API: {0}/api" -f $tunnelUrl) -ForegroundColor Green

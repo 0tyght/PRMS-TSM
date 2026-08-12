@@ -53,14 +53,15 @@ async function parseResponseBody(response) {
 }
 
 export class ApiClient {
-  constructor({ token = "", configRepository = runtimeConfigRepository, fetchImplementation = fetch } = {}) {
+  constructor({ token = "", configRepository = runtimeConfigRepository, fetchImplementation } = {}) {
     this.token = token;
     this.configRepository = configRepository;
-    this.fetchImplementation = fetchImplementation;
+    this.fetchImplementation = fetchImplementation || globalThis.fetch.bind(globalThis);
   }
 
   async fetchOnce(apiBase, path, options = {}) {
     const controller = new AbortController();
+    const apiUrl = new URL(apiBase, window.location.origin);
 
     const timeoutId = window.setTimeout(() => {
       controller.abort();
@@ -70,7 +71,7 @@ export class ApiClient {
 
     headers.set("Accept", "application/json");
 
-    if (new URL(apiBase).hostname.endsWith(".ngrok-free.dev")) {
+    if (apiUrl.hostname.endsWith(".ngrok-free.dev")) {
       headers.set("ngrok-skip-browser-warning", "true");
     }
 
@@ -94,7 +95,7 @@ export class ApiClient {
         cache: "no-store",
       };
 
-      if (["localhost", "127.0.0.1"].includes(new URL(apiBase).hostname)) {
+      if (["localhost", "127.0.0.1"].includes(apiUrl.hostname)) {
         requestOptions.targetAddressSpace = "loopback";
       }
 

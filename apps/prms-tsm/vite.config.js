@@ -3,6 +3,10 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  base: process.env.GITHUB_ACTIONS ? "/PRMS-TSM/prms-tsm/" : "/",
+  base: process.env.GITHUB_ACTIONS
+    ? "/PRMS-TSM/prms-tsm/"
+    : process.env.SMART_THA_PHO_PUBLIC_SITE
+      ? "/prms-tsm/"
+      : "/",
   server: { proxy: { "/api": "http://localhost:4100" } },
 });

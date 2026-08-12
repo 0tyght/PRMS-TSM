@@ -1,11 +1,17 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$ProjectPath = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+    [string]$ProjectPath = "",
     [switch]$SkipGitPush
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($ProjectPath)) {
+    $ProjectPath = (
+        Resolve-Path (Join-Path $PSScriptRoot "..\..")
+    ).Path
+}
 
 function Read-DotEnvValue {
     param(
@@ -167,6 +173,7 @@ if (-not [bool]$testResult.success) {
 Write-Host ""
 Write-Host "Smart Tha Pho พร้อมใช้งาน" -ForegroundColor Green
 Write-Host "Bot: $($botInfo.displayName) ($($botInfo.basicId))" -ForegroundColor Green
+Write-Host "Web: $($apiBaseUrl.Substring(0, $apiBaseUrl.Length - 4))/" -ForegroundColor Green
 Write-Host "API: $apiBaseUrl" -ForegroundColor Green
 Write-Host "Webhook: $webhookUrl" -ForegroundColor Green
 Write-Host "Rich Menu: V12 cache + instant alias switch" -ForegroundColor Green

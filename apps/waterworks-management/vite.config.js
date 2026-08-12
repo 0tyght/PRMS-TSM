@@ -1,3 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-export default defineConfig({ plugins: [react()], base: process.env.GITHUB_ACTIONS ? "/PRMS-TSM/waterworks-management/" : "/" });
+export default defineConfig({
+  plugins: [react()],
+  base: process.env.GITHUB_ACTIONS
+    ? "/PRMS-TSM/waterworks-management/"
+    : process.env.SMART_THA_PHO_PUBLIC_SITE
+      ? "/waterworks-management/"
+      : "/",
+});
