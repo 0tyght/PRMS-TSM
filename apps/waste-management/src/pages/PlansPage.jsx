@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, StatusBadge, formatDate, formatNumber, toDateInput } from "../components/ui.jsx";
 
 function toIso(date, time) { return time ? new Date(`${date}T${time}:00+07:00`).toISOString() : null; }
@@ -47,7 +47,7 @@ function PlanForm({ resources, date, initial = null, onCancel, onSubmit, saving 
 }
 
 export default function PlansPage({ token, navigate }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createWasteApplication(token), [token]);
   const [date, setDate] = useState(toDateInput());
   const [plans, setPlans] = useState([]);
   const [resources, setResources] = useState({ vehicles: [], drivers: [], routes: [] });

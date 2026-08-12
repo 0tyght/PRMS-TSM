@@ -1,25 +1,10 @@
-import mysql from "mysql2/promise";
 import { config } from "./config.js";
+import { MariaDbConnection } from "../infrastructure/database/MariaDbConnection.js";
 
-export const pool = mysql.createPool({
-  ...config.db,
-  waitForConnections: true,
-  connectionLimit: 10,
-  namedPlaceholders: true,
-  timezone: "+07:00", charset: "utf8mb4",
-});
+export { MariaDbConnection };
+export const database = new MariaDbConnection(config.db);
+export const pool = database;
 
 export async function withTransaction(work) {
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const result = await work(connection);
-    await connection.commit();
-    return result;
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  return database.transaction(work);
 }

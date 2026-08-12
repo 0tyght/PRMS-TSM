@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardMap from "../components/DashboardMap.jsx";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createPrmsApplication } from "../composition-root/createPrmsApplication.js";
+import { householdHealthPolicy } from "../domain/HouseholdHealthPolicy.js";
 import {
-  DASHBOARD_METRICS,
-  buildVillageRows,
-  getMetricValue,
-  summarizeVillageRows,
+  villageDashboardPolicy,
 } from "../lib/dashboardVillageData.js";
 
 const INITIAL_STATS = {
@@ -277,35 +275,7 @@ function LatestCitizenData({ items, navigate }) {
 }
 
 function buildVillageHealth(mapItems) {
-  const rows = new Map();
-
-  mapItems.forEach((pet) => {
-    const villageNo = toNumber(pet.villageNo);
-    if (!villageNo) return;
-
-    const current = rows.get(villageNo) || {
-      villageNo,
-      critical: 0,
-      partial: 0,
-      complete: 0,
-      total: 0,
-    };
-    const vaccinated = Boolean(pet.vaccinated);
-    const sterilized = Boolean(pet.sterilized);
-
-    if (vaccinated && sterilized) current.complete += 1;
-    else if (vaccinated || sterilized) current.partial += 1;
-    else current.critical += 1;
-
-    current.total += 1;
-    rows.set(villageNo, current);
-  });
-
-  return [...rows.values()].sort((a, b) => {
-    const riskRatioA = a.total ? ((a.critical * 2) + a.partial) / (a.total * 2) : 0;
-    const riskRatioB = b.total ? ((b.critical * 2) + b.partial) / (b.total * 2) : 0;
-    return riskRatioB - riskRatioA || b.critical - a.critical || b.total - a.total;
-  });
+  return householdHealthPolicy.summarizeByVillage(mapItems);
 }
 
 function VillageAttention({ mapItems, selectedVillage, onSelect }) {
@@ -402,7 +372,7 @@ function VillageAttention({ mapItems, selectedVillage, onSelect }) {
 }
 
 export default function DashboardPage({ token, navigate }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createPrmsApplication(token), [token]);
   const [stats, setStats] = useState(INITIAL_STATS);
   const [requests, setRequests] = useState([]);
   const [queueSummary, setQueueSummary] = useState({});
@@ -470,10 +440,10 @@ export default function DashboardPage({ token, navigate }) {
   }, [api, refreshKey]);
 
   const villageRows = useMemo(
-    () => buildVillageRows({ villages, items: mapItems, requests }),
+    () => villageDashboardPolicy.buildVillageRows({ villages, items: mapItems, requests }),
     [villages, mapItems, requests],
   );
-  const summary = useMemo(() => summarizeVillageRows(villageRows), [villageRows]);
+  const summary = useMemo(() => villageDashboardPolicy.summarize(villageRows), [villageRows]);
   const selectedRow = villageRows.find((row) => row.id === Number(selectedVillage)) || null;
   const currentRow = selectedRow || summary;
 

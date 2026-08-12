@@ -15,17 +15,12 @@ import {
 import { config } from "./core/config.js";
 import { pool, withTransaction } from "./core/db.js";
 import { authenticate, errorHandler, requestContext, requireRole } from "./core/middleware.js";
-import { createTabularReportPdf, createTabularReportXlsx, createVillageReportPdf, createVillageReportXlsx } from "./modules/reports/reportExports.js";
 import { openApiDocument } from "./contracts/openapi.js";
-import {
-  deliverLineNotification,
-  enqueueLineNotification,
-  shouldSendRealtimeStatusNotification,
-} from "./modules/line/lineNotifications.js";
-import { handleLineWebhook } from "./modules/line/lineBot.js";
-import { applyNativeOwnerTransfer, findNativeAttachmentForAdmin, listNativeAttachments } from "./modules/line/lineNativeCitizen.js";
-import { createMfaSecret, createOtpAuthUrl, decryptMfaSecret, encryptMfaSecret, verifyTotp } from "./modules/security/mfa.js";
 import { wasteRouter } from "./modules/waste/waste.router.js";
+import { HttpError } from "./presentation/http/HttpError.js";
+import { Pet } from "./domain/pets/entities/Pet.js";
+import { Registration } from "./domain/registrations/entities/Registration.js";
+import { CitizenSubmission } from "./domain/submissions/entities/CitizenSubmission.js";
 
 const registrationSchema = z.object({
   ownerName: z.string().trim().min(2).max(150),
@@ -64,20 +59,6 @@ const registrationStatusSchema = z.object({
   ) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["note"], message: "กรุณาระบุเหตุผลหรือข้อมูลที่ต้องแก้ไข" });
   }
-});
-
-const REGISTRATION_TRANSITIONS = Object.freeze({
-  SUBMITTED: ["UNDER_REVIEW", "NEED_MORE_INFO", "APPROVED", "REJECTED"],
-  UNDER_REVIEW: ["NEED_MORE_INFO", "APPROVED", "REJECTED"],
-  NEED_MORE_INFO: ["UNDER_REVIEW", "APPROVED", "REJECTED"],
-});
-
-const PET_STATUS_TRANSITIONS = Object.freeze({
-  ACTIVE: ["MISSING", "MOVED_OUT", "DECEASED"],
-  MISSING: ["ACTIVE", "MOVED_OUT", "DECEASED"],
-  MOVED_OUT: ["ACTIVE"],
-  DECEASED: ["ACTIVE"],
-  TRANSFERRED: ["ACTIVE"],
 });
 
 const ownerCreateSchema = z.object({
@@ -233,10 +214,7 @@ function validateCitizenSubmissionDates(input) {
 }
 
 function createHttpError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  error.expose = true;
-  return error;
+  return new HttpError(status, message);
 }
 
 function getPagination(query, { defaultPageSize = 50, maxPageSize = 100 } = {}) {
@@ -390,11 +368,11 @@ function ensureOccurredDate(value, fieldLabel) {
   if (value > today) throw createHttpError(422, `${fieldLabel}ต้องไม่เป็นวันที่ในอนาคต`);
 }
 
-async function applyCitizenSubmission(db, submission, reviewerId) {
+async function applyCitizenSubmission(db, submission, reviewerId, nativeCitizenService) {
   const proposed = parseJsonObject(submission.proposedPayload);
   const current = parseJsonObject(submission.currentPayload);
   if (submission.subjectType === "OWNER_TRANSFER") {
-    await applyNativeOwnerTransfer(db, submission, reviewerId);
+    await nativeCitizenService.applyOwnerTransfer(db, submission, reviewerId);
     return;
   }
   if (submission.subjectType === "PET_UPDATE") {
@@ -1034,8 +1012,31 @@ async function loadOperationalReport(type, cutoffDate, villageId = null) {
   throw createHttpError(404, "ไม่พบประเภทรายงาน");
 }
 
-export function createApp() {
-  const app = express();
+export class SmartThaPhoApiApplication {
+  constructor({ expressFactory = express, services } = {}) {
+    if (!services) throw new TypeError("SmartThaPhoApiApplication requires application services");
+    this.expressFactory = expressFactory;
+    this.services = services;
+  }
+
+  create() {
+  const { lineNotifications, nativeCitizen, lineBot, reportExports, mfa } = this.services;
+  const handleLineWebhook = (req, res) => lineBot.handleWebhook(req, res);
+  const deliverLineNotification = (id) => lineNotifications.deliver(id);
+  const enqueueLineNotification = (database, notification) => lineNotifications.enqueue(database, notification);
+  const shouldSendRealtimeStatusNotification = (status) => lineNotifications.shouldSendRealtimeStatus(status);
+  const findNativeAttachmentForAdmin = (id, villageId) => nativeCitizen.findAttachmentForAdmin(id, villageId);
+  const listNativeAttachments = (entityType, entityId) => nativeCitizen.listAttachments(entityType, entityId);
+  const createTabularReportPdf = (report, options) => reportExports.createTabularPdf(report, options);
+  const createTabularReportXlsx = (report, options) => reportExports.createTabularXlsx(report, options);
+  const createVillageReportPdf = (rows, options) => reportExports.createVillagePdf(rows, options);
+  const createVillageReportXlsx = (rows, options) => reportExports.createVillageXlsx(rows, options);
+  const createMfaSecret = () => mfa.createSecret();
+  const createOtpAuthUrl = (input) => mfa.createOtpAuthUrl(input);
+  const decryptMfaSecret = (encrypted) => mfa.decryptSecret(encrypted);
+  const encryptMfaSecret = (secret) => mfa.encryptSecret(secret);
+  const verifyTotp = (secret, code, options) => mfa.verify(secret, code, options);
+  const app = this.expressFactory();
   app.set("trust proxy", 1);
 
   app.use(helmet());
@@ -2277,14 +2278,8 @@ export function createApp() {
           );
           const submission = rows[0];
           if (!submission) throw createHttpError(404, "ไม่พบข้อมูลรายการนี้หรือไม่มีสิทธิ์เข้าถึง");
-          if (Number(submission.version) !== input.version) throw createHttpError(409, "ข้อมูลถูกแก้ไขโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุด");
-          const allowed = {
-            SUBMITTED: ["UNDER_REVIEW", "NEED_MORE_INFO", "APPROVED", "REJECTED"],
-            UNDER_REVIEW: ["NEED_MORE_INFO", "APPROVED", "REJECTED"],
-            NEED_MORE_INFO: ["UNDER_REVIEW", "APPROVED", "REJECTED"],
-          };
-          if (!(allowed[submission.status] || []).includes(input.status)) throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะข้อมูลตามลำดับนี้ได้");
-          if (input.status === "APPROVED") await applyCitizenSubmission(db, submission, req.user.sub);
+          new CitizenSubmission(submission).assertVersion(input.version).transitionTo(input.status);
+          if (input.status === "APPROVED") await applyCitizenSubmission(db, submission, req.user.sub, nativeCitizen);
           await db.execute(
             `UPDATE citizen_submissions
              SET status = ?, review_note = NULLIF(?, ''), reviewed_by = ?, reviewed_at = NOW(), version = version + 1
@@ -2712,10 +2707,7 @@ export function createApp() {
             throw createHttpError(404, "ไม่พบข้อมูลขึ้นทะเบียน");
           }
 
-          const allowedStatuses = REGISTRATION_TRANSITIONS[registration.oldStatus] || [];
-          if (!allowedStatuses.includes(status)) {
-            throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะข้อมูลตามลำดับงานนี้ได้");
-          }
+          new Registration({ id: req.params.id, status: registration.oldStatus }).transitionTo(status);
 
           await db.execute(
             `
@@ -3169,10 +3161,7 @@ export function createApp() {
           );
           const pet = rows[0];
           if (!pet) throw createHttpError(404, "ไม่พบข้อมูลสัตว์");
-          if (pet.status === input.status) throw createHttpError(409, "สัตว์มีสถานะนี้อยู่แล้ว");
-          if (!(PET_STATUS_TRANSITIONS[pet.status] || []).includes(input.status)) {
-            throw createHttpError(409, "ไม่สามารถเปลี่ยนสถานะสัตว์ตามลำดับงานนี้ได้");
-          }
+          new Pet({ id: req.params.id, status: pet.status }).changeStatusTo(input.status);
 
           await db.execute("UPDATE pets SET status = ? WHERE id = ?", [input.status, req.params.id]);
           await db.execute(
@@ -3212,7 +3201,7 @@ export function createApp() {
           );
           const pet = petRows[0];
           if (!pet) throw createHttpError(404, "ไม่พบข้อมูลสัตว์");
-          if (pet.ownerId === input.ownerId) throw createHttpError(409, "เจ้าของใหม่ต้องไม่ใช่เจ้าของปัจจุบัน");
+          new Pet(pet).transferTo(input.ownerId);
           const [ownerRows] = await db.execute(
             "SELECT id FROM owners WHERE id = ? AND deleted_at IS NULL LIMIT 1",
             [input.ownerId],
@@ -3807,4 +3796,9 @@ export function createApp() {
   app.use(errorHandler);
 
   return app;
+  }
+}
+
+export function createApp(options = {}) {
+  return new SmartThaPhoApiApplication(options).create();
 }

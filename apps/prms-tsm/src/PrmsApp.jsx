@@ -1,10 +1,10 @@
 import { lazy, Suspense, useEffect, useMemo } from "react";
 import AdminLayout from "./components/layout/AdminLayout.jsx";
 import PageErrorBoundary from "./components/layout/PageErrorBoundary.jsx";
-import { ADMIN_MENU } from "./config/navigation.js";
 import { useHashPage } from "./hooks/useHashPage.js";
-import { clearSession, getAccessToken, readSessionUser } from "@smart-thapho/web-core/session";
-import { getPortalUrl, getSystemPickerUrl } from "@smart-thapho/web-core/navigation";
+import { PrmsApplicationController } from "./application/PrmsApplicationController.js";
+
+const applicationController = new PrmsApplicationController();
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage.jsx"));
 const OwnersPage = lazy(() => import("./pages/OwnersPage.jsx"));
@@ -20,32 +20,24 @@ function PageLoading() {
 }
 
 export default function PrmsApp() {
-  const token = getAccessToken();
-  const user = useMemo(() => readSessionUser(token), [token]);
-  const { page, navigate } = useHashPage();
-  const permittedPage = page === "settings" && user?.role !== "ADMIN" ? "dashboard" : page;
-  const title = useMemo(() => ADMIN_MENU.find((item) => item.id === permittedPage)?.label || "ภาพรวม", [permittedPage]);
-  const Page = PAGE_COMPONENTS[permittedPage] || DashboardPage;
+  const { page: requestedPage, navigate } = useHashPage();
+  const viewModel = useMemo(() => applicationController.createViewModel(requestedPage), [requestedPage]);
+  const { token, user, page, title } = viewModel;
+  const Page = PAGE_COMPONENTS[page] || DashboardPage;
 
   useEffect(() => {
-    if (!token) window.location.replace(getPortalUrl());
+    if (!token) applicationController.redirectToLogin();
   }, [token]);
 
   useEffect(() => {
-    if (page === "settings" && user?.role !== "ADMIN") navigate("dashboard");
-  }, [navigate, page, user?.role]);
+    if (requestedPage !== page) navigate(page);
+  }, [navigate, page, requestedPage]);
 
   if (!token) return <main className="prms-auth-check">กำลังนำกลับไปยังหน้าเข้าสู่ระบบ…</main>;
 
-  const returnToPortal = () => window.location.assign(getSystemPickerUrl());
-  const logout = () => {
-    clearSession();
-    window.location.assign(getPortalUrl());
-  };
-
   return (
-    <AdminLayout page={permittedPage} navigate={navigate} title={title} user={user} onLogout={logout} onSwitchSystem={returnToPortal}>
-      <PageErrorBoundary key={permittedPage} onRecover={() => navigate("dashboard")}>
+    <AdminLayout page={page} navigate={navigate} title={title} user={user} onLogout={() => applicationController.logout()} onSwitchSystem={() => applicationController.switchSystem()}>
+      <PageErrorBoundary key={page} onRecover={() => navigate("dashboard")}>
         <Suspense fallback={<PageLoading />}><Page token={token} navigate={navigate} /></Suspense>
       </PageErrorBoundary>
     </AdminLayout>

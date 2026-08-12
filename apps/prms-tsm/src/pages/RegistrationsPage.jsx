@@ -5,13 +5,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createPrmsApplication } from "../composition-root/createPrmsApplication.js";
 import {
   EmptyState,
   Notice,
   PageHead,
   Pagination,
 } from "../components/common/PageUI.jsx";
+import { registrationReviewPolicy } from "../domain/RegistrationReviewPolicy.js";
 
 const STATUS_LABELS = {
   SUBMITTED: "รอตรวจสอบ",
@@ -72,7 +73,6 @@ const FIELD_LABELS = {
 
 const SPECIES_LABELS = { DOG: "สุนัข", CAT: "แมว" };
 const SEX_LABELS = { MALE: "เพศผู้", FEMALE: "เพศเมีย", UNKNOWN: "ไม่ระบุ" };
-const CLOSED = new Set(["APPROVED", "REJECTED", "CANCELLED"]);
 
 function formatThaiDate(value, time = false) {
   if (!value) return "—";
@@ -99,18 +99,15 @@ function displayValue(field, value) {
 }
 
 function ageLabel(item) {
-  const days = Number(item.ageDays || 0);
-  if (days <= 0) return "วันนี้";
-  if (days === 1) return "1 วัน";
-  return `${days.toLocaleString("th-TH")} วัน`;
+  return registrationReviewPolicy.ageLabel(item);
 }
 
 function isUrgent(item) {
-  return item.status === "SUBMITTED" && Number(item.ageDays || 0) >= 3;
+  return registrationReviewPolicy.isUrgent(item);
 }
 
 function sourceLabel(item) {
-  return item.sourceType === "CITIZEN_SUBMISSION" ? "LINE Official Account" : "ข้อมูลขึ้นทะเบียน";
+  return registrationReviewPolicy.sourceLabel(item);
 }
 
 function Icon({ name }) {
@@ -172,7 +169,7 @@ function QueueItem({ item, active, busy, onOpen, onStart }) {
         </span>
       </button>
 
-      {item.status !== "UNDER_REVIEW" && !CLOSED.has(item.status) ? (
+      {item.status !== "UNDER_REVIEW" && !registrationReviewPolicy.isClosed(item.status) ? (
         <button
           type="button"
           className="inbox-row__start"
@@ -331,7 +328,7 @@ function DetailPanel({
   onSubmit,
   onDownload,
 }) {
-  const closed = detail ? CLOSED.has(detail.status) : false;
+  const closed = detail ? registrationReviewPolicy.isClosed(detail.status) : false;
   const noteRequired = ["NEED_MORE_INFO", "REJECTED"].includes(decision);
 
   return (
@@ -436,7 +433,7 @@ function DetailPanel({
 }
 
 export default function RegistrationsPage({ token }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createPrmsApplication(token), [token]);
   const sequence = useRef(0);
 
   const [rows, setRows] = useState([]);
@@ -565,7 +562,7 @@ export default function RegistrationsPage({ token }) {
   }
 
   async function startReview(item) {
-    if (item.status === "UNDER_REVIEW" || CLOSED.has(item.status)) return;
+    if (item.status === "UNDER_REVIEW" || registrationReviewPolicy.isClosed(item.status)) return;
     await updateStatus(item, "UNDER_REVIEW");
   }
 

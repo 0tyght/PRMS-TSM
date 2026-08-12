@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { DEFAULT_PAGE, isAdminPage } from "../config/navigation.js";
+import { HashNavigation } from "@smart-thapho/web-core/hash-navigation";
+
+const hashNavigation = new HashNavigation({ defaultPage: DEFAULT_PAGE });
 
 function pageFromHash() {
-  const page = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+  const page = hashNavigation.read().page;
   return isAdminPage(page) ? page : DEFAULT_PAGE;
 }
 
@@ -11,16 +14,12 @@ export function useHashPage() {
 
   useEffect(() => {
     if (!window.location.hash) window.history.replaceState(null, "", `#/${DEFAULT_PAGE}`);
-    const onHashChange = () => setPage(pageFromHash());
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
+    return hashNavigation.subscribe(() => setPage(pageFromHash()));
   }, []);
 
   const navigate = useCallback(nextPage => {
     const safePage = isAdminPage(nextPage) ? nextPage : DEFAULT_PAGE;
-    const nextHash = `#/${safePage}`;
-    if (window.location.hash === nextHash) setPage(safePage);
-    else window.location.hash = nextHash;
+    hashNavigation.navigate(safePage);
     window.scrollTo({ top:0, behavior:"auto" });
   }, []);
 

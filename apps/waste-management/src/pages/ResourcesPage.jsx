@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, StatusBadge, formatNumber } from "../components/ui.jsx";
 import RouteEditor from "../components/RouteEditor.jsx";
 
@@ -142,7 +142,7 @@ function RouteStopsManager({ api, route, onClose, onSaved }) {
 }
 
 export default function ResourcesPage({ token }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createWasteApplication(token), [token]);
   const [tab, setTab] = useState("vehicles");
   const [data, setData] = useState({ vehicles: [], drivers: [], routes: [] });
   const [loading, setLoading] = useState(true);

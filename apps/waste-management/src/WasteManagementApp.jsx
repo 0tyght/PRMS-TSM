@@ -1,6 +1,4 @@
 import { useEffect, useMemo } from "react";
-import { clearSession, getAccessToken, readSessionUser } from "@smart-thapho/web-core/session";
-import { getPortalUrl, getSystemPickerUrl } from "@smart-thapho/web-core/navigation";
 import WasteLayout from "./components/WasteLayout.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import PlansPage from "./pages/PlansPage.jsx";
@@ -11,6 +9,7 @@ import BillingPage from "./pages/BillingPage.jsx";
 import IncidentsPage from "./pages/IncidentsPage.jsx";
 import ReportsPage from "./pages/ReportsPage.jsx";
 import { useHashPage } from "./lib/useHashPage.js";
+import { WasteApplicationController } from "./application/WasteApplicationController.js";
 import "./waste.css";
 
 const PAGES = Object.freeze({
@@ -24,23 +23,20 @@ const PAGES = Object.freeze({
   reports: ReportsPage,
 });
 
+const applicationController = new WasteApplicationController({ pageIds: Object.keys(PAGES) });
+
 export default function WasteManagementApp() {
-  const token = getAccessToken();
-  const user = useMemo(() => readSessionUser(token), [token]);
-  const { page, query, navigate } = useHashPage();
+  const { page: requestedPage, query, navigate } = useHashPage();
+  const viewModel = useMemo(() => applicationController.createViewModel(requestedPage), [requestedPage]);
+  const { token, user, page } = viewModel;
   const Page = PAGES[page] || DashboardPage;
 
-  useEffect(() => { if (!token) window.location.replace(getPortalUrl()); }, [token]);
+  useEffect(() => { if (!token) applicationController.redirectToLogin(); }, [token]);
   useEffect(() => {
-    const handleExpiredSession = () => {
-      clearSession();
-      window.location.assign(getPortalUrl());
-    };
-    window.addEventListener("smart-thapho:session-expired", handleExpiredSession);
-    return () => window.removeEventListener("smart-thapho:session-expired", handleExpiredSession);
+    return applicationController.subscribeToExpiration(() => applicationController.logout());
   }, []);
+  useEffect(() => { if (requestedPage !== page) navigate(page); }, [navigate, page, requestedPage]);
   if (!token) return <main className="waste-auth-check">กำลังตรวจสอบสิทธิ์เข้าใช้งาน</main>;
 
-  const logout = () => { clearSession(); window.location.assign(getPortalUrl()); };
-  return <WasteLayout page={page} navigate={navigate} user={user} onSwitchSystem={() => window.location.assign(getSystemPickerUrl())} onLogout={logout}><Page token={token} navigate={navigate} planId={query.get("plan")} /></WasteLayout>;
+  return <WasteLayout page={page} navigate={navigate} user={user} onSwitchSystem={() => applicationController.switchSystem()} onLogout={() => applicationController.logout()}><Page token={token} navigate={navigate} planId={query.get("plan")} /></WasteLayout>;
 }

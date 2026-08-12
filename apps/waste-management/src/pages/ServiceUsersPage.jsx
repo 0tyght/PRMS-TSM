@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import LocationPicker from "../components/LocationPicker.jsx";
 import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, StatusBadge, formatNumber } from "../components/ui.jsx";
+import { wasteServiceUserPolicy } from "../domain/WasteServiceUserPolicy.js";
 
 function ServiceUserForm({ initial, villages, routes, onCancel, onSubmit, saving }) {
   const [location, setLocation] = useState(() => ({
@@ -43,7 +44,7 @@ function ServiceUserForm({ initial, villages, routes, onCancel, onSubmit, saving
 }
 
 export default function ServiceUsersPage({ token }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createWasteApplication(token), [token]);
   const [users, setUsers] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [villages, setVillages] = useState([]);
@@ -90,27 +91,19 @@ export default function ServiceUsersPage({ token }) {
     }
   };
 
-  const filteredUsers = useMemo(() => {
-    const keyword = search.trim().toLocaleLowerCase("th-TH");
-    return users.filter((user) => {
-      if (routeFilter === "UNASSIGNED" && user.routeId) return false;
-      if (routeFilter !== "ALL" && routeFilter !== "UNASSIGNED" && user.routeId !== routeFilter) return false;
-      if (!keyword) return true;
-      return [user.serviceNo, user.fullName, user.phone, user.houseNo, user.villageName, user.routeName]
-        .some((value) => String(value || "").toLocaleLowerCase("th-TH").includes(keyword));
-    });
-  }, [routeFilter, search, users]);
-
-  const unassigned = users.filter((user) => user.isActive && !user.routeId).length;
-  const linked = users.filter((user) => user.lineUserId).length;
+  const filteredUsers = useMemo(
+    () => wasteServiceUserPolicy.filter(users, { routeId: routeFilter, search }),
+    [routeFilter, search, users],
+  );
+  const summary = useMemo(() => wasteServiceUserPolicy.summarize(users), [users]);
 
   return <>
     <PageHead eyebrow="SERVICE USERS" title="ทะเบียนผู้ใช้บริการเก็บขยะ" detail="จัดการบ้านเรือนหรือสถานที่รับบริการ กำหนดตำแหน่งบนแผนที่ และเชื่อมเข้ากับเส้นทางรับผิดชอบ" actions={<button type="button" className="waste-button waste-button--primary" onClick={() => setModal({})}>+ เพิ่มผู้ใช้บริการ</button>} />
     <ErrorNotice error={error} onRetry={load} />
     <section className="waste-compact-stats" aria-label="สรุปทะเบียนผู้ใช้บริการ">
-      <article><span>ผู้ใช้บริการทั้งหมด</span><strong>{formatNumber(users.length)}</strong><small>ราย</small></article>
-      <article className={unassigned ? "is-warning" : ""}><span>ยังไม่กำหนดเส้นทาง</span><strong>{formatNumber(unassigned)}</strong><small>รายที่ต้องดำเนินการ</small></article>
-      <article><span>เชื่อม LINE แล้ว</span><strong>{formatNumber(linked)}</strong><small>จาก {formatNumber(users.length)} ราย</small></article>
+      <article><span>ผู้ใช้บริการทั้งหมด</span><strong>{formatNumber(summary.total)}</strong><small>ราย</small></article>
+      <article className={summary.unassigned ? "is-warning" : ""}><span>ยังไม่กำหนดเส้นทาง</span><strong>{formatNumber(summary.unassigned)}</strong><small>รายที่ต้องดำเนินการ</small></article>
+      <article><span>เชื่อม LINE แล้ว</span><strong>{formatNumber(summary.linkedToLine)}</strong><small>จาก {formatNumber(summary.total)} ราย</small></article>
     </section>
     <section className="waste-panel">
       <header className="waste-panel__head waste-panel__head--filters">

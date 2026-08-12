@@ -1,4 +1,4 @@
-import { getApiBase } from "./runtimeConfig.js";
+import { runtimeConfigRepository } from "./runtimeConfig.js";
 
 const REQUEST_TIMEOUT_MS = 12000;
 
@@ -52,8 +52,14 @@ async function parseResponseBody(response) {
   return {};
 }
 
-export function createApi(token) {
-  async function fetchOnce(apiBase, path, options = {}) {
+export class ApiClient {
+  constructor({ token = "", configRepository = runtimeConfigRepository, fetchImplementation = fetch } = {}) {
+    this.token = token;
+    this.configRepository = configRepository;
+    this.fetchImplementation = fetchImplementation;
+  }
+
+  async fetchOnce(apiBase, path, options = {}) {
     const controller = new AbortController();
 
     const timeoutId = window.setTimeout(() => {
@@ -72,12 +78,12 @@ export function createApi(token) {
       headers.set("Content-Type", "application/json");
     }
 
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
+    if (this.token) {
+      headers.set("Authorization", `Bearer ${this.token}`);
     }
 
     try {
-      return await fetch(`${apiBase}${normalizeApiPath(path)}`, {
+      return await this.fetchImplementation(`${apiBase}${normalizeApiPath(path)}`, {
         ...options,
         headers,
         signal: controller.signal,
@@ -88,8 +94,8 @@ export function createApi(token) {
     }
   }
 
-  async function resolveApiBase(forceRefresh = false) {
-    const apiBase = await getApiBase(forceRefresh);
+  async resolveApiBase(forceRefresh = false) {
+    const apiBase = await this.configRepository.getApiBase(forceRefresh);
 
     if (!apiBase) {
       throw new Error(
@@ -100,23 +106,23 @@ export function createApi(token) {
     return apiBase.replace(/\/+$/, "");
   }
 
-  async function request(path, options = {}, unwrap = true) {
+  async request(path, options = {}, unwrap = true) {
     let apiBase;
 
     try {
-      apiBase = await resolveApiBase(false);
+      apiBase = await this.resolveApiBase(false);
     } catch {
-      apiBase = await resolveApiBase(true);
+      apiBase = await this.resolveApiBase(true);
     }
 
     let response;
 
     try {
-      response = await fetchOnce(apiBase, path, options);
+      response = await this.fetchOnce(apiBase, path, options);
     } catch (firstError) {
       try {
-        apiBase = await resolveApiBase(true);
-        response = await fetchOnce(apiBase, path, options);
+        apiBase = await this.resolveApiBase(true);
+        response = await this.fetchOnce(apiBase, path, options);
       } catch (retryError) {
         throw createConnectionError(retryError || firstError);
       }
@@ -128,11 +134,11 @@ export function createApi(token) {
      */
     if (response.status >= 500) {
       try {
-        const refreshedApiBase = await resolveApiBase(true);
+        const refreshedApiBase = await this.resolveApiBase(true);
 
         if (refreshedApiBase !== apiBase) {
           apiBase = refreshedApiBase;
-          response = await fetchOnce(apiBase, path, options);
+          response = await this.fetchOnce(apiBase, path, options);
         }
       } catch {
         // ใช้ response เดิมและจัดการข้อความผิดพลาดด้านล่าง
@@ -177,41 +183,40 @@ export function createApi(token) {
     return unwrap ? (body.data ?? null) : body;
   }
 
-  function createJsonOptions(method, data) {
+  createJsonOptions(method, data) {
     return {
       method,
       body: data === undefined ? undefined : JSON.stringify(data),
     };
   }
 
-  return {
-    get(path) {
-      return request(path);
-    },
+  get(path) {
+    return this.request(path);
+  }
 
-    getPage(path) {
-      return request(path, {}, false);
-    },
+  getPage(path) {
+    return this.request(path, {}, false);
+  }
 
-    post(path, data) {
-      return request(path, createJsonOptions("POST", data));
-    },
+  post(path, data) {
+    return this.request(path, this.createJsonOptions("POST", data));
+  }
 
-    patch(path, data) {
-      return request(path, createJsonOptions("PATCH", data));
-    },
+  patch(path, data) {
+    return this.request(path, this.createJsonOptions("PATCH", data));
+  }
 
-    put(path, data) {
-      return request(path, createJsonOptions("PUT", data));
-    },
+  put(path, data) {
+    return this.request(path, this.createJsonOptions("PUT", data));
+  }
 
-    delete(path, data) {
-      return request(path, createJsonOptions("DELETE", data));
-    },
+  delete(path, data) {
+    return this.request(path, this.createJsonOptions("DELETE", data));
+  }
 
-    async download(path, fallbackFileName) {
-      const apiBase = await resolveApiBase(false);
-      const response = await fetchOnce(apiBase, path);
+  async download(path, fallbackFileName) {
+      const apiBase = await this.resolveApiBase(false);
+      const response = await this.fetchOnce(apiBase, path);
       if (!response.ok) {
         const body = await parseResponseBody(response);
         throw new Error(body.message || "ไม่สามารถส่งออกรายงานได้");
@@ -224,6 +229,9 @@ export function createApi(token) {
       anchor.download = matched?.[1] || fallbackFileName;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
-    },
-  };
+  }
+}
+
+export function createApi(token) {
+  return new ApiClient({ token });
 }

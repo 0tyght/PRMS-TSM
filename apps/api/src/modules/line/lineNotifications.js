@@ -117,7 +117,7 @@ export function buildHouseholdVaccinationMessage(group) {
   const omitted = Math.max(0, items.length - included);
   if (omitted > 0) lines.push(`• และอีก ${omitted} ตัว กรุณาเปิดเมนูสุขภาพสัตว์เพื่อตรวจสอบ`);
 
-  lines.push("\nกรุณาติดต่อเทศบาลท่าโพธิ์ หรือบันทึกข้อมูลวัคซีนล่าสุดผ่าน LINE");
+  lines.push("\nกรุณาติดต่อเทศบาลท่าโพธ์ หรือบันทึกข้อมูลวัคซีนล่าสุดผ่าน LINE");
 
   const message = lines.join("\n");
   return message.length <= LINE_TEXT_LIMIT

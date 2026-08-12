@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { SMART_THA_PHO } from "../config/systems.js";
 import SystemPicker from "../components/platform/SystemPicker.jsx";
-import { createApi } from "@smart-thapho/web-core/api";
-import { setAccessToken, setActiveSystem } from "@smart-thapho/web-core/session";
+import { createAuthenticateStaffUseCase } from "../composition-root/createAuthenticateStaffUseCase.js";
+
+const authenticateStaff = createAuthenticateStaffUseCase();
 
 export default function PlatformLoginPage({ onLogin }) {
   const [selectedSystemId, setSelectedSystemId] = useState("");
@@ -16,26 +17,17 @@ export default function PlatformLoginPage({ onLogin }) {
   async function submit(event) {
     event.preventDefault();
 
-    if (!selectedSystemId) {
-      setError("กรุณาเลือกเว็บระบบที่ต้องการใช้งาน");
-      return;
-    }
-
     setBusy(true);
     setError("");
 
     try {
-      const data = challengeToken
-        ? await createApi(null).post("/api/auth/mfa/verify", { challengeToken, code })
-        : await createApi(null).post("/api/auth/login", { email, password });
+      const data = await authenticateStaff.execute({ systemId: selectedSystemId, email, password, challengeToken, code });
 
       if (data.mfaRequired) {
         setChallengeToken(data.challengeToken);
         return;
       }
 
-      setAccessToken(data.token);
-      setActiveSystem(selectedSystemId);
       onLogin(data.token, selectedSystemId);
     } catch (requestError) {
       setError(requestError.message || "ไม่สามารถเข้าสู่ระบบได้");

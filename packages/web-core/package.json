@@ -3,10 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
   "exports": {
     "./api": "./src/api.js",
     "./session": "./src/session.js",
     "./navigation": "./src/navigation.js",
+    "./runtime-config": "./src/runtimeConfig.js",
+    "./application": "./src/application/SystemApplicationController.js",
+    "./hash-navigation": "./src/application/HashNavigation.js",
     "./workspace": "./src/MunicipalWorkspace.jsx",
     "./theme.css": "./src/theme.css"
   },

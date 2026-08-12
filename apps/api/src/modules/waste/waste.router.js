@@ -4,6 +4,8 @@ import { z } from "zod";
 import { config } from "../../core/config.js";
 import { pool, withTransaction } from "../../core/db.js";
 import { authenticate, requireRole } from "../../core/middleware.js";
+import { WasteOperationPlan } from "../../domain/waste/entities/WasteOperationPlan.js";
+import { HttpError } from "../../presentation/http/HttpError.js";
 
 const router = Router();
 
@@ -118,10 +120,7 @@ function hashLinkCode(value) {
 }
 
 function httpError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  error.expose = true;
-  return error;
+  return new HttpError(status, message);
 }
 
 function toBoolean(value) {
@@ -646,7 +645,7 @@ router.patch("/plans/:id", requireRole("ADMIN", "OFFICER"), async (req, res, nex
         [req.params.id],
       );
       if (!planRows[0]) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
-      if (planRows[0].status !== "SCHEDULED") throw httpError(409, "แก้ไขได้เฉพาะแผนงานที่ยังไม่เริ่มปฏิบัติงาน");
+      new WasteOperationPlan({ id: req.params.id, ...planRows[0] }).assertEditable();
       const current = planRows[0];
       const merged = {
         scheduledDate: input.scheduledDate || asDateOnly(current.scheduledDate),
@@ -680,14 +679,7 @@ router.patch("/plans/:id/status", requireRole("ADMIN", "OFFICER"), async (req, r
     await withTransaction(async (db) => {
       const [rows] = await db.execute(`SELECT status, vehicle_id AS vehicleId FROM waste_operation_plans WHERE id = ? FOR UPDATE`, [req.params.id]);
       if (!rows[0]) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
-      const allowed = {
-        SCHEDULED: ["IN_PROGRESS", "CANCELLED"],
-        IN_PROGRESS: ["COMPLETED", "INTERRUPTED", "CANCELLED"],
-        INTERRUPTED: ["IN_PROGRESS", "COMPLETED", "CANCELLED"],
-        COMPLETED: [],
-        CANCELLED: [],
-      };
-      if (!allowed[rows[0].status]?.includes(input.status)) throw httpError(409, "ไม่สามารถเปลี่ยนสถานะแผนงานตามลำดับนี้ได้");
+      new WasteOperationPlan({ id: req.params.id, ...rows[0] }).transitionTo(input.status);
       if (input.status === "IN_PROGRESS") {
         const [vehicleRows] = await db.execute(`SELECT status FROM waste_vehicles WHERE id = ? FOR UPDATE`, [rows[0].vehicleId]);
         const [driverRows] = await db.execute(`SELECT d.is_active AS isActive FROM waste_drivers d INNER JOIN waste_operation_plans p ON p.driver_id = d.id WHERE p.id = ?`, [req.params.id]);
@@ -908,4 +900,15 @@ router.get("/reports/billing", requireRole("ADMIN", "OFFICER", "VIEWER"), async 
   } catch (error) { next(error); }
 });
 
-export { router as wasteRouter };
+export class WasteHttpModule {
+  constructor(expressRouter) {
+    this.router = expressRouter;
+  }
+
+  getRouter() {
+    return this.router;
+  }
+}
+
+export const wasteHttpModule = new WasteHttpModule(router);
+export const wasteRouter = wasteHttpModule.getRouter();

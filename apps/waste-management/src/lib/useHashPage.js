@@ -1,22 +1,20 @@
 import { useEffect, useState } from "react";
+import { HashNavigation } from "@smart-thapho/web-core/hash-navigation";
 
 const DEFAULT_PAGE = "dashboard";
+const hashNavigation = new HashNavigation({ defaultPage: DEFAULT_PAGE });
 
 function readRoute() {
-  const value = window.location.hash.replace(/^#\/?/, "").trim();
-  const [path = DEFAULT_PAGE, query = ""] = value.split("?");
-  return { page: path || DEFAULT_PAGE, query: new URLSearchParams(query) };
+  return hashNavigation.read();
 }
 
 export function useHashPage() {
   const [route, setRoute] = useState(readRoute);
 
   useEffect(() => {
-    const onChange = () => setRoute(readRoute());
-    window.addEventListener("hashchange", onChange);
-    return () => window.removeEventListener("hashchange", onChange);
+    return hashNavigation.subscribe(setRoute);
   }, []);
 
-  const navigate = (nextPage) => { window.location.hash = `/${nextPage}`; };
+  const navigate = (nextPage) => hashNavigation.navigate(nextPage);
   return { page: route.page, query: route.query, navigate };
 }

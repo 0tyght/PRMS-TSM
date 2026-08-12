@@ -1,3 +1,9 @@
+import { MunicipalSystemCatalog } from "./domain/services/MunicipalSystemCatalog.js";
+import { PetRegistrationValidator } from "./domain/services/PetRegistrationValidator.js";
+import { ThaiPhoneNumber } from "./domain/value-objects/ThaiPhoneNumber.js";
+
+export { MunicipalSystemCatalog, PetRegistrationValidator, ThaiPhoneNumber };
+
 export const ORGANIZATION = Object.freeze({
   shortName: "เทศบาลท่าโพธ์",
   systemName: "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง",
@@ -12,7 +18,7 @@ export const PLATFORM = Object.freeze({
   systemName: "แพลตฟอร์มบริการดิจิทัลเทศบาลท่าโพธ์",
 });
 
-export const MUNICIPAL_SYSTEMS = Object.freeze([
+const SYSTEM_DEFINITIONS = [
   Object.freeze({
     id: "pet",
     productName: "Pet Registration Management",
@@ -46,10 +52,13 @@ export const MUNICIPAL_SYSTEMS = Object.freeze([
     description: "จัดการผู้ใช้น้ำ มิเตอร์ ค่าบริการ และแจ้งเหตุระบบประปา",
     availability: "setup",
   }),
-]);
+];
+
+export const municipalSystemCatalog = new MunicipalSystemCatalog(SYSTEM_DEFINITIONS);
+export const MUNICIPAL_SYSTEMS = municipalSystemCatalog.list();
 
 export function getMunicipalSystem(systemId) {
-  return MUNICIPAL_SYSTEMS.find((system) => system.id === systemId) || null;
+  return municipalSystemCatalog.findById(systemId);
 }
 
 export const SPECIES = Object.freeze({ DOG: "DOG", CAT: "CAT" });
@@ -64,20 +73,17 @@ export const REGISTRATION_STATUS = Object.freeze({
 });
 
 export function normalizeThaiPhone(value = "") {
-  return String(value).replace(/\D/g, "").slice(0, 10);
+  return ThaiPhoneNumber.normalize(value);
 }
 
 export function isValidThaiPhone(value) {
-  return /^0\d{9}$/.test(normalizeThaiPhone(value));
+  return ThaiPhoneNumber.isValid(value);
 }
 
+export const petRegistrationValidator = new PetRegistrationValidator({
+  supportedSpecies: Object.values(SPECIES),
+});
+
 export function validatePetRegistration(input) {
-  const errors = {};
-  if (!String(input.ownerName || "").trim()) errors.ownerName = "กรุณาระบุชื่อเจ้าของสัตว์";
-  if (!isValidThaiPhone(input.phone)) errors.phone = "กรุณาระบุหมายเลขโทรศัพท์ 10 หลัก";
-  if (!String(input.houseNo || "").trim()) errors.houseNo = "กรุณาระบุเลขที่บ้าน";
-  if (!String(input.villageId || "").trim()) errors.villageId = "กรุณาเลือกหมู่บ้าน";
-  if (!String(input.petName || "").trim()) errors.petName = "กรุณาระบุชื่อสัตว์";
-  if (!Object.values(SPECIES).includes(input.species)) errors.species = "กรุณาเลือกชนิดสัตว์";
-  return { valid: Object.keys(errors).length === 0, errors };
+  return petRegistrationValidator.validate(input);
 }

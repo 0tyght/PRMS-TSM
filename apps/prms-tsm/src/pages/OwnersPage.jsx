@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, LoadingPanel, Notice, PageHead, Pagination } from "../components/common/PageUI.jsx";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createPrmsApplication } from "../composition-root/createPrmsApplication.js";
 import "../admin-core.css";
 
 const emptyForm = {
@@ -19,7 +19,7 @@ function formatDate(value) {
 }
 
 export default function OwnersPage({ token }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createPrmsApplication(token), [token]);
   const [owners, setOwners] = useState([]);
   const [villages, setVillages] = useState([]);
   const [search, setSearch] = useState("");

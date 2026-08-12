@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, StatusBadge, formatDate, toDateInput } from "../components/ui.jsx";
 
 const INCIDENT_TYPES = Object.freeze({ VEHICLE_BREAKDOWN: "รถขัดข้อง", ACCIDENT: "อุบัติเหตุ", ROAD_CLOSED: "ถนนปิด", ACCESS_BLOCKED: "เข้าถึงจุดเก็บไม่ได้", OTHER: "อื่น ๆ" });
@@ -16,7 +16,7 @@ function ResolveForm({ incident, vehicles, onCancel, onSubmit, saving }) {
 }
 
 export default function IncidentsPage({ token }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createWasteApplication(token), [token]);
   const [incidents, setIncidents] = useState([]); const [resources, setResources] = useState({ plans: [], vehicles: [], drivers: [] }); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [modal, setModal] = useState(null); const [saving, setSaving] = useState(false);
   const load = useCallback(async () => { setLoading(true); setError(""); try { const [nextIncidents, plans, vehicles, drivers] = await Promise.all([api.get("/api/waste/incidents"), api.get("/api/waste/plans"), api.get("/api/waste/vehicles"), api.get("/api/waste/drivers")]); setIncidents(nextIncidents); setResources({ plans, vehicles, drivers }); } catch (requestError) { setError(requestError.message); } finally { setLoading(false); } }, [api]);
   useEffect(() => { void load(); }, [load]);

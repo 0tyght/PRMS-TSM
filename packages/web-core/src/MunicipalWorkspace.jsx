@@ -1,38 +1,21 @@
 import { useEffect, useMemo } from "react";
-import { getMunicipalSystem, PLATFORM } from "@smart-thapho/shared";
-import { clearSession, getAccessToken, readSessionUser } from "./session.js";
-import { getPortalUrl } from "./navigation.js";
+import { PLATFORM } from "@smart-thapho/shared";
+import { MunicipalWorkspaceController } from "./application/MunicipalWorkspaceController.js";
 import "./workspace.css";
 
-const WORKSPACE_DETAILS = Object.freeze({
-  waste: { accent: "orange", mark: "ขย", groups: ["แผนการเก็บขยะ", "รถและพนักงาน", "เส้นทางปฏิบัติงาน", "การแจ้งเตือนผ่าน LINE"] },
-  disaster: { accent: "red", mark: "ภย", groups: ["รับแจ้งเหตุ", "สถานการณ์", "กำลังและทรัพยากร", "การแจ้งเตือนประชาชน"] },
-  water: { accent: "blue", mark: "ปร", groups: ["ผู้ใช้น้ำ", "มิเตอร์และการใช้น้ำ", "ค่าบริการ", "แจ้งเหตุการประปา"] },
-});
-
-function initials(name) {
-  return String(name || "เจ้าหน้าที่").trim().slice(0, 2) || "จน";
-}
+const workspaceController = new MunicipalWorkspaceController();
 
 export function MunicipalWorkspace({ systemId }) {
-  const token = getAccessToken();
-  const system = getMunicipalSystem(systemId);
-  const detail = WORKSPACE_DETAILS[systemId];
-  const user = useMemo(() => readSessionUser(token), [token]);
+  const viewModel = useMemo(() => workspaceController.createViewModel(systemId), [systemId]);
+  const { token, system, detail, user, initials, ready } = viewModel;
 
   useEffect(() => {
-    if (!token) window.location.replace(getPortalUrl());
+    if (!token) workspaceController.redirectToLogin();
   }, [token]);
 
-  if (!token || !system || !detail) {
+  if (!ready) {
     return <main className="municipal-workspace__loading">กำลังตรวจสอบสิทธิ์เข้าใช้งาน…</main>;
   }
-
-  const returnToPortal = () => window.location.assign(getPortalUrl());
-  const logout = () => {
-    clearSession();
-    window.location.assign(getPortalUrl());
-  };
 
   return (
     <main className={`municipal-workspace municipal-workspace--${detail.accent}`}>
@@ -42,9 +25,9 @@ export function MunicipalWorkspace({ systemId }) {
           <span><strong>{PLATFORM.productName}</strong><small>{PLATFORM.municipalityName}</small></span>
         </div>
         <div className="municipal-workspace__actions">
-          <span aria-label={`ผู้ใช้ ${user.name}`}>{initials(user.name)}</span>
-          <button type="button" onClick={returnToPortal}>เปลี่ยนระบบ</button>
-          <button type="button" onClick={logout}>ออกจากระบบ</button>
+          <span aria-label={`ผู้ใช้ ${user.name}`}>{initials}</span>
+          <button type="button" onClick={() => workspaceController.switchSystem()}>เปลี่ยนระบบ</button>
+          <button type="button" onClick={() => workspaceController.logout()}>ออกจากระบบ</button>
         </div>
       </header>
       <section className="municipal-workspace__content">

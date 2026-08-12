@@ -4,10 +4,10 @@ import "leaflet/dist/leaflet.css";
 import villagesGeoJsonText from "../assets/maps/tha-pho-villages.geojson?raw";
 import {
   DASHBOARD_METRICS,
-  formatMetricValue,
-  getMetricValue,
+  villageDashboardPolicy,
 } from "../lib/dashboardVillageData.js";
 import { normalizePetsToVillages } from "../lib/geoVillageUtils.js";
+import { householdHealthPolicy } from "../domain/HouseholdHealthPolicy.js";
 
 const VILLAGES_GEOJSON = JSON.parse(villagesGeoJsonText);
 const MUNICIPALITY_BOUNDS = L.geoJSON(VILLAGES_GEOJSON).getBounds();
@@ -90,67 +90,15 @@ function interpolateColor(start, end, ratio) {
 
 function getPolygonFill(row, metric, maximum) {
   const [light, dark] = METRIC_COLORS[metric] || METRIC_COLORS.total;
-  const value = getMetricValue(row, metric);
+  const value = villageDashboardPolicy.getMetricValue(row, metric);
   const ratio = metric === "vaccination" || metric === "sterilization"
     ? clamp(value / 100, 0, 1)
     : clamp(value / Math.max(1, maximum), 0, 1);
   return interpolateColor(light, dark, 0.12 + ratio * 0.88);
 }
 
-function householdKey(pet) {
-  if (pet.householdId) return `household:${pet.householdId}`;
-  return [
-    "coordinate",
-    Number(pet.latitude).toFixed(7),
-    Number(pet.longitude).toFixed(7),
-    pet.houseNo || "",
-    pet.ownerName || "",
-  ].join("|");
-}
-
-function petHealthStatus(pet) {
-  const vaccinated = Boolean(pet.vaccinated);
-  const sterilized = Boolean(pet.sterilized);
-  if (vaccinated && sterilized) return "complete";
-  if (vaccinated || sterilized) return "partial";
-  return "critical";
-}
-
-function householdHealthStatus(pets) {
-  const statuses = pets.map(petHealthStatus);
-  if (statuses.includes("critical")) return "critical";
-  if (statuses.includes("partial")) return "partial";
-  return "complete";
-}
-
-function groupRealHouseholds(pets) {
-  const groups = new Map();
-  pets.forEach((pet) => {
-    const key = householdKey(pet);
-    const existing = groups.get(key) || {
-      key,
-      householdId: pet.householdId || null,
-      latitude: Number(pet.latitude),
-      longitude: Number(pet.longitude),
-      villageNo: Number(pet.villageNo),
-      houseNo: pet.houseNo || "",
-      addressDetail: pet.addressDetail || "",
-      ownerNames: new Set(),
-      pets: [],
-      mismatchCount: 0,
-    };
-    existing.pets.push(pet);
-    if (pet.ownerName) existing.ownerNames.add(pet.ownerName);
-    if (pet.coordinateStatus === "mismatch") existing.mismatchCount += 1;
-    groups.set(key, existing);
-  });
-
-  return [...groups.values()].map((item) => ({
-    ...item,
-    ownerNames: [...item.ownerNames],
-    healthStatus: householdHealthStatus(item.pets),
-  }));
-}
+const petHealthStatus = (pet) => householdHealthPolicy.petStatus(pet);
+const groupRealHouseholds = (pets) => householdHealthPolicy.groupHouseholds(pets);
 
 function markerIcon(household, selected) {
   const count = household.pets.length;
@@ -224,7 +172,7 @@ function villageTooltip(row, metric) {
     <div class="v6-village-tooltip">
       <strong>หมู่ ${row.id}</strong>
       <span>${escapeHtml(row.villageName || row.name || "")}</span>
-      <b>${escapeHtml(formatMetricValue(row, metric))}</b>
+      <b>${escapeHtml(villageDashboardPolicy.formatMetricValue(row, metric))}</b>
     </div>
   `;
 }
@@ -365,7 +313,7 @@ export default function DashboardMap({
     if (villageLayerRef.current) map.removeLayer(villageLayerRef.current);
     villageLayersRef.current.clear();
     const rowsByVillage = new Map(rows.map((row) => [Number(row.id), row]));
-    const maximum = Math.max(1, ...rows.map((row) => getMetricValue(row, metric)));
+    const maximum = Math.max(1, ...rows.map((row) => villageDashboardPolicy.getMetricValue(row, metric)));
 
     villageLayerRef.current = L.geoJSON(VILLAGES_GEOJSON, {
       style(feature) {

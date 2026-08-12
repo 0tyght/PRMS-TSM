@@ -5,38 +5,21 @@ import {
   useRef,
   useState,
 } from "react";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createPrmsApplication } from "../../composition-root/createPrmsApplication.js";
 import {
   EmptyState,
   Notice,
   Pagination,
   PageHead,
 } from "../common/PageUI.jsx";
+import { petStatusPolicy } from "../../domain/PetStatusPolicy.js";
+import { petDirectoryPolicy } from "../../domain/PetDirectoryPolicy.js";
 import "./PetDirectory.css";
 
-const PET_STATUS_LABELS = {
-  ACTIVE: "ปกติ",
-  MISSING: "สูญหาย",
-  TRANSFERRED: "ย้ายเจ้าของ",
-  MOVED_OUT: "ย้ายออกจากพื้นที่",
-  DECEASED: "เสียชีวิต",
-};
-
-const PET_STATUS_TONES = {
-  ACTIVE: "active",
-  MISSING: "missing",
-  TRANSFERRED: "transferred",
-  MOVED_OUT: "moved-out",
-  DECEASED: "deceased",
-};
-
-const PET_STATUS_TRANSITIONS = {
-  ACTIVE: ["MISSING", "MOVED_OUT", "DECEASED"],
-  MISSING: ["ACTIVE", "MOVED_OUT", "DECEASED"],
-  MOVED_OUT: ["ACTIVE"],
-  DECEASED: ["ACTIVE"],
-  TRANSFERRED: ["ACTIVE"],
-};
+const PET_STATUSES = ["ACTIVE", "MISSING", "TRANSFERRED", "MOVED_OUT", "DECEASED"];
+const PET_STATUS_LABELS = Object.freeze(Object.fromEntries(PET_STATUSES.map((status) => [status, petStatusPolicy.label(status)])));
+const PET_STATUS_TONES = Object.freeze(Object.fromEntries(PET_STATUSES.map((status) => [status, petStatusPolicy.tone(status)])));
+const getVaccinationStatus = (pet) => petStatusPolicy.vaccinationStatus(pet);
 
 function normalizeText(value) {
   return String(value ?? "").trim();
@@ -90,64 +73,6 @@ function addOneYear(dateText) {
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
-}
-
-function getVaccinationStatus(pet) {
-  if (!pet.lastVaccinatedAt) {
-    return {
-      key: "NONE",
-      label: "ยังไม่มีประวัติ",
-      tone: "none",
-    };
-  }
-
-  if (!pet.nextVaccinationDueAt) {
-    return {
-      key: "RECORDED",
-      label: "มีประวัติวัคซีน",
-      tone: "recorded",
-    };
-  }
-
-  const dueDate = parseDate(pet.nextVaccinationDueAt);
-
-  if (!dueDate) {
-    return {
-      key: "RECORDED",
-      label: "มีประวัติวัคซีน",
-      tone: "recorded",
-    };
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const remainingDays = Math.ceil(
-    (dueDate.getTime() - today.getTime()) /
-      (1000 * 60 * 60 * 24),
-  );
-
-  if (remainingDays < 0) {
-    return {
-      key: "OVERDUE",
-      label: "เกินกำหนด",
-      tone: "overdue",
-    };
-  }
-
-  if (remainingDays <= 30) {
-    return {
-      key: "DUE_SOON",
-      label: `ครบกำหนดใน ${remainingDays} วัน`,
-      tone: "due-soon",
-    };
-  }
-
-  return {
-    key: "CURRENT",
-    label: "ยังไม่ครบกำหนด",
-    tone: "current",
-  };
 }
 
 function getPetInitial(pet) {
@@ -521,7 +446,7 @@ function PetRegistryDialog({ pet, api, onClose, onSaved }) {
 
 function PetLifecycleDialog({ pet, api, onClose, onSaved }) {
   const today = new Date().toISOString().slice(0, 10);
-  const allowedStatuses = PET_STATUS_TRANSITIONS[pet.status] || [];
+  const allowedStatuses = petStatusPolicy.allowedTransitions(pet.status);
   const [detail, setDetail] = useState(null);
   const [owners, setOwners] = useState([]);
   const [mode, setMode] = useState("status");
@@ -598,38 +523,7 @@ function PetLifecycleDialog({ pet, api, onClose, onSaved }) {
 }
 
 function PetSummaryCards({ rows, visibleCount }) {
-  const summary = useMemo(() => {
-    return rows.reduce(
-      (result, pet) => {
-        result.total += 1;
-
-        if (pet.species === "DOG") {
-          result.dogs += 1;
-        }
-
-        if (pet.species === "CAT") {
-          result.cats += 1;
-        }
-
-        if (pet.lastVaccinatedAt) {
-          result.vaccinated += 1;
-        }
-
-        if (Boolean(Number(pet.sterilized))) {
-          result.sterilized += 1;
-        }
-
-        return result;
-      },
-      {
-        total: 0,
-        dogs: 0,
-        cats: 0,
-        vaccinated: 0,
-        sterilized: 0,
-      },
-    );
-  }, [rows]);
+  const summary = useMemo(() => petDirectoryPolicy.summarize(rows), [rows]);
 
   const cards = [
     {
@@ -688,7 +582,7 @@ export default function PetDirectory({
   token,
   serviceMode = false,
 }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createPrmsApplication(token), [token]);
   const requestSequence = useRef(0);
 
   const [rows, setRows] = useState([]);

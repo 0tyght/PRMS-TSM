@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import WasteMap from "../components/WasteMap.jsx";
 import { EmptyState, ErrorNotice, LoadingState, PageHead, StatusBadge, formatMoney, formatNumber, toDateInput } from "../components/ui.jsx";
+import { wasteDashboardPolicy } from "../domain/WasteDashboardPolicy.js";
 
 export default function DashboardPage({ token, navigate }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createWasteApplication(token), [token]);
   const [date, setDate] = useState(toDateInput());
   const [data, setData] = useState(null);
   const [selectedRouteId, setSelectedRouteId] = useState("");
@@ -20,12 +21,12 @@ export default function DashboardPage({ token, navigate }) {
   const summary = data?.summary || {};
   const activePlans = data?.activePlans || [];
   const routes = data?.routes || [];
-  const selectedRoute = routes.find((route) => route.id === selectedRouteId) || null;
+  const selectedRoute = wasteDashboardPolicy.selectedRoute(routes, selectedRouteId);
+  const routesWithoutGeometry = wasteDashboardPolicy.routeWithoutGeometryCount(routes);
 
   useEffect(() => {
     setSelectedRouteId((current) => {
-      if (routes.some((route) => route.id === current)) return current;
-      return activePlans[0]?.routeId || routes[0]?.id || "";
+      return wasteDashboardPolicy.resolveSelectedRouteId(routes, activePlans, current);
     });
   }, [activePlans, routes]);
 
@@ -43,13 +44,13 @@ export default function DashboardPage({ token, navigate }) {
         <button type="button" onClick={() => navigate("plans")}><span>แผนที่รอเริ่มวันนี้</span><strong>{formatNumber(summary.scheduledPlans)}</strong><small>เปิดแผนปฏิบัติงาน</small></button>
         <button type="button" className={summary.unassignedServiceUsers ? "is-warning" : ""} onClick={() => navigate("service-users")}><span>ผู้ใช้บริการยังไม่มีเส้นทาง</span><strong>{formatNumber(summary.unassignedServiceUsers)}</strong><small>กำหนดเส้นทางรับผิดชอบ</small></button>
         <button type="button" className={summary.serviceUsersWithoutLocation ? "is-warning" : ""} onClick={() => navigate("service-users")}><span>จุดรับบริการยังไม่มีพิกัด</span><strong>{formatNumber(summary.serviceUsersWithoutLocation)}</strong><small>ระบุตำแหน่งบนแผนที่</small></button>
-        <button type="button" className={routes.some((route) => !route.routeGeojson) ? "is-warning" : ""} onClick={() => navigate("resources")}><span>เส้นทางยังไม่มีแนวถนน</span><strong>{formatNumber(routes.filter((route) => !route.routeGeojson).length)}</strong><small>กำหนดเส้นทางบนแผนที่</small></button>
+        <button type="button" className={routesWithoutGeometry ? "is-warning" : ""} onClick={() => navigate("resources")}><span>เส้นทางยังไม่มีแนวถนน</span><strong>{formatNumber(routesWithoutGeometry)}</strong><small>กำหนดเส้นทางบนแผนที่</small></button>
       </section>
       <section className="waste-dashboard-grid">
         <article className="waste-panel waste-panel--map"><header className="waste-panel__head"><div><p>THA PHO MUNICIPALITY MAP</p><h2>แผนที่เทศบาลท่าโพธ์</h2></div><div className="waste-map-controls"><label><span>แสดงเส้นทาง</span><select value={selectedRouteId} onChange={(event) => setSelectedRouteId(event.target.value)}><option value="">แสดงเฉพาะแผนที่</option>{routes.map((route) => <option value={route.id} key={route.id}>{route.routeCode} — {route.routeName}</option>)}</select></label><button type="button" className="waste-text-button" onClick={() => navigate("tracking")}>ติดตามรถ</button></div></header><WasteMap plans={activePlans} routeGeojson={selectedRoute?.routeGeojson || null} />{selectedRoute ? <div className="waste-map-note"><strong>{selectedRoute.routeName}</strong><span>{selectedRoute.routeGeojson ? `แสดงแนวเส้นทางแล้ว • ${formatNumber(selectedRoute.stopCount)} จุดเก็บ • ${formatNumber(selectedRoute.serviceUserCount)} ผู้ใช้บริการ` : "ยังไม่ได้กำหนดแนวเส้นทางบนแผนที่ — แก้ไขได้จากข้อมูลพื้นฐาน > เส้นทางเก็บขยะ"}</span></div> : <div className="waste-map-note"><strong>แผนที่พื้นที่เทศบาลท่าโพธ์</strong><span>เลือกเส้นทางที่ตั้งไว้เพื่อแสดงแนวเส้นทางและใช้วางแผนการเก็บขยะ</span></div>}</article>
         <article className="waste-panel waste-panel--attention"><header className="waste-panel__head"><div><p>ACTION REQUIRED</p><h2>รายการที่ต้องติดตาม</h2></div><button type="button" className="waste-text-button" onClick={() => navigate("incidents")}>ดูทั้งหมด</button></header><div className="waste-attention-metric"><span>ค่าบริการค้างชำระ</span><strong>{formatMoney(summary.overdueAmount)}</strong><small>{formatNumber(summary.overdueCharges)} รายการ</small></div>{data?.incidents?.length ? <ul className="waste-incident-list">{data.incidents.map((incident) => <li key={incident.id}><span>!</span><div><strong>{incident.vehicleCode || incident.planNo || "เหตุที่แจ้งเข้ามา"}</strong><p>{incident.description}</p></div><StatusBadge value={incident.status} /></li>)}</ul> : <EmptyState title="ไม่มีเหตุค้างดำเนินการ" detail="เมื่อคนขับแจ้งเหตุหรือเจ้าหน้าที่บันทึกเหตุ รายการจะแสดงที่นี่" />}</article>
       </section>
-      <section className="waste-panel"><header className="waste-panel__head"><div><p>DAILY OPERATIONS</p><h2>แผนปฏิบัติงานประจำวัน</h2></div><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate("plans")}>จัดการแผนงาน</button></header>{activePlans.length ? <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th>แผนงาน</th><th>เส้นทาง</th><th>รถ / คนขับ</th><th>ความคืบหน้า</th><th>สถานะ</th></tr></thead><tbody>{activePlans.map((plan) => <tr key={plan.id}><td><strong>{plan.planNo}</strong><small>{plan.scheduledDate}</small></td><td>{plan.routeName}</td><td><strong>{plan.vehicleCode}</strong><small>{plan.driverName}</small></td><td><div className="waste-progress"><i><b style={{ width: `${plan.stopTotal ? Math.round((plan.collectedStops / plan.stopTotal) * 100) : 0}%` }} /></i><span>{formatNumber(plan.collectedStops)} / {formatNumber(plan.stopTotal)} จุด</span></div></td><td><StatusBadge value={plan.status} /></td></tr>)}</tbody></table></div> : <EmptyState title="ยังไม่มีแผนปฏิบัติงานในวันนี้" detail="สร้างแผนโดยระบุเส้นทาง รถ และคนขับ เพื่อเริ่มติดตามการเก็บขยะ" actionLabel="สร้างแผนปฏิบัติงาน" onAction={() => navigate("plans")} />}</section>
+      <section className="waste-panel"><header className="waste-panel__head"><div><p>DAILY OPERATIONS</p><h2>แผนปฏิบัติงานประจำวัน</h2></div><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate("plans")}>จัดการแผนงาน</button></header>{activePlans.length ? <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th>แผนงาน</th><th>เส้นทาง</th><th>รถ / คนขับ</th><th>ความคืบหน้า</th><th>สถานะ</th></tr></thead><tbody>{activePlans.map((plan) => <tr key={plan.id}><td><strong>{plan.planNo}</strong><small>{plan.scheduledDate}</small></td><td>{plan.routeName}</td><td><strong>{plan.vehicleCode}</strong><small>{plan.driverName}</small></td><td><div className="waste-progress"><i><b style={{ width: `${wasteDashboardPolicy.planProgress(plan)}%` }} /></i><span>{formatNumber(plan.collectedStops)} / {formatNumber(plan.stopTotal)} จุด</span></div></td><td><StatusBadge value={plan.status} /></td></tr>)}</tbody></table></div> : <EmptyState title="ยังไม่มีแผนปฏิบัติงานในวันนี้" detail="สร้างแผนโดยระบุเส้นทาง รถ และคนขับ เพื่อเริ่มติดตามการเก็บขยะ" actionLabel="สร้างแผนปฏิบัติงาน" onAction={() => navigate("plans")} />}</section>
     </>}
   </>;
 }

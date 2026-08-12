@@ -163,3 +163,14 @@ export function summarizeVillageRows(rows = []) {
     sterilizationCoverage: getCoverage(summary.sterilized, summary.totalPets),
   };
 }
+
+export class VillageDashboardPolicy {
+  buildVillageRows(input) { return buildVillageRows(input); }
+  summarize(rows) { return summarizeVillageRows(rows); }
+  getMetricValue(row, metric) { return getMetricValue(row, metric); }
+  formatMetricValue(row, metric) { return formatMetricValue(row, metric); }
+  getCoverage(numerator, denominator) { return getCoverage(numerator, denominator); }
+  get metrics() { return DASHBOARD_METRICS; }
+}
+
+export const villageDashboardPolicy = new VillageDashboardPolicy();

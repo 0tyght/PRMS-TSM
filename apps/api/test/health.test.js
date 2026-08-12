@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import jwt from "jsonwebtoken";
-import { createApp, prepareRegistrationAttachment } from "../src/app.js";
+import { prepareRegistrationAttachment } from "../src/app.js";
+import { createApp } from "../src/composition-root/createHttpApplication.js";
 import { config } from "../src/core/config.js";
 
 test("creates the API application", () => {

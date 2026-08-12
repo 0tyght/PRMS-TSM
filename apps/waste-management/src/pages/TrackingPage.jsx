@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import WasteMap from "../components/WasteMap.jsx";
 import { EmptyState, ErrorNotice, LoadingState, PageHead, StatusBadge, formatDate, formatNumber, toDateInput } from "../components/ui.jsx";
 
 export default function TrackingPage({ token, planId }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createWasteApplication(token), [token]);
   const [date, setDate] = useState(toDateInput()); const [plans, setPlans] = useState([]); const [selectedId, setSelectedId] = useState(""); const [track, setTrack] = useState(null); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false); const [lastRefresh, setLastRefresh] = useState(null); const [error, setError] = useState("");
   const loadPlans = useCallback(async () => { setLoading(true); setError(""); try { const nextPlans = await api.get(`/api/waste/plans?date=${date}`); setPlans(nextPlans); setSelectedId((current) => nextPlans.some((plan) => plan.id === current) ? current : nextPlans.find((plan) => plan.id === planId)?.id || nextPlans[0]?.id || ""); } catch (requestError) { setError(requestError.message); } finally { setLoading(false); } }, [api, date, planId]);
   const loadTrack = useCallback(async (showProgress = false) => { if (!selectedId) { setTrack(null); return; } if (showProgress) setRefreshing(true); try { setTrack(await api.get(`/api/waste/plans/${selectedId}/track`)); setLastRefresh(new Date()); } catch (requestError) { setError(requestError.message); } finally { if (showProgress) setRefreshing(false); } }, [api, selectedId]);

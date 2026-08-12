@@ -6,7 +6,7 @@ import {
   PageHead,
 } from "../components/common/PageUI.jsx";
 import MfaSettingsCard from "../components/MfaSettingsCard.jsx";
-import { createApi } from "@smart-thapho/web-core/api";
+import { createPrmsApplication } from "../composition-root/createPrmsApplication.js";
 
 const roleLabels = {
   ADMIN: "ผู้ดูแลระบบ",
@@ -92,7 +92,7 @@ function ServiceCard({
 }
 
 export default function SettingsPage({ token }) {
-  const api = useMemo(() => createApi(token), [token]);
+  const api = useMemo(() => createPrmsApplication(token), [token]);
   const [system, setSystem] = useState(null);
   const [users, setUsers] = useState([]);
   const [villages, setVillages] = useState([]);
