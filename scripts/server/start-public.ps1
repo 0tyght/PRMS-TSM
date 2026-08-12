@@ -545,7 +545,7 @@ if (-not (Test-HealthReady $publicHealth)) {
 $configJson = [ordered]@{
     apiBaseUrl = "{0}/api" -f $tunnelUrl
     portalApiBaseUrl = "{0}/api" -f $tunnelUrl
-    portalUrl = "{0}/" -f $tunnelUrl
+    portalUrl = "https://0tyght.github.io/PRMS-TSM/"
     updatedAt = (
         Get-Date
     ).ToUniversalTime().ToString("o")
@@ -592,5 +592,5 @@ if (-not $SkipGitPush) {
 
 Write-Host ""
 Write-Host "Smart Tha Pho is ready." -ForegroundColor Green
-Write-Host ("Platform: {0}/" -f $tunnelUrl) -ForegroundColor Green
+Write-Host "Platform: https://0tyght.github.io/PRMS-TSM/" -ForegroundColor Green
 Write-Host ("API: {0}/api" -f $tunnelUrl) -ForegroundColor Green

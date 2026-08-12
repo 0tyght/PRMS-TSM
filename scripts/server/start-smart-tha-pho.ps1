@@ -79,6 +79,10 @@ if ([string]::IsNullOrWhiteSpace($apiBaseUrl)) {
 }
 $apiBaseUrl = $apiBaseUrl.TrimEnd("/")
 $webhookUrl = "$apiBaseUrl/line/webhook"
+$portalUrl = [string]$config.portalUrl
+if ([string]::IsNullOrWhiteSpace($portalUrl)) {
+    $portalUrl = "https://0tyght.github.io/PRMS-TSM/"
+}
 
 $healthReady = $false
 for ($attempt = 1; $attempt -le 30; $attempt++) {
@@ -173,7 +177,7 @@ if (-not [bool]$testResult.success) {
 Write-Host ""
 Write-Host "Smart Tha Pho พร้อมใช้งาน" -ForegroundColor Green
 Write-Host "Bot: $($botInfo.displayName) ($($botInfo.basicId))" -ForegroundColor Green
-Write-Host "Web: $($apiBaseUrl.Substring(0, $apiBaseUrl.Length - 4))/" -ForegroundColor Green
+Write-Host "Web: $portalUrl" -ForegroundColor Green
 Write-Host "API: $apiBaseUrl" -ForegroundColor Green
 Write-Host "Webhook: $webhookUrl" -ForegroundColor Green
 Write-Host "Rich Menu: V12 cache + instant alias switch" -ForegroundColor Green
