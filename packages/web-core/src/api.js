@@ -23,12 +23,12 @@ function normalizeApiPath(path) {
 function createConnectionError(error) {
   if (error?.name === "AbortError") {
     return new Error(
-      "การเชื่อมต่อเซิร์ฟเวอร์ใช้เวลานานเกินไป กรุณาตรวจสอบว่า API และ Cloudflare Tunnel เปิดอยู่"
+      "การเชื่อมต่อเซิร์ฟเวอร์ใช้เวลานานเกินไป กรุณาตรวจสอบว่า API และ Public Tunnel เปิดอยู่"
     );
   }
 
   return new Error(
-    "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ฐานข้อมูลได้ กรุณาตรวจสอบ XAMPP, API และ Cloudflare Tunnel"
+    "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ฐานข้อมูลได้ กรุณาตรวจสอบ XAMPP, API และ Public Tunnel"
   );
 }
 
@@ -69,6 +69,10 @@ export class ApiClient {
     const headers = new Headers(options.headers || {});
 
     headers.set("Accept", "application/json");
+
+    if (new URL(apiBase).hostname.endsWith(".ngrok-free.dev")) {
+      headers.set("ngrok-skip-browser-warning", "true");
+    }
 
     if (
       options.body !== undefined &&
@@ -129,7 +133,7 @@ export class ApiClient {
     }
 
     /*
-     * หาก Cloudflare URL เดิมหมดอายุหรือเซิร์ฟเวอร์ตอบ 5xx
+     * หาก Public Tunnel URL เดิมหมดอายุหรือเซิร์ฟเวอร์ตอบ 5xx
      * ให้โหลด runtime-config.json ใหม่แล้วลองอีกครั้ง
      */
     if (response.status >= 500) {

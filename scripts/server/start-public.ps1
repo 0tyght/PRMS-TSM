@@ -53,6 +53,7 @@ function Get-PublicHealth {
                 "Cache-Control" = "no-cache"
                 "Pragma" = "no-cache"
                 "User-Agent" = "Smart-Tha-Pho-Health-Check"
+                "ngrok-skip-browser-warning" = "true"
             }
     }
     catch {
@@ -122,6 +123,7 @@ function Get-PublicHealth {
             --resolve $resolveValue `
             --header "Cache-Control: no-cache" `
             --header "Pragma: no-cache" `
+            --header "ngrok-skip-browser-warning: true" `
             $healthUrl 2>&1
 
         $curlExitCode = $LASTEXITCODE
@@ -208,20 +210,11 @@ $configPath = Join-Path `
     $root `
     "runtime-config.json"
 
-$cloudflaredPath = Join-Path `
-    $root `
-    ".tools\cloudflared.exe"
-
-if (-not (Test-Path $cloudflaredPath)) {
-    $cloudflaredPath = (
-        "C:\xampp\htdocs\postsales-iot\" +
-        ".tools\cloudflared.exe"
-    )
+$ngrokCommand = Get-Command ngrok.exe -ErrorAction SilentlyContinue
+if ($null -eq $ngrokCommand) {
+    throw "ngrok.exe was not found. Install ngrok and configure its authtoken first."
 }
-
-if (-not (Test-Path $cloudflaredPath)) {
-    throw "cloudflared.exe was not found."
-}
+$ngrokPath = $ngrokCommand.Source
 
 New-Item `
     -ItemType Directory `
@@ -293,9 +286,19 @@ Write-Host `
     "MySQL ready." `
     -ForegroundColor Green
 
-$pidPath = Join-Path `
-    $runtimeDir `
-    "cloudflared.pid"
+$legacyPidPath = Join-Path $runtimeDir "cloudflared.pid"
+if (Test-Path $legacyPidPath) {
+    $legacyPid = 0
+    if ([int]::TryParse([string](Get-Content $legacyPidPath -ErrorAction SilentlyContinue), [ref]$legacyPid)) {
+        $legacyProcess = Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f $legacyPid) -ErrorAction SilentlyContinue
+        if ($null -ne $legacyProcess -and [string]$legacyProcess.CommandLine -like "*127.0.0.1:4100*") {
+            Stop-Process -Id $legacyPid -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Remove-Item $legacyPidPath -Force -ErrorAction SilentlyContinue
+}
+
+$pidPath = Join-Path $runtimeDir "ngrok.pid"
 
 if (Test-Path $pidPath) {
     $oldPidText = Get-Content `
@@ -322,9 +325,7 @@ if (Test-Path $pidPath) {
             [string]$oldProcess.CommandLine -like `
                 "*127.0.0.1:4100*"
         ) {
-            Write-Host `
-                "Stopping previous Cloudflare Tunnel..." `
-                -ForegroundColor Yellow
+            Write-Host "Stopping previous Public Tunnel..." -ForegroundColor Yellow
 
             Stop-Process `
                 -Id $oldPid `
@@ -335,112 +336,53 @@ if (Test-Path $pidPath) {
 }
 
 $tunnelUrl = $null
-$tunnelProcess = $null
-$outLog = $null
-$errLog = $null
-$tunnelStartErrors = @()
-$maxTunnelStartAttempts = 6
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$outLog = Join-Path $runtimeDir ("ngrok-{0}.out.log" -f $stamp)
+$errLog = Join-Path $runtimeDir ("ngrok-{0}.err.log" -f $stamp)
 
-for (
-    $tunnelStartAttempt = 1;
-    $tunnelStartAttempt -le $maxTunnelStartAttempts;
-    $tunnelStartAttempt += 1
-) {
-    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $logSuffix = "{0}-{1}" -f $stamp, $tunnelStartAttempt
-    $outLog = Join-Path $runtimeDir ("tunnel-{0}.out.log" -f $logSuffix)
-    $errLog = Join-Path $runtimeDir ("tunnel-{0}.err.log" -f $logSuffix)
+Write-Host "Starting ngrok Public Tunnel..." -ForegroundColor Cyan
+$tunnelProcess = Start-Process `
+    -FilePath $ngrokPath `
+    -ArgumentList @(
+        "http",
+        "http://127.0.0.1:4100",
+        "--log",
+        "stdout",
+        "--log-format",
+        "json"
+    ) `
+    -WorkingDirectory $root `
+    -RedirectStandardOutput $outLog `
+    -RedirectStandardError $errLog `
+    -WindowStyle Hidden `
+    -PassThru
 
-    Write-Host `
-        ("Starting Cloudflare Quick Tunnel (attempt {0}/{1})..." -f `
-            $tunnelStartAttempt,
-            $maxTunnelStartAttempts) `
-        -ForegroundColor Cyan
+[IO.File]::WriteAllText($pidPath, [string]$tunnelProcess.Id)
+$urlDeadline = (Get-Date).AddSeconds(45)
 
-    $tunnelProcess = Start-Process `
-        -FilePath $cloudflaredPath `
-        -ArgumentList @(
-            "tunnel",
-            "--url",
-            "http://127.0.0.1:4100",
-            "--no-autoupdate"
-        ) `
-        -WorkingDirectory $root `
-        -RedirectStandardOutput $outLog `
-        -RedirectStandardError $errLog `
-        -WindowStyle Hidden `
-        -PassThru
-
-    [IO.File]::WriteAllText(
-        $pidPath,
-        [string]$tunnelProcess.Id
-    )
-
-    $urlDeadline = (Get-Date).AddSeconds(45)
-
-    while (
-        $null -eq $tunnelUrl -and
-        (Get-Date) -lt $urlDeadline -and
-        -not $tunnelProcess.HasExited
-    ) {
-        Start-Sleep -Seconds 1
-
-        $logLines = @()
-
-        if (Test-Path $outLog) {
-            $logLines += Get-Content $outLog -ErrorAction SilentlyContinue
-        }
-
-        if (Test-Path $errLog) {
-            $logLines += Get-Content $errLog -ErrorAction SilentlyContinue
-        }
-
-        $urlMatch = [regex]::Match(
-            ($logLines -join [Environment]::NewLine),
-            "https://[a-z0-9-]+\.trycloudflare\.com"
+do {
+    Start-Sleep -Milliseconds 500
+    try {
+        $tunnels = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -TimeoutSec 3
+        $tunnelUrl = [string](
+            $tunnels.tunnels |
+            Where-Object { [string]$_.config.addr -eq "http://127.0.0.1:4100" -and [string]$_.proto -eq "https" } |
+            Select-Object -First 1 -ExpandProperty public_url
         )
-
-        if ($urlMatch.Success) {
-            $tunnelUrl = $urlMatch.Value
-        }
     }
-
-    if ($null -ne $tunnelUrl) {
-        break
-    }
-
-    $tunnelLogTail = if (Test-Path $errLog) {
-        (Get-Content $errLog -Tail 20 | Out-String).Trim()
-    }
-    else {
-        "No Cloudflare error log was created."
-    }
-
-    $tunnelStartErrors += (
-        "Attempt {0}: {1}" -f $tunnelStartAttempt, $tunnelLogTail
-    )
-
-    if ($null -ne $tunnelProcess -and -not $tunnelProcess.HasExited) {
-        Stop-Process `
-            -Id $tunnelProcess.Id `
-            -Force `
-            -ErrorAction SilentlyContinue
-    }
-
-    if ($tunnelStartAttempt -lt $maxTunnelStartAttempts) {
-        Write-Host `
-            "Cloudflare did not issue a URL; retrying in 6 seconds..." `
-            -ForegroundColor Yellow
-        Start-Sleep -Seconds 6
+    catch {
+        $tunnelUrl = $null
     }
 }
+while (
+    [string]::IsNullOrWhiteSpace($tunnelUrl) -and
+    (Get-Date) -lt $urlDeadline -and
+    -not $tunnelProcess.HasExited
+)
 
-if ($null -eq $tunnelUrl) {
-    throw (
-        "Cloudflare did not return a Tunnel URL after {0} attempts. {1}" -f `
-            $maxTunnelStartAttempts,
-            ($tunnelStartErrors -join [Environment]::NewLine)
-    )
+if ([string]::IsNullOrWhiteSpace($tunnelUrl)) {
+    $tunnelLogTail = (Get-Content $outLog -Tail 30 -ErrorAction SilentlyContinue | Out-String).Trim()
+    throw "ngrok did not return a Public Tunnel URL. Log: $tunnelLogTail"
 }
 
 Write-Host `
@@ -461,7 +403,7 @@ do {
 
     if ($tunnelProcess.HasExited) {
         throw (
-            "Cloudflare Tunnel stopped unexpectedly. " +
+            "Public Tunnel stopped unexpectedly. " +
             "Exit code: {0}" -f `
                 $tunnelProcess.ExitCode
         )
@@ -522,7 +464,7 @@ if (-not (Test-HealthReady $publicHealth)) {
     }
 
     throw (
-        "Cloudflare Tunnel health check failed. " +
+        "Public Tunnel health check failed. " +
         "URL={0}; Error={1}; Log={2}" -f `
             $tunnelUrl,
             $lastPublicError,

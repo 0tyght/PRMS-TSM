@@ -4,12 +4,13 @@ const DEFAULT_CONFIG_SOURCES = Object.freeze([
 ]);
 
 const DEFAULT_BUILD_TIME_API_BASE = import.meta.env?.VITE_API_BASE_URL || "";
+const DEFAULT_LOCATION = Object.freeze({ hostname: "localhost", origin: "http://localhost" });
 
 export class RuntimeConfigRepository {
   constructor({
-    fetchImplementation = fetch,
+    fetchImplementation = globalThis.fetch,
     sources = DEFAULT_CONFIG_SOURCES,
-    locationObject = location,
+    locationObject = globalThis.location || DEFAULT_LOCATION,
     buildTimeApiBase = DEFAULT_BUILD_TIME_API_BASE,
   } = {}) {
     this.fetchImplementation = fetchImplementation;

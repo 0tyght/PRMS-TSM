@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { RuntimeConfigRepository } from "../src/infrastructure/RuntimeConfigRepository.js";
+import { ApiClient } from "../src/api.js";
 
 const publicLocation = Object.freeze({ hostname: "0tyght.github.io" });
 
@@ -45,4 +46,27 @@ test("RuntimeConfigRepository rejects insecure public API URLs", async () => {
   });
 
   assert.equal(await repository.getApiBase(), "");
+});
+
+test("ApiClient bypasses the ngrok browser interstitial for API requests", async () => {
+  const originalWindow = globalThis.window;
+  let requestedHeaders;
+  globalThis.window = { setTimeout, clearTimeout };
+
+  try {
+    const client = new ApiClient({
+      fetchImplementation: async (_url, options) => {
+        requestedHeaders = options.headers;
+        return new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    await client.fetchOnce("https://smart-tha-pho.ngrok-free.dev/api", "/health");
+    assert.equal(requestedHeaders.get("ngrok-skip-browser-warning"), "true");
+  } finally {
+    globalThis.window = originalWindow;
+  }
 });

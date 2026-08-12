@@ -46,7 +46,7 @@ if (-not (Test-Path -LiteralPath $startPublicPath)) {
 }
 
 Write-Host "Smart Tha Pho Start" -ForegroundColor Cyan
-Write-Host "เปิด API, MySQL, Cloudflare และอัปเดต LINE Webhook อัตโนมัติ"
+Write-Host "เปิด API, MySQL, Public Tunnel และอัปเดต LINE Webhook อัตโนมัติ"
 Write-Host ""
 
 $arguments = @(
@@ -80,6 +80,7 @@ for ($attempt = 1; $attempt -le 30; $attempt++) {
         $health = Invoke-RestMethod `
             -Method Get `
             -Uri "$apiBaseUrl/v1/health/live" `
+            -Headers @{ "ngrok-skip-browser-warning" = "true" } `
             -TimeoutSec 10 `
             -ErrorAction Stop
         if ($health.status -eq "alive") {

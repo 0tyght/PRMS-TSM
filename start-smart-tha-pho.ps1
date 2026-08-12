@@ -12,7 +12,7 @@ if (-not (Test-Path -LiteralPath $launcherPath)) {
     throw "scripts\\server\\start-smart-tha-pho.ps1 was not found."
 }
 
-Write-Host "Smart Tha Pho: starting API, MySQL, Cloudflare Tunnel and LINE webhook update..." -ForegroundColor Cyan
+Write-Host "Smart Tha Pho: starting API, MySQL, Public Tunnel and LINE webhook update..." -ForegroundColor Cyan
 
 & $launcherPath -ProjectPath $projectPath
 exit $LASTEXITCODE
