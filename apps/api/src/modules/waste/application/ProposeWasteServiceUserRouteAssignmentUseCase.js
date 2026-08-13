@@ -40,12 +40,25 @@ export class ProposeWasteServiceUserRouteAssignmentUseCase {
       if (geometry?.type !== "LineString" || !Array.isArray(geometry.coordinates) || geometry.coordinates.length < 2) {
         throw new Error("INSUFFICIENT_STOPS");
       }
+
+      const firstCoordinate = geometry.coordinates[0];
+      const lastCoordinate = geometry.coordinates.at(-1);
+      const routeAnchors = [
+        { id: `route-start:${routeId}`, latitude: Number(firstCoordinate?.[1]), longitude: Number(firstCoordinate?.[0]) },
+        candidateStop,
+        { id: `route-end:${routeId}`, latitude: Number(lastCoordinate?.[1]), longitude: Number(lastCoordinate?.[0]) },
+      ];
+      if (routeAnchors.some((stop) => !Number.isFinite(stop.latitude) || !Number.isFinite(stop.longitude))) {
+        throw new Error("INSUFFICIENT_STOPS");
+      }
+
+      const optimized = await this.routeOptimizer.optimize(routeAnchors, { returnToStart: false });
       const proposal = new WasteRouteProposal({
         routeId,
         stops: allStops,
-        geometry,
-        distanceMeters: route.routeGeojson?.properties?.distanceMeters || 0,
-        durationSeconds: route.routeGeojson?.properties?.durationSeconds || 0,
+        geometry: optimized.geometry,
+        distanceMeters: optimized.distanceMeters,
+        durationSeconds: optimized.durationSeconds,
       });
       return this.routeRepository.saveProposal(proposal);
     }
