@@ -93,6 +93,44 @@ async function loadActors(lineUserId) {
   return { driver: drivers[0] || null, citizen: citizens[0] || null };
 }
 
+async function findWasteRegistrationByLine(lineUserId) {
+  const [rows] = await pool.execute(
+    `SELECT id,
+            service_no AS serviceNo,
+            full_name AS fullName,
+            is_active AS isActive
+     FROM waste_service_users
+     WHERE line_user_id = ?
+     LIMIT 1`,
+    [lineUserId],
+  );
+
+  if (!rows[0]) return null;
+
+  return {
+    ...rows[0],
+    isActive: Boolean(Number(rows[0].isActive)),
+  };
+}
+
+function existingWasteRegistrationMessage(user) {
+  if (user.isActive) {
+    return textMessage(
+      `บัญชี LINE นี้ลงทะเบียนบริการเก็บขยะแล้ว
+เลขผู้ใช้บริการ ${user.serviceNo}
+ชื่อ ${user.fullName}
+
+ไม่ต้องลงทะเบียนซ้ำ`,
+      wasteLineShortcuts.citizen(),
+    );
+  }
+
+  return textMessage(
+    `พบทะเบียนเดิม ${user.serviceNo} แต่ถูกปิดบริการแล้ว
+กรุณาติดต่อเจ้าหน้าที่เทศบาล หรือให้เจ้าหน้าที่ยกเลิกการเชื่อม LINE ก่อนลงทะเบียนใหม่`,
+    wasteLineShortcuts.unregistered(),
+  );
+}
 function wasteMenu(actors, audience = "CITIZEN") {
   if (audience === "DRIVER") {
     return textMessage(
@@ -195,6 +233,13 @@ async function ensureDriverPlan(driver, planId, statuses) {
 }
 
 async function beginRegistration(lineUserId) {
+  const existing = await findWasteRegistrationByLine(lineUserId);
+
+  if (existing) {
+    await clearSession(lineUserId, "CITIZEN");
+    return existingWasteRegistrationMessage(existing);
+  }
+
   await saveSession(lineUserId, "CITIZEN", "CITIZEN", "REGISTER", "FULL_NAME", {});
   return textMessage("ลงทะเบียนผู้ใช้บริการเก็บขยะ\nกรุณาพิมพ์ชื่อ-นามสกุล", wasteLineShortcuts.registration("FULL_NAME"));
 }
@@ -246,6 +291,13 @@ async function handleRegistrationStep(event, lineUserId, session) {
   }
   if (session.currentStep === "CONFIRM") {
     if (text !== "ยืนยัน") return textMessage("หากข้อมูลถูกต้องให้กด “ยืนยัน” หรือกด “ยกเลิก” เพื่อเริ่มใหม่", wasteLineShortcuts.registration("CONFIRM"));
+
+    const existing = await findWasteRegistrationByLine(lineUserId);
+
+    if (existing) {
+      await clearSession(lineUserId, "CITIZEN");
+      return existingWasteRegistrationMessage(existing);
+    }
     let serviceNo;
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const candidate = `WU-${new Date().toISOString().slice(2, 10).replaceAll("-", "")}-${crypto.randomInt(1000, 10000)}`;

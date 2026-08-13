@@ -63,6 +63,7 @@ function ServiceUserForm({ initial, villages, onCancel, onSubmit, onUnlinkLine, 
   function submit(event) {
     event.preventDefault();
     const value = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const isActive = value.isActive === "true";
     onSubmit({
       serviceNo: value.serviceNo,
       fullName: value.fullName,
