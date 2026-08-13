@@ -4,6 +4,8 @@ import test from "node:test";
 import { WasteRouteProposal } from "../src/modules/waste/domain/WasteRouteProposal.js";
 import { ProposeWasteRouteUseCase } from "../src/modules/waste/application/ProposeWasteRouteUseCase.js";
 import { ConfirmWasteRouteProposalUseCase } from "../src/modules/waste/application/ConfirmWasteRouteProposalUseCase.js";
+import { ProposeWasteServiceUserRouteAssignmentUseCase } from "../src/modules/waste/application/ProposeWasteServiceUserRouteAssignmentUseCase.js";
+import { ConfirmWasteServiceUserRouteAssignmentUseCase } from "../src/modules/waste/application/ConfirmWasteServiceUserRouteAssignmentUseCase.js";
 import { OsrmTripRouteOptimizer } from "../src/modules/waste/infrastructure/OsrmTripRouteOptimizer.js";
 
 const stops = [
@@ -96,4 +98,41 @@ test("confirmation rejects a proposal when a stop location changed", async () =>
   const repository = { findProposal: async () => proposal, listActiveStops: async () => movedStops };
   const useCase = new ConfirmWasteRouteProposalUseCase({ routeRepository: repository });
   await assert.rejects(() => useCase.execute({ routeId: "route-1", proposalId: "proposal-1", confirmedBy: "officer" }), /ROUTE_STOPS_CHANGED/);
+});
+
+test("route assignment proposal includes the new service point without changing assignment", async () => {
+  let saved;
+  const serviceUser = { id: "user-new", routeId: null, fullName: "บ้านใหม่", houseNo: "9", latitude: 16.765, longitude: 100.205 };
+  const repository = {
+    findActiveServiceUserById: async () => serviceUser,
+    findById: async () => ({ id: "route-1", routeGeojson: { type: "Feature", geometry: { type: "LineString", coordinates: [[100.19, 16.75], [100.20, 16.76]] } } }),
+    findStopByServiceUserId: async () => null,
+    listActiveStops: async () => stops.slice(0, 2),
+    saveProposal: async (proposal) => { saved = proposal; return new WasteRouteProposal({ ...proposal, id: "proposal-assign", expiresAt: new Date(Date.now() + 60_000) }); },
+  };
+  const optimizer = { optimize: async (input) => ({ orderedStopIds: [input[0].id, input[2].id, input[1].id], geometry: { type: "LineString", coordinates: [[100.19, 16.75], [100.205, 16.765], [100.20, 16.76]] }, distanceMeters: 4400, durationSeconds: 720 }) };
+  const routeAssignmentService = { distanceToRouteMeters: () => 135 };
+  const useCase = new ProposeWasteServiceUserRouteAssignmentUseCase({ routeRepository: repository, routeOptimizer: optimizer, routeAssignmentService });
+  const proposal = await useCase.execute({ serviceUserId: serviceUser.id, routeId: "route-1" });
+  assert.equal(proposal.stops.find((stop) => stop.serviceUserId === serviceUser.id).assignmentCandidate, true);
+  assert.equal(saved.stops.length, 3);
+  assert.equal(serviceUser.routeId, null);
+});
+
+test("route assignment confirmation validates state and delegates one atomic save", async () => {
+  const candidate = { id: "assignment:user-new", serviceUserId: "user-new", stopName: "บ้าน 9 · บ้านใหม่", latitude: 16.765, longitude: 100.205, assignmentCandidate: true, previousRouteId: null };
+  const proposal = new WasteRouteProposal({ id: "proposal-assign", routeId: "route-1", stops: [stops[0], candidate, stops[1]], geometry: { type: "LineString", coordinates: [[100.19, 16.75], [100.205, 16.765], [100.20, 16.76]] }, distanceMeters: 4400, durationSeconds: 720, expiresAt: new Date(Date.now() + 60_000) });
+  let confirmed;
+  const repository = {
+    findProposal: async () => proposal,
+    findActiveServiceUserById: async () => ({ id: "user-new", routeId: null, latitude: candidate.latitude, longitude: candidate.longitude }),
+    listActiveStops: async () => stops.slice(0, 2),
+    findById: async () => ({ id: "route-1", routeGeojson: { properties: { distanceMeters: 4000 } } }),
+    confirmServiceUserAssignment: async (input) => { confirmed = input; },
+  };
+  const useCase = new ConfirmWasteServiceUserRouteAssignmentUseCase({ routeRepository: repository });
+  const result = await useCase.execute({ serviceUserId: "user-new", proposalId: proposal.id, confirmedBy: "officer" });
+  assert.equal(result.id, proposal.id);
+  assert.equal(confirmed.serviceUser.id, "user-new");
+  assert.equal(confirmed.routeGeojson.properties.distanceMeters, 4400);
 });

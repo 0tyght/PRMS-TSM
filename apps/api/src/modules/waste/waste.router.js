@@ -78,7 +78,8 @@ const serviceUserSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-const routeAssignmentSchema = z.object({ routeId: z.string().uuid() });
+const routeAssignmentProposalSchema = z.object({ routeId: z.string().uuid() });
+const routeAssignmentConfirmationSchema = z.object({ proposalId: z.string().uuid() });
 
 const planSchema = z.object({
   planNo: z.string().trim().min(4).max(30).optional(),
@@ -735,6 +736,11 @@ function routeOptimizationError(error) {
     START_STOP_NOT_FOUND: [422, "ไม่พบจุดเริ่มต้นในเส้นทางนี้"],
     END_STOP_NOT_FOUND: [422, "ไม่พบจุดสิ้นสุดในเส้นทางนี้"],
     START_END_STOP_MUST_DIFFER: [422, "จุดเริ่มต้นและจุดสิ้นสุดต้องเป็นคนละจุด หรือเลือกกลับจุดเริ่มต้น"],
+    SERVICE_USER_NOT_FOUND: [404, "ไม่พบผู้ใช้บริการเก็บขยะที่เปิดใช้งาน"],
+    SERVICE_USER_MISSING_LOCATION: [422, "กรุณาระบุตำแหน่งจุดรับขยะก่อนกำหนดเส้นทาง"],
+    ASSIGNMENT_PROPOSAL_MISMATCH: [422, "ผลคำนวณนี้ไม่ตรงกับผู้ใช้บริการที่กำลังกำหนดเส้นทาง"],
+    SERVICE_USER_ROUTE_CHANGED: [409, "เส้นทางของผู้ใช้บริการมีการเปลี่ยนแปลง กรุณาคำนวณใหม่"],
+    SERVICE_USER_LOCATION_CHANGED: [409, "ตำแหน่งจุดรับขยะมีการเปลี่ยนแปลง กรุณาคำนวณใหม่"],
   };
   const [status, message] = errors[error.message] || [500, "ไม่สามารถจัดเส้นทางเก็บขยะได้"];
   return httpError(status, message);
@@ -1000,31 +1006,43 @@ router.get("/service-users/:id/route-suggestions", requireRole("ADMIN", "OFFICER
   } catch (error) { next(error); }
 });
 
-router.put("/service-users/:id/route-assignment", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+router.post("/service-users/:id/route-assignment-proposals", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
   try {
-    const input = routeAssignmentSchema.parse(req.body);
-    const [[user], [route]] = await Promise.all([
-      pool.execute(`SELECT id, latitude, longitude FROM waste_service_users WHERE id = ? AND is_active = 1`, [req.params.id]),
-      pool.execute(`SELECT id, CAST(route_geojson AS CHAR) AS routeGeojson FROM waste_routes WHERE id = ? AND is_active = 1`, [input.routeId]),
-    ]);
-    if (!user[0]) throw httpError(404, "ไม่พบผู้ใช้บริการเก็บขยะ");
-    if (!route[0]) throw httpError(404, "ไม่พบเส้นทางเก็บขยะที่เปิดใช้งาน");
-    const distanceMeters = user[0].latitude == null || user[0].longitude == null
-      ? null
-      : routeAssignmentService.distanceToRouteMeters(
-        { latitude: Number(user[0].latitude), longitude: Number(user[0].longitude) },
-        route[0].routeGeojson ? JSON.parse(route[0].routeGeojson) : null,
-      );
-    await withTransaction(async (db) => {
-      await db.execute(
-        `UPDATE waste_service_users SET route_id = ?, route_assignment_status = 'CONFIRMED', route_assignment_distance_m = ?, route_assigned_at = NOW(), route_assigned_by = ? WHERE id = ?`,
-        [input.routeId, distanceMeters == null ? null : Math.round(distanceMeters), req.user.sub, req.params.id],
-      );
-      await syncServiceUserStop(db, req.params.id);
+    const input = routeAssignmentProposalSchema.parse(req.body);
+    const proposal = await req.app.locals.wasteRouteOptimization.proposeAssignment.execute({
+      serviceUserId: req.params.id,
+      routeId: input.routeId,
     });
-    const output = { id: req.params.id, routeId: input.routeId, routeAssignmentStatus: "CONFIRMED", routeAssignmentDistanceM: distanceMeters == null ? null : Math.round(distanceMeters) };
-    await audit(req.user.sub, "ASSIGN_WASTE_SERVICE_ROUTE", "WASTE_SERVICE_USER", req.params.id, output, req.ip);
-    return res.json({ data: output });
+    return res.status(201).json({
+      data: {
+        proposalId: proposal.id,
+        routeId: proposal.routeId,
+        stops: proposal.stops.map((stop, index) => ({ ...stop, sequenceNo: index + 1 })),
+        routeGeojson: proposal.toGeoJson(),
+        distanceMeters: proposal.distanceMeters,
+        durationSeconds: proposal.durationSeconds,
+        expiresAt: proposal.expiresAt,
+      },
+    });
+  } catch (error) { next(routeOptimizationError(error)); }
+});
+
+router.post("/service-users/:id/route-assignment-confirmations", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const input = routeAssignmentConfirmationSchema.parse(req.body);
+    const proposal = await req.app.locals.wasteRouteOptimization.confirmAssignment.execute({
+      serviceUserId: req.params.id,
+      proposalId: input.proposalId,
+      confirmedBy: req.user.sub,
+      ipAddress: req.ip,
+    });
+    return res.json({ data: { id: req.params.id, routeId: proposal.routeId, routeAssignmentStatus: "CONFIRMED", stopCount: proposal.stops.length, distanceMeters: proposal.distanceMeters, durationSeconds: proposal.durationSeconds } });
+  } catch (error) { next(routeOptimizationError(error)); }
+});
+
+router.put("/service-users/:id/route-assignment", requireRole("ADMIN", "OFFICER"), async (_req, _res, next) => {
+  try {
+    throw httpError(410, "ขั้นตอนกำหนดเส้นทางแบบเดิมถูกยกเลิก กรุณาคำนวณและยืนยันเส้นทางจากหน้าผู้ใช้บริการ");
   } catch (error) { next(error); }
 });
 
