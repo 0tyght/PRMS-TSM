@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorNotice, LoadingState, formatNumber } from "./ui.jsx";
 import WasteMap from "./WasteMap.jsx";
+import { routeComparisonPolicy } from "../application/RouteComparisonPolicy.js";
 
 function formatRouteDistance(value) {
   return `${(Number(value || 0) / 1000).toLocaleString("th-TH", { maximumFractionDigits: 1 })} กม.`;
@@ -9,6 +10,12 @@ function formatRouteDistance(value) {
 function formatRouteDuration(value) {
   const minutes = Math.max(1, Math.round(Number(value || 0) / 60));
   return minutes < 60 ? `${minutes.toLocaleString("th-TH")} นาที` : `${Math.floor(minutes / 60)} ชม. ${minutes % 60} นาที`;
+}
+
+function formatDifference(value, formatter) {
+  if (value == null) return "—";
+  if (value === 0) return "เท่าเดิม";
+  return `${value > 0 ? "+" : "−"}${formatter(Math.abs(value))}`;
 }
 
 function stopLabel(stop) {
@@ -101,6 +108,7 @@ export default function RouteOptimizationManager({ api, route, onClose, onSaved 
     ...stop,
     markerRole: index === 0 ? "START" : index === proposal.stops.length - 1 && endStopId ? "END" : "STOP",
   })) || [];
+  const comparison = useMemo(() => routeComparisonPolicy.compare({ currentRouteGeojson: route.routeGeojson, proposal }), [proposal, route.routeGeojson]);
 
   return <>
     <div className="waste-route-steps" aria-label="ขั้นตอนจัดเส้นทาง"><b>1</b><span>เลือกต้นทางและปลายทาง</span><b>2</b><span>ตรวจเส้นทางที่ระบบคำนวณ</span><b>3</b><span>ยืนยันใช้งาน</span></div>
@@ -114,9 +122,10 @@ export default function RouteOptimizationManager({ api, route, onClose, onSaved 
       {!proposal ? <div className="waste-route-map-picker"><strong>หรือเลือกบนแผนที่</strong><div><button type="button" className={selectionMode === "START" ? "is-active" : ""} onClick={() => setSelectionMode("START")}>1. เลือกจุดเริ่มต้น</button><button type="button" className={selectionMode === "END" ? "is-active" : ""} onClick={() => setSelectionMode("END")}>2. เลือกจุดสิ้นสุด</button><button type="button" onClick={() => { setEndStopId(""); setProposal(null); }}>กลับจุดเริ่มต้น</button></div><span>กดปุ่มที่ต้องการ แล้วคลิกจุดเก็บบนแผนที่</span></div> : null}
       <div className="waste-route-privacy-note"><strong>ทำงานอัตโนมัติ</strong><span>ระบบเรียงจุดแวะที่เหลือและคำนวณแนวเส้นตามถนน โดยส่งเฉพาะพิกัดไปยังบริการแผนที่</span></div>
       {proposal ? <>
-        <div className="waste-route-proposal-summary"><article><span>จุดเก็บทั้งหมด</span><strong>{formatNumber(proposal.stops.length)} จุด</strong></article><article><span>ระยะทางประมาณ</span><strong>{formatRouteDistance(proposal.distanceMeters)}</strong></article><article><span>เวลาเดินรถประมาณ</span><strong>{formatRouteDuration(proposal.durationSeconds)}</strong></article></div>
-        <div className="waste-route-proposal-map"><WasteMap routeGeojson={proposal.routeGeojson} routeStops={mappedProposalStops} /></div>
-        <div className="waste-route-map-legend"><span><i className="is-start" />จุดเริ่มต้น</span><span><i />จุดแวะเก็บขยะ</span><span><i className="is-end" />จุดสิ้นสุด</span></div>
+        <section className="waste-route-comparison"><header><div><p>BEFORE / AFTER</p><h3>{comparison.hasBaseline ? "เปรียบเทียบก่อนยืนยัน" : "ผลการคำนวณเส้นทางครั้งแรก"}</h3></div><span>{formatNumber(proposal.stops.length)} จุดเก็บ</span></header>{comparison.hasBaseline ? <div className="waste-route-comparison-table"><div className="is-heading"><span>รายการ</span><strong>เส้นทางเดิม</strong><strong>เส้นทางใหม่</strong><strong>ผลต่าง</strong></div><div><span>ระยะทาง</span><strong>{formatRouteDistance(comparison.currentDistanceMeters)}</strong><strong>{formatRouteDistance(comparison.proposedDistanceMeters)}</strong><strong className={comparison.distanceDeltaMeters > 0 ? "is-worse" : comparison.distanceDeltaMeters < 0 ? "is-better" : ""}>{formatDifference(comparison.distanceDeltaMeters, formatRouteDistance)}</strong></div><div><span>เวลาเดินรถ</span><strong>{formatRouteDuration(comparison.currentDurationSeconds)}</strong><strong>{formatRouteDuration(comparison.proposedDurationSeconds)}</strong><strong className={comparison.durationDeltaSeconds > 0 ? "is-worse" : comparison.durationDeltaSeconds < 0 ? "is-better" : ""}>{formatDifference(comparison.durationDeltaSeconds, formatRouteDuration)}</strong></div></div> : <div className="waste-route-proposal-summary"><article><span>จุดเก็บทั้งหมด</span><strong>{formatNumber(proposal.stops.length)} จุด</strong></article><article><span>ระยะทางประมาณ</span><strong>{formatRouteDistance(proposal.distanceMeters)}</strong></article><article><span>เวลาเดินรถประมาณ</span><strong>{formatRouteDuration(proposal.durationSeconds)}</strong></article></div>}</section>
+        <div className="waste-route-proposal-map"><WasteMap previousRouteGeojson={comparison.hasBaseline ? route.routeGeojson : null} routeGeojson={proposal.routeGeojson} routeStops={mappedProposalStops} /></div>
+        <div className="waste-route-map-legend">{comparison.hasBaseline ? <><span><i className="is-previous" />เส้นทางเดิม</span><span><i className="is-proposed" />เส้นทางใหม่</span></> : null}<span><i className="is-start" />จุดเริ่มต้น</span><span><i />จุดแวะเก็บขยะ</span><span><i className="is-end" />จุดสิ้นสุด</span></div>
+        {comparison.hasBaseline && (comparison.distanceDeltaMeters > 0 || comparison.durationDeltaSeconds > 0) ? <div className="waste-route-comparison-warning"><strong>เส้นทางใหม่มีค่าบางส่วนเพิ่มขึ้น</strong><span>ตรวจแนวถนน ลำดับจุดแวะ และข้อจำกัดการเข้าถึงก่อนยืนยัน ระบบจะไม่เปลี่ยนเส้นทางจนกว่าจะกดปุ่มยืนยัน</span></div> : null}
         <h3 className="waste-route-proposal-title">ลำดับการเดินรถที่ระบบแนะนำ</h3>
         <ol className="waste-stop-order-list">{proposal.stops.map((stop, index) => <li key={stop.id}><b>{index + 1}</b><div><strong>{stop.stopName}</strong><small>{index === 0 ? "จุดเริ่มต้น" : index === proposal.stops.length - 1 && endStopId ? "จุดสิ้นสุด" : "จุดแวะเก็บขยะ"}{stop.serviceNo ? ` · ${stop.serviceNo}` : ""}</small></div></li>)}</ol>
       </> : <>

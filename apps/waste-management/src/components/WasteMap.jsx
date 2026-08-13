@@ -5,7 +5,7 @@ import useLeafletResize from "../lib/useLeafletResize.js";
 
 const THA_PHO_CENTER = [16.7744, 100.2254];
 
-export default function WasteMap({ plans = [], routeGeojson = null, routeStops = [], history = [], historySegments = [], onStopClick = null }) {
+export default function WasteMap({ plans = [], routeGeojson = null, previousRouteGeojson = null, routeStops = [], history = [], historySegments = [], onStopClick = null }) {
   const rootRef = useRef(null);
   const mapRef = useRef(null);
   useEffect(() => {
@@ -21,6 +21,10 @@ export default function WasteMap({ plans = [], routeGeojson = null, routeStops =
     if (!map) return undefined;
     const layer = L.layerGroup().addTo(map);
     const points = [];
+    if (previousRouteGeojson) {
+      const previousLayer = L.geoJSON(previousRouteGeojson, { style: { color: "#697871", weight: 5, opacity: 0.7, dashArray: "9 9" } }).addTo(layer);
+      const previousBounds = previousLayer.getBounds(); if (previousBounds.isValid()) points.push(previousBounds.getSouthWest(), previousBounds.getNorthEast());
+    }
     if (routeGeojson) {
       const routeLayer = L.geoJSON(routeGeojson, { style: { color: "#278432", weight: 6, opacity: 0.86 } }).addTo(layer);
       const bounds = routeLayer.getBounds(); if (bounds.isValid()) points.push(bounds.getSouthWest(), bounds.getNorthEast());
@@ -50,6 +54,6 @@ export default function WasteMap({ plans = [], routeGeojson = null, routeStops =
     plans.forEach((plan) => { const latitude = Number(plan.latitude); const longitude = Number(plan.longitude); if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return; const marker = L.circleMarker([latitude, longitude], { radius: 10, weight: 3, color: "#fff", fillColor: plan.status === "IN_PROGRESS" ? "#176323" : "#8dcc1c", fillOpacity: 1 }).addTo(layer); marker.bindPopup(`<strong>${plan.vehicleCode || "รถเก็บขยะ"}</strong><br>${plan.routeName || "ไม่ระบุเส้นทาง"}<br>${plan.driverName || "ไม่ระบุคนขับ"}`); points.push([latitude, longitude]); });
     if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [34, 34], maxZoom: 16 });
     return () => layer.remove();
-  }, [plans, routeGeojson, routeStops, history, historySegments, onStopClick]);
+  }, [plans, previousRouteGeojson, routeGeojson, routeStops, history, historySegments, onStopClick]);
   return <div className="waste-map" ref={rootRef} aria-label="แผนที่ติดตามรถเก็บขยะ" />;
 }
