@@ -30,9 +30,20 @@ test("CitizenSubmission enforces optimistic version and workflow", () => {
 });
 
 test("WasteOperationPlan can only be edited before work starts", () => {
-  const plan = new WasteOperationPlan({ status: "SCHEDULED" });
-  plan.assertEditable().transitionTo("IN_PROGRESS");
+  const plan = new WasteOperationPlan({ status: "SCHEDULED", publicationStatus: "PUBLISHED", publicationVersion: 1 });
+  assert.throws(() => plan.assertEditable(), { code: "WASTE_PLAN_PUBLISHED_NOT_EDITABLE" });
+  plan.transitionTo("IN_PROGRESS");
   assert.throws(() => plan.assertEditable(), { code: "WASTE_PLAN_NOT_EDITABLE" });
   plan.transitionTo("COMPLETED");
   assert.equal(plan.status, "COMPLETED");
+});
+
+test("WasteOperationPlan requires a complete plan before FR17 publication", () => {
+  const plan = new WasteOperationPlan({ status: "SCHEDULED", publicationStatus: "DRAFT" });
+  assert.throws(() => plan.transitionTo("IN_PROGRESS"), { code: "WASTE_PLAN_MUST_BE_PUBLISHED" });
+  assert.throws(() => plan.publish({ hasSchedule: false, activeStopCount: 1 }), { code: "WASTE_PLAN_SCHEDULE_REQUIRED" });
+  assert.throws(() => plan.publish({ hasSchedule: true, activeStopCount: 0 }), { code: "WASTE_PLAN_STOP_REQUIRED" });
+  plan.publish({ hasSchedule: true, activeStopCount: 3 });
+  assert.equal(plan.publicationStatus, "PUBLISHED");
+  assert.equal(plan.publicationVersion, 1);
 });

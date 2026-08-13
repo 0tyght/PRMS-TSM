@@ -21,8 +21,10 @@ test("creates collision-safe daily waste plan numbers", async () => {
 });
 
 test("loads only the registered citizen route and returns a clear LINE schedule", async () => {
+  let query = "";
   const database = {
-    async execute(_sql, values) {
+    async execute(sql, values) {
+      query = sql;
       assert.deepEqual(values, ["route-1"]);
       return [[{
         planNo: "WST-20260813-001",
@@ -37,6 +39,7 @@ test("loads only the registered citizen route and returns a clear LINE schedule"
   const service = new WasteCitizenScheduleService({ database });
   const result = await service.upcomingFor({ routeId: "route-1" });
   assert.equal(result.state, "READY");
+  assert.match(query, /publication_status = 'PUBLISHED'/);
   assert.match(service.toLineText(result), /R-01 หมู่ 1–3/);
   assert.match(service.toLineText(result), /สถานะ: ตามแผน/);
 });

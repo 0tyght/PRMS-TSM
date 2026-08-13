@@ -6,18 +6,25 @@ import { LineNotificationAdapter } from "../infrastructure/line/LineNotification
 import { NativeCitizenAdapter } from "../infrastructure/line/NativeCitizenAdapter.js";
 import { RichMenuAdapter } from "../infrastructure/line/RichMenuAdapter.js";
 import { WasteLineAdapter } from "../infrastructure/line/WasteLineAdapter.js";
+import { database } from "../core/db.js";
+import { WasteLineNotificationQueue } from "../modules/waste/infrastructure/WasteLineNotificationQueue.js";
 
 export function createApiRuntime({ logger = console } = {}) {
   const notifications = new LineNotificationAdapter();
   const nativeCitizen = new NativeCitizenAdapter();
   const richMenus = new RichMenuAdapter();
   const wasteLine = new WasteLineAdapter();
+  const wasteNotifications = new WasteLineNotificationQueue({ database });
   const notificationQueue = new ScheduledTask({
     name: "line-notification",
     intervalMs: 60_000,
     logger,
     action: async () => {
-      const results = await notifications.processPending(30);
+      const [petResults, wasteResults] = await Promise.all([
+        notifications.processPending(30),
+        wasteNotifications.processPending(30),
+      ]);
+      const results = [...petResults, ...wasteResults];
       const sent = results.filter((item) => item.status === "SENT").length;
       if (results.length) logger.log(`[line-notification] processed=${results.length} sent=${sent}`);
       return results;

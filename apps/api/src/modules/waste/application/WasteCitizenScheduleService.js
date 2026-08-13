@@ -35,6 +35,7 @@ export class WasteCitizenScheduleService {
        WHERE p.route_id = ?
          AND p.scheduled_date >= CURDATE()
          AND p.status <> 'CANCELLED'
+         AND p.publication_status = 'PUBLISHED'
        ORDER BY p.scheduled_date, p.scheduled_start_at, p.plan_no
        LIMIT 5`,
       [citizen.routeId],

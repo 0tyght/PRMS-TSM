@@ -14,12 +14,18 @@ import { ConfirmWasteServiceUserRouteAssignmentUseCase } from "../modules/waste/
 import { MariaDbWasteRouteRepository } from "../modules/waste/infrastructure/MariaDbWasteRouteRepository.js";
 import { OsrmTripRouteOptimizer } from "../modules/waste/infrastructure/OsrmTripRouteOptimizer.js";
 import { RouteAssignmentService } from "../modules/waste/domain/RouteAssignmentService.js";
+import { MariaDbWastePlanRepository } from "../modules/waste/infrastructure/MariaDbWastePlanRepository.js";
+import { WastePlanNoticeFactory } from "../modules/waste/domain/WastePlanNoticeFactory.js";
+import { PublishWasteOperationPlanUseCase } from "../modules/waste/application/PublishWasteOperationPlanUseCase.js";
+import { WithdrawWasteOperationPlanUseCase } from "../modules/waste/application/WithdrawWasteOperationPlanUseCase.js";
 
 export function createHttpApplicationServices() {
   const nativeCitizen = new NativeCitizenAdapter();
   const wasteRouteRepository = new MariaDbWasteRouteRepository({ database });
   const wasteRouteOptimizer = new OsrmTripRouteOptimizer({ baseUrl: config.routingApiBaseUrl });
   const wasteRouteAssignmentService = new RouteAssignmentService();
+  const wastePlanRepository = new MariaDbWastePlanRepository({ database });
+  const wastePlanNoticeFactory = new WastePlanNoticeFactory();
   return Object.freeze({
     lineNotifications: new LineNotificationAdapter(),
     nativeCitizen,
@@ -32,6 +38,11 @@ export function createHttpApplicationServices() {
       confirm: new ConfirmWasteRouteProposalUseCase({ routeRepository: wasteRouteRepository }),
       proposeAssignment: new ProposeWasteServiceUserRouteAssignmentUseCase({ routeRepository: wasteRouteRepository, routeOptimizer: wasteRouteOptimizer, routeAssignmentService: wasteRouteAssignmentService }),
       confirmAssignment: new ConfirmWasteServiceUserRouteAssignmentUseCase({ routeRepository: wasteRouteRepository }),
+    }),
+    wastePlanPublication: Object.freeze({
+      publish: new PublishWasteOperationPlanUseCase({ repository: wastePlanRepository, noticeFactory: wastePlanNoticeFactory }),
+      withdraw: new WithdrawWasteOperationPlanUseCase({ repository: wastePlanRepository, noticeFactory: wastePlanNoticeFactory }),
+      repository: wastePlanRepository,
     }),
   });
 }

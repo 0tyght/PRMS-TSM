@@ -757,6 +757,14 @@ router.get("/routes/:id/stops", requireRole("ADMIN", "OFFICER", "VIEWER"), async
   } catch (error) { next(error); }
 });
 
+const planPublicationSchema = z.object({
+  publicNote: nullableText(500),
+});
+
+const planWithdrawalSchema = z.object({
+  reason: z.string().trim().min(4, "กรุณาระบุเหตุผลการถอนประกาศอย่างน้อย 4 ตัวอักษร").max(500),
+});
+
 function routeOptimizationError(error) {
   const errors = {
     ROUTE_NOT_FOUND: [404, "ไม่พบข้อมูลเส้นทางเก็บขยะ"],
@@ -872,12 +880,18 @@ router.get("/plans", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res,
     const values = date ? [date] : [];
     const [rows] = await pool.execute(
       `SELECT p.id, p.plan_no AS planNo, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate, p.status,
+              p.publication_status AS publicationStatus, p.publication_version AS publicationVersion,
+              p.public_note AS publicNote, p.published_at AS publishedAt, p.withdrawn_at AS withdrawnAt,
               p.scheduled_start_at AS scheduledStartAt, p.scheduled_end_at AS scheduledEndAt,
               p.actual_start_at AS actualStartAt, p.actual_end_at AS actualEndAt, p.note,
               r.id AS routeId, r.route_name AS routeName, v.id AS vehicleId, v.vehicle_code AS vehicleCode,
               d.id AS driverId, d.full_name AS driverName,
               (SELECT COUNT(*) FROM waste_route_stops s WHERE s.route_id = p.route_id AND s.is_active = 1) AS stopTotal,
-              (SELECT COUNT(*) FROM waste_stop_confirmations c WHERE c.plan_id = p.id AND c.status = 'COLLECTED') AS collectedStops
+              (SELECT COUNT(*) FROM waste_stop_confirmations c WHERE c.plan_id = p.id AND c.status = 'COLLECTED') AS collectedStops,
+              (SELECT COUNT(*) FROM waste_service_users u WHERE u.route_id = p.route_id AND u.is_active = 1 AND u.line_user_id IS NOT NULL AND u.line_user_id <> '') AS lineRecipientCount,
+              (SELECT COUNT(*) FROM waste_line_notifications n WHERE n.plan_id = p.id AND n.notification_type = 'SCHEDULE_PUBLISHED' AND n.delivery_status = 'SENT') AS lineSentCount,
+              (SELECT COUNT(*) FROM waste_line_notifications n WHERE n.plan_id = p.id AND n.notification_type = 'SCHEDULE_PUBLISHED' AND n.delivery_status IN ('PENDING','PROCESSING')) AS linePendingCount,
+              (SELECT COUNT(*) FROM waste_line_notifications n WHERE n.plan_id = p.id AND n.notification_type = 'SCHEDULE_PUBLISHED' AND n.delivery_status = 'FAILED') AS lineFailedCount
        FROM waste_operation_plans p
        INNER JOIN waste_routes r ON r.id = p.route_id
        INNER JOIN waste_vehicles v ON v.id = p.vehicle_id
@@ -886,7 +900,16 @@ router.get("/plans", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res,
        ORDER BY p.scheduled_date DESC, p.scheduled_start_at, p.created_at DESC`,
       values,
     );
-    return res.json({ data: rows.map((row) => ({ ...row, stopTotal: Number(row.stopTotal || 0), collectedStops: Number(row.collectedStops || 0) })) });
+    return res.json({ data: rows.map((row) => ({
+      ...row,
+      publicationVersion: Number(row.publicationVersion || 0),
+      stopTotal: Number(row.stopTotal || 0),
+      collectedStops: Number(row.collectedStops || 0),
+      lineRecipientCount: Number(row.lineRecipientCount || 0),
+      lineSentCount: Number(row.lineSentCount || 0),
+      linePendingCount: Number(row.linePendingCount || 0),
+      lineFailedCount: Number(row.lineFailedCount || 0),
+    })) });
   } catch (error) { next(error); }
 });
 
@@ -951,7 +974,7 @@ router.patch("/plans/:id/status", requireRole("ADMIN", "OFFICER"), async (req, r
   try {
     const input = planStatusSchema.parse(req.body);
     await withTransaction(async (db) => {
-      const [rows] = await db.execute(`SELECT status, vehicle_id AS vehicleId FROM waste_operation_plans WHERE id = ? FOR UPDATE`, [req.params.id]);
+      const [rows] = await db.execute(`SELECT status, publication_status AS publicationStatus, publication_version AS publicationVersion, vehicle_id AS vehicleId FROM waste_operation_plans WHERE id = ? FOR UPDATE`, [req.params.id]);
       if (!rows[0]) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
       new WasteOperationPlan({ id: req.params.id, ...rows[0] }).transitionTo(input.status);
       if (input.status === "IN_PROGRESS") {
@@ -1071,6 +1094,38 @@ router.get("/service-users/:id/route-suggestions", requireRole("ADMIN", "OFFICER
       });
     }
     return res.json({ data: suggestions });
+  } catch (error) { next(error); }
+});
+
+router.post("/plans/:id/publish", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const input = planPublicationSchema.parse(req.body || {});
+    const useCase = req.app.locals.wastePlanPublication?.publish;
+    if (!useCase) throw httpError(503, "ระบบประกาศตารางยังไม่พร้อมใช้งาน");
+    const result = await useCase.execute({ planId: req.params.id, officerId: req.user.sub, publicNote: input.publicNote });
+    if (!result) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
+    await audit(req.user.sub, "PUBLISH_WASTE_PLAN", "WASTE_PLAN", req.params.id, result, req.ip);
+    return res.json({ data: { id: req.params.id, ...result } });
+  } catch (error) { next(error); }
+});
+
+router.post("/plans/:id/withdraw", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const input = planWithdrawalSchema.parse(req.body || {});
+    const useCase = req.app.locals.wastePlanPublication?.withdraw;
+    if (!useCase) throw httpError(503, "ระบบถอนประกาศตารางยังไม่พร้อมใช้งาน");
+    const result = await useCase.execute({ planId: req.params.id, officerId: req.user.sub, reason: input.reason });
+    if (!result) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
+    await audit(req.user.sub, "WITHDRAW_WASTE_PLAN", "WASTE_PLAN", req.params.id, { ...result, reason: input.reason }, req.ip);
+    return res.json({ data: { id: req.params.id, ...result } });
+  } catch (error) { next(error); }
+});
+
+router.get("/plans/:id/notifications", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
+  try {
+    const repository = req.app.locals.wastePlanPublication?.repository;
+    if (!repository) throw httpError(503, "ระบบตรวจสอบการแจ้งเตือนยังไม่พร้อมใช้งาน");
+    return res.json({ data: await repository.publicationDeliverySummary(req.params.id) });
   } catch (error) { next(error); }
 });
 
