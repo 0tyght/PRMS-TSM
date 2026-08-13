@@ -418,7 +418,33 @@ export default function PlansPage({ token, navigate }) {
   useEffect(() => { void load(); }, [load]);
 
   async function run(action) { setSaving(true); setError(""); try { await action(); await load(); } catch (requestError) { setError(requestError.message); } finally { setSaving(false); } }
-  async function savePlan(input, current = null) { await run(async () => { if (current) await api.patch(`/api/waste/plans/${current.id}`, input); else await api.post("/api/waste/plans", input); setEditing(null); setCreateOpen(false); }); }
+  async function savePlan(input, current = null) {
+    setSaving(true);
+    setError("");
+
+    try {
+      if (current) {
+        await api.patch(`/api/waste/plans/${current.id}`, input);
+      } else {
+        await api.post("/api/waste/plans", input);
+      }
+
+      setEditing(null);
+      setCreateOpen(false);
+
+      // หลังบันทึก ให้หน้าเว็บพาไปวันที่ของแผนที่เพิ่งบันทึก
+      // เพื่อไม่ให้ผู้ใช้เข้าใจว่าแผนหาย
+      if (input.scheduledDate !== date) {
+        setDate(input.scheduledDate);
+      } else {
+        await load();
+      }
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  }
   async function updateStatus(id, status) { await run(() => api.patch(`/api/waste/plans/${id}/status`, { status })); }
   async function updatePublication(plan, mode, input) { await run(() => api.post(`/api/waste/plans/${plan.id}/${mode === "publish" ? "publish" : "withdraw"}`, input)); setPublication(null); }
 
