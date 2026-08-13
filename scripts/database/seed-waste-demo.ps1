@@ -23,10 +23,10 @@ if (-not (Test-Path -LiteralPath $routeSqlFile)) {
     "--port=3306" `
     "--user=root" `
     "--database=prms_tsm" `
-    "--execute=source $($sqlFile.Replace('\', '/'))"
+    "--execute=source $($routeSqlFile.Replace('\', '/'))"
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Waste demo data import failed"
+    throw "Tha Pho waste route data import failed"
 }
 
 & $mysql `
@@ -35,10 +35,10 @@ if ($LASTEXITCODE -ne 0) {
     "--port=3306" `
     "--user=root" `
     "--database=prms_tsm" `
-    "--execute=source $($routeSqlFile.Replace('\', '/'))"
+    "--execute=source $($sqlFile.Replace('\', '/'))"
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Tha Pho waste route data import failed"
+    throw "Waste demo data import failed"
 }
 
 Write-Host "Waste demo data loaded successfully" -ForegroundColor Green

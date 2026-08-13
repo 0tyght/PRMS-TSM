@@ -116,6 +116,21 @@ export default function ServiceUsersPage({ token }) {
     }
   };
 
+  const openRouteAssignment = async (user) => {
+    setModal(user);
+    setSuggestions([]);
+    if (user.latitude == null || user.longitude == null) return;
+    setAssignmentLoading(true);
+    setError("");
+    try {
+      setSuggestions(await api.get(`/api/waste/service-users/${user.id}/route-suggestions`));
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setAssignmentLoading(false);
+    }
+  };
+
   const assignRoute = async (route) => {
     if (!modal?.id) return;
     setAssignmentLoading(true);
@@ -155,7 +170,7 @@ export default function ServiceUsersPage({ token }) {
           <label><span className="sr-only">กรองตามเส้นทาง</span><select value={routeFilter} onChange={(event) => setRouteFilter(event.target.value)}><option value="ALL">ทุกเส้นทาง</option><option value="UNASSIGNED">ยังไม่กำหนดเส้นทาง</option>{routes.map((route) => <option key={route.id} value={route.id}>{route.routeCode} — {route.routeName}</option>)}</select></label>
         </div>
       </header>
-      {loading ? <LoadingState /> : !users.length ? <EmptyState title="ยังไม่มีทะเบียนผู้ใช้บริการ" detail="เพิ่มบ้านเรือนหรือสถานที่เพื่อกำหนดเส้นทางเก็บขยะและออกค่าบริการ" actionLabel="เพิ่มผู้ใช้บริการ" onAction={() => setModal({})} /> : !filteredUsers.length ? <EmptyState title="ไม่พบข้อมูลที่ค้นหา" detail="ลองเปลี่ยนคำค้นหรือเงื่อนไขเส้นทาง" /> : <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th>เลขผู้ใช้บริการ</th><th>ผู้ใช้บริการ / ติดต่อ</th><th>ที่อยู่</th><th>เส้นทาง</th><th>LINE</th><th>สถานะ</th><th /></tr></thead><tbody>{filteredUsers.map((user) => <tr key={user.id}><td><strong>{user.serviceNo}</strong></td><td><strong>{user.fullName}</strong><small>{user.phone}</small></td><td>หมู่ {user.villageNo} · {user.houseNo}<small>{user.villageName}{user.latitude != null ? " · มีพิกัด" : " · ยังไม่มีพิกัด"}</small></td><td>{user.routeName || <span className="waste-text-warning">ยังไม่กำหนด</span>}</td><td>{user.lineUserId ? "เชื่อมแล้ว" : "ยังไม่เชื่อม"}</td><td><StatusBadge value={user.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><button type="button" className="waste-table-action" onClick={() => setModal(user)}>แก้ไข</button></td></tr>)}</tbody></table></div>}
+      {loading ? <LoadingState /> : !users.length ? <EmptyState title="ยังไม่มีทะเบียนผู้ใช้บริการ" detail="เพิ่มบ้านเรือนหรือสถานที่เพื่อกำหนดเส้นทางเก็บขยะและออกค่าบริการ" actionLabel="เพิ่มผู้ใช้บริการ" onAction={() => setModal({})} /> : !filteredUsers.length ? <EmptyState title="ไม่พบข้อมูลที่ค้นหา" detail="ลองเปลี่ยนคำค้นหรือเงื่อนไขเส้นทาง" /> : <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th>เลขผู้ใช้บริการ</th><th>ผู้ใช้บริการ / ติดต่อ</th><th>ที่อยู่</th><th>เส้นทาง</th><th>LINE</th><th>สถานะ</th><th /></tr></thead><tbody>{filteredUsers.map((user) => <tr key={user.id}><td><strong>{user.serviceNo}</strong></td><td><strong>{user.fullName}</strong><small>{user.phone}</small></td><td>หมู่ {user.villageNo} · {user.houseNo}<small>{user.villageName}{user.latitude != null ? " · มีพิกัด" : " · ยังไม่มีพิกัด"}</small></td><td><strong>{user.routeName || <span className="waste-text-warning">ยังไม่กำหนด</span>}</strong><button type="button" className="waste-route-assign-link" onClick={() => void openRouteAssignment(user)}>{user.routeId ? "เปลี่ยนเส้นทาง" : "กำหนดเส้นทาง"}</button></td><td>{user.lineUserId ? "เชื่อมแล้ว" : "ยังไม่เชื่อม"}</td><td><StatusBadge value={user.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><button type="button" className="waste-table-action" onClick={() => { setSuggestions([]); setModal(user); }}>แก้ไขข้อมูล</button></td></tr>)}</tbody></table></div>}
     </section>
     {modal ? <Modal title={modal.id ? "แก้ไขผู้ใช้บริการเก็บขยะ" : "เพิ่มผู้ใช้บริการเก็บขยะ"} onClose={() => { setModal(null); setSuggestions([]); }}><ServiceUserForm initial={modal.id ? modal : null} villages={villages} onCancel={() => { setModal(null); setSuggestions([]); }} onSubmit={save} onSuggestRoutes={suggestRoutes} onAssignRoute={assignRoute} suggestions={suggestions} assignmentLoading={assignmentLoading} saving={saving} /></Modal> : null}
   </>;
