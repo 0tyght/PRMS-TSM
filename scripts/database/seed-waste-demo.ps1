@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $sqlFile = Join-Path $repoRoot "database\demo\waste_demo_data.sql"
+$routeSqlFile = Join-Path $repoRoot "database\demo\waste_tha_pho_routes.sql"
 $mysql = "C:\xampp\mysql\bin\mysql.exe"
 
 if (-not (Test-Path -LiteralPath $mysql)) {
@@ -10,6 +11,10 @@ if (-not (Test-Path -LiteralPath $mysql)) {
 
 if (-not (Test-Path -LiteralPath $sqlFile)) {
     throw "Waste demo SQL file was not found at $sqlFile"
+}
+
+if (-not (Test-Path -LiteralPath $routeSqlFile)) {
+    throw "Tha Pho waste route SQL file was not found at $routeSqlFile"
 }
 
 & $mysql `
@@ -22,6 +27,18 @@ if (-not (Test-Path -LiteralPath $sqlFile)) {
 
 if ($LASTEXITCODE -ne 0) {
     throw "Waste demo data import failed"
+}
+
+& $mysql `
+    "--default-character-set=utf8mb4" `
+    "--host=127.0.0.1" `
+    "--port=3306" `
+    "--user=root" `
+    "--database=prms_tsm" `
+    "--execute=source $($routeSqlFile.Replace('\', '/'))"
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Tha Pho waste route data import failed"
 }
 
 Write-Host "Waste demo data loaded successfully" -ForegroundColor Green

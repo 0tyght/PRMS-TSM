@@ -44,11 +44,14 @@ export class WasteLineShortcutCatalog {
           this.postback("ค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการขยะ"),
         ]
       : [this.postback("ลงทะเบียนบริการ", "waste=register", "ลงทะเบียนบริการเก็บขยะ")];
-    actions.push(actors.driver
-      ? this.postback("งานคนขับ", "waste=driver_jobs", "ดูงานเก็บขยะของฉัน")
-      : this.postback("เชื่อมบัญชีคนขับ", "waste=driver_link", "เชื่อมบัญชีคนขับรถเก็บขยะ"));
     actions.push(this.smartThaPhoHome());
     return this.normalize(actions);
+  }
+
+  driverGuest() {
+    return this.normalize([
+      this.postback("เชื่อมบัญชีคนขับ", "waste=driver_link", "เชื่อมบัญชีคนขับรถเก็บขยะ"),
+    ]);
   }
 
   citizen() {
@@ -83,9 +86,12 @@ export class WasteLineShortcutCatalog {
   driverMenu() {
     return this.normalize([
       this.postback("งานของฉัน", "waste=driver_jobs", "ดูงานเก็บขยะของฉัน"),
-      this.postback("เมนูขยะ", "waste=menu", "กลับเมนูบริการเก็บขยะ"),
-      this.smartThaPhoHome(),
+      this.postback("เมนูคนขับ", "waste=menu", "กลับเมนูคนขับรถเก็บขยะ"),
     ]);
+  }
+
+  driverCancelFlow(extra = []) {
+    return this.normalize([...extra, this.message("ยกเลิก", "ยกเลิกบริการขยะ"), ...this.driverMenu()]);
   }
 
   activePlan(plan) {
@@ -107,7 +113,7 @@ export class WasteLineShortcutCatalog {
   }
 
   driverLocation() {
-    return this.cancelFlow([this.location("ส่งตำแหน่งรถ")]);
+    return this.driverCancelFlow([this.location("ส่งตำแหน่งรถ")]);
   }
 }
 

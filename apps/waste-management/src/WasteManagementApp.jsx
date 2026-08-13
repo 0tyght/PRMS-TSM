@@ -12,6 +12,7 @@ import DriverTrackingPage from "./pages/DriverTrackingPage.jsx";
 import { useHashPage } from "./lib/useHashPage.js";
 import { WasteApplicationController } from "./application/WasteApplicationController.js";
 import "./waste.css";
+import "./route-assignment.css";
 
 const PAGES = Object.freeze({
   dashboard: DashboardPage,

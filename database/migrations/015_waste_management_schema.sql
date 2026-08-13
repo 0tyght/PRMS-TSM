@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS waste_service_users (
     address_detail VARCHAR(255) NULL,
     line_user_id VARCHAR(100) NULL,
     route_id CHAR(36) NULL,
+    route_assignment_status ENUM('UNASSIGNED', 'SUGGESTED', 'CONFIRMED') NOT NULL DEFAULT 'UNASSIGNED',
+    route_assignment_distance_m DECIMAL(10,2) NULL,
+    route_assigned_at DATETIME NULL,
+    route_assigned_by CHAR(36) NULL,
     latitude DECIMAL(10,7) NULL,
     longitude DECIMAL(10,7) NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -71,6 +75,7 @@ CREATE TABLE IF NOT EXISTS waste_service_users (
     CONSTRAINT fk_waste_service_route FOREIGN KEY (route_id)
         REFERENCES waste_routes(id) ON UPDATE CASCADE ON DELETE SET NULL,
     INDEX idx_waste_service_route (route_id, is_active),
+    INDEX idx_waste_service_assignment (route_assignment_status, route_id, is_active),
     INDEX idx_waste_service_village (village_id, is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

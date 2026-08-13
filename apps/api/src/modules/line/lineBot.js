@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 
+import { LineChannelProfile } from "../../application/line/LineChannelProfile.js";
 import { config } from "../../core/config.js";
 import {
   loadCitizenExperienceByLineUserId,
@@ -18,6 +19,20 @@ import { smartThaPhoLineMenu } from "./SmartThaPhoLineMenu.js";
 import { handleWasteLineEvent } from "./wasteLine.js";
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
+
+const citizenChannel = new LineChannelProfile({
+  kind: "CITIZEN",
+  channelSecret: config.lineChannelSecret,
+  channelAccessToken: config.lineChannelAccessToken,
+  channelId: config.lineChannelId,
+});
+
+const driverChannel = new LineChannelProfile({
+  kind: "DRIVER",
+  channelSecret: config.lineDriverChannelSecret,
+  channelAccessToken: config.lineDriverChannelAccessToken,
+  channelId: config.lineDriverChannelId,
+});
 
 export function verifyLineWebhookSignature(rawBody, signature, channelSecret) {
   if (!Buffer.isBuffer(rawBody) || !signature || !channelSecret) return false;
@@ -44,11 +59,11 @@ function textMessage(text, quickReplyItems = []) {
   };
 }
 
-async function reply(replyToken, messages) {
-  if (!replyToken || !config.lineChannelAccessToken) {
+async function reply(replyToken, messages, channel) {
+  if (!replyToken || !channel.channelAccessToken) {
     return {
       status: "SKIPPED",
-      reason: !replyToken ? "NO_REPLY_TOKEN" : "NO_CHANNEL_ACCESS_TOKEN",
+      reason: !replyToken ? "NO_REPLY_TOKEN" : `NO_${channel.kind}_CHANNEL_ACCESS_TOKEN`,
     };
   }
 
@@ -61,7 +76,7 @@ async function reply(replyToken, messages) {
   const response = await fetch(LINE_REPLY_ENDPOINT, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${config.lineChannelAccessToken}`,
+      Authorization: `Bearer ${channel.channelAccessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ replyToken, messages: safeMessages }),
@@ -116,7 +131,7 @@ async function loadState(lineUserId) {
   }
 }
 
-async function processEvent(event) {
+async function processEvent(event, channel) {
   if (!event || event.mode === "standby") return;
 
   const accepted = await claimLineWebhookEvent(event);
@@ -131,10 +146,19 @@ async function processEvent(event) {
       return;
     }
 
+    if (channel.kind === "DRIVER") {
+      const wasteResult = await handleWasteLineEvent(event, { audience: "DRIVER", force: true });
+      if (event.replyToken && wasteResult.messages?.length) {
+        await reply(event.replyToken, wasteResult.messages, channel);
+      }
+      await completeLineWebhookEvent(event);
+      return;
+    }
+
     const smartMenuRequest = smartThaPhoLineMenu.parse(event);
     if (smartMenuRequest?.action === "menu") {
       await smartThaPhoLineMenu.clearPendingFlows(lineUserId);
-      if (event.replyToken) await reply(event.replyToken, [smartThaPhoLineMenu.message()]);
+      if (event.replyToken) await reply(event.replyToken, [smartThaPhoLineMenu.message()], channel);
       await completeLineWebhookEvent(event);
       return;
     }
@@ -147,9 +171,9 @@ async function processEvent(event) {
           ...event,
           type: "postback",
           postback: { data: "waste=menu" },
-        });
+        }, { audience: "CITIZEN", force: true });
         if (event.replyToken && wasteResult.messages?.length) {
-          await reply(event.replyToken, wasteResult.messages);
+          await reply(event.replyToken, wasteResult.messages, channel);
         }
         await completeLineWebhookEvent(event);
         return;
@@ -157,7 +181,7 @@ async function processEvent(event) {
 
       if (smartMenuRequest.system !== "pet") {
         if (event.replyToken) {
-          await reply(event.replyToken, [smartThaPhoLineMenu.unavailableMessage(smartMenuRequest.system)]);
+          await reply(event.replyToken, [smartThaPhoLineMenu.unavailableMessage(smartMenuRequest.system)], channel);
         }
         await completeLineWebhookEvent(event);
         return;
@@ -170,10 +194,10 @@ async function processEvent(event) {
       };
     }
 
-    const wasteResult = await handleWasteLineEvent(event);
+    const wasteResult = await handleWasteLineEvent(event, { audience: "CITIZEN" });
     if (wasteResult.handled) {
       if (event.replyToken && wasteResult.messages?.length) {
-        await reply(event.replyToken, wasteResult.messages);
+        await reply(event.replyToken, wasteResult.messages, channel);
       }
       await completeLineWebhookEvent(event);
       return;
@@ -222,7 +246,7 @@ async function processEvent(event) {
         : null
     );
     const replyTask = event.replyToken && result.messages?.length
-      ? reply(event.replyToken, result.messages)
+      ? reply(event.replyToken, result.messages, channel)
       : null;
 
     continueRichMenuTask(menuTask, event);
@@ -243,7 +267,7 @@ async function processEvent(event) {
           `${String(error?.message || "ไม่สามารถดำเนินการได้ในขณะนี้")}\n\nพิมพ์ “เมนู” เพื่อเลือกบริการใหม่ หรือพิมพ์ “ยกเลิก” เพื่อยกเลิกรายการที่ค้างอยู่`,
           [smartThaPhoLineMenu.homeAction(), { type: "message", label: "ยกเลิก", text: "ยกเลิก" }],
         ),
-      ]).catch((replyError) => {
+      ], channel).catch((replyError) => {
         console.error("[line-bot] error reply failed", replyError);
       });
     }
@@ -252,10 +276,10 @@ async function processEvent(event) {
   }
 }
 
-async function processEvents(events) {
+async function processEvents(events, channel) {
   for (const [index, event] of events.entries()) {
     try {
-      await processEvent(event);
+      await processEvent(event, channel);
     } catch (error) {
       console.error("[line-bot] webhook event rejected", {
         index,
@@ -265,17 +289,18 @@ async function processEvents(events) {
   }
 }
 
-export function handleLineWebhook(req, res) {
+function handleLineWebhookForChannel(req, res, channel) {
   const rawBody = Buffer.isBuffer(req.body)
     ? req.body
     : Buffer.from(req.body || "");
   const signature = req.get("x-line-signature");
 
-  if (!config.lineChannelSecret) {
-    return res.status(503).json({ message: "ยังไม่ได้ตั้งค่า LINE_CHANNEL_SECRET" });
+  if (!channel.channelSecret) {
+    const key = channel.kind === "DRIVER" ? "LINE_DRIVER_CHANNEL_SECRET" : "LINE_CHANNEL_SECRET";
+    return res.status(503).json({ message: `ยังไม่ได้ตั้งค่า ${key}` });
   }
 
-  if (!verifyLineWebhookSignature(rawBody, signature, config.lineChannelSecret)) {
+  if (!verifyLineWebhookSignature(rawBody, signature, channel.channelSecret)) {
     return res.status(401).json({ message: "LINE webhook signature ไม่ถูกต้อง" });
   }
 
@@ -292,9 +317,19 @@ export function handleLineWebhook(req, res) {
 
   if (events.length) {
     queueMicrotask(() => {
-      void processEvents(events);
+      void processEvents(events, channel);
     });
   }
 
   return undefined;
 }
+
+export function handleCitizenLineWebhook(req, res) {
+  return handleLineWebhookForChannel(req, res, citizenChannel);
+}
+
+export function handleDriverLineWebhook(req, res) {
+  return handleLineWebhookForChannel(req, res, driverChannel);
+}
+
+export const handleLineWebhook = handleCitizenLineWebhook;

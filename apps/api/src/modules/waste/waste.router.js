@@ -6,12 +6,14 @@ import { pool, withTransaction } from "../../core/db.js";
 import { authenticate, requireRole } from "../../core/middleware.js";
 import { WasteOperationPlan } from "../../domain/waste/entities/WasteOperationPlan.js";
 import { HttpError } from "../../presentation/http/HttpError.js";
+import { RouteAssignmentService } from "./domain/RouteAssignmentService.js";
 import { WastePlanNumberService } from "./application/WastePlanNumberService.js";
 import { WasteTrackingTokenService } from "./application/WasteTrackingTokenService.js";
 
 const router = Router();
 const planNumberService = new WastePlanNumberService();
 const trackingTokenService = new WasteTrackingTokenService({ secret: config.jwtSecret });
+const routeAssignmentService = new RouteAssignmentService();
 const THA_PHO_BOUNDS = Object.freeze({ minLatitude: 16.70, maxLatitude: 16.805, minLongitude: 100.15, maxLongitude: 100.27 });
 
 const dateSchema = z.string().date();
@@ -69,6 +71,8 @@ const serviceUserSchema = z.object({
   longitude: nullableNumber,
   isActive: z.boolean().default(true),
 });
+
+const routeAssignmentSchema = z.object({ routeId: z.string().uuid() });
 
 const planSchema = z.object({
   planNo: z.string().trim().min(4).max(30).optional(),
@@ -875,7 +879,7 @@ router.get("/service-users", requireRole("ADMIN", "OFFICER", "VIEWER"), async (r
     const values = [];
     if (routeId) { terms.push("u.route_id = ?"); values.push(routeId); }
     if (search) { terms.push("(u.service_no LIKE ? OR u.full_name LIKE ? OR u.house_no LIKE ?)"); values.push(`%${search}%`, `%${search}%`, `%${search}%`); }
-    const [rows] = await pool.execute(`SELECT u.id, u.service_no AS serviceNo, u.full_name AS fullName, u.phone, u.house_no AS houseNo, u.village_id AS villageId, v.village_no AS villageNo, v.name_th AS villageName, u.address_detail AS addressDetail, u.line_user_id AS lineUserId, u.route_id AS routeId, r.route_name AS routeName, u.latitude, u.longitude, u.is_active AS isActive FROM waste_service_users u INNER JOIN villages v ON v.id = u.village_id LEFT JOIN waste_routes r ON r.id = u.route_id ${terms.length ? `WHERE ${terms.join(" AND ")}` : ""} ORDER BY u.is_active DESC, v.village_no, u.house_no`, values);
+    const [rows] = await pool.execute(`SELECT u.id, u.service_no AS serviceNo, u.full_name AS fullName, u.phone, u.house_no AS houseNo, u.village_id AS villageId, v.village_no AS villageNo, v.name_th AS villageName, u.address_detail AS addressDetail, u.line_user_id AS lineUserId, u.route_id AS routeId, r.route_name AS routeName, u.route_assignment_status AS routeAssignmentStatus, u.route_assignment_distance_m AS routeAssignmentDistanceM, u.route_assigned_at AS routeAssignedAt, u.latitude, u.longitude, u.is_active AS isActive FROM waste_service_users u INNER JOIN villages v ON v.id = u.village_id LEFT JOIN waste_routes r ON r.id = u.route_id ${terms.length ? `WHERE ${terms.join(" AND ")}` : ""} ORDER BY u.is_active DESC, v.village_no, u.house_no`, values);
     return res.json({ data: rows.map((row) => ({ ...row, isActive: toBoolean(row.isActive) })) });
   } catch (error) { next(error); }
 });
@@ -885,7 +889,7 @@ router.post("/service-users", requireRole("ADMIN", "OFFICER"), async (req, res, 
     const input = serviceUserSchema.parse(req.body);
     const id = crypto.randomUUID();
     await withTransaction(async (db) => {
-      await db.execute(`INSERT INTO waste_service_users (id, service_no, full_name, phone, house_no, village_id, address_detail, line_user_id, route_id, latitude, longitude, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, input.serviceNo, input.fullName, input.phone, input.houseNo, input.villageId, input.addressDetail, input.lineUserId, input.routeId, input.latitude, input.longitude, input.isActive]);
+      await db.execute(`INSERT INTO waste_service_users (id, service_no, full_name, phone, house_no, village_id, address_detail, line_user_id, route_id, route_assignment_status, route_assigned_at, route_assigned_by, latitude, longitude, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, input.serviceNo, input.fullName, input.phone, input.houseNo, input.villageId, input.addressDetail, input.lineUserId, input.routeId, input.routeId ? "CONFIRMED" : "UNASSIGNED", input.routeId ? new Date() : null, input.routeId ? req.user.sub : null, input.latitude, input.longitude, input.isActive]);
       await syncServiceUserStop(db, id);
     });
     await audit(req.user.sub, "CREATE_WASTE_SERVICE_USER", "WASTE_SERVICE_USER", id, input, req.ip);
@@ -897,7 +901,9 @@ router.patch("/service-users/:id", requireRole("ADMIN", "OFFICER"), async (req, 
   try {
     const input = serviceUserSchema.partial().parse(req.body);
     if (!Object.keys(input).length) throw httpError(422, "กรุณาระบุข้อมูลผู้ใช้บริการที่ต้องการปรับปรุง");
-    const fields = { serviceNo: "service_no", fullName: "full_name", phone: "phone", houseNo: "house_no", villageId: "village_id", addressDetail: "address_detail", lineUserId: "line_user_id", routeId: "route_id", latitude: "latitude", longitude: "longitude", isActive: "is_active" };
+    const fields = { serviceNo: "service_no", fullName: "full_name", phone: "phone", houseNo: "house_no", villageId: "village_id", addressDetail: "address_detail", lineUserId: "line_user_id", latitude: "latitude", longitude: "longitude", isActive: "is_active" };
+    if (Object.hasOwn(input, "routeId")) delete input.routeId;
+    if (!Object.keys(input).length) throw httpError(422, "ใช้คำสั่งยืนยันเส้นทางเพื่อเปลี่ยนเส้นทางรับผิดชอบ");
     const values = [];
     const sets = Object.entries(input).map(([key, value]) => { values.push(value); return `${fields[key]} = ?`; });
     values.push(req.params.id);
@@ -908,6 +914,50 @@ router.patch("/service-users/:id", requireRole("ADMIN", "OFFICER"), async (req, 
     });
     await audit(req.user.sub, "UPDATE_WASTE_SERVICE_USER", "WASTE_SERVICE_USER", req.params.id, input, req.ip);
     return res.json({ data: { id: req.params.id, ...input } });
+  } catch (error) { next(error); }
+});
+
+router.get("/service-users/:id/route-suggestions", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
+  try {
+    const [[user], [routes]] = await Promise.all([
+      pool.execute(`SELECT id, latitude, longitude FROM waste_service_users WHERE id = ? AND is_active = 1`, [req.params.id]),
+      pool.execute(`SELECT id, route_code AS routeCode, route_name AS routeName, CAST(route_geojson AS CHAR) AS routeGeojson FROM waste_routes WHERE is_active = 1 AND route_geojson IS NOT NULL ORDER BY route_code`),
+    ]);
+    if (!user[0]) throw httpError(404, "ไม่พบผู้ใช้บริการเก็บขยะ");
+    if (user[0].latitude == null || user[0].longitude == null) throw httpError(422, "กรุณาปักตำแหน่งจุดรับบริการก่อนค้นหาเส้นทางใกล้เคียง");
+    const suggestions = routeAssignmentService.suggest(
+      { latitude: Number(user[0].latitude), longitude: Number(user[0].longitude) },
+      routes.map((route) => ({ ...route, routeGeojson: JSON.parse(route.routeGeojson) })),
+    ).map(({ routeGeojson, ...suggestion }) => suggestion);
+    return res.json({ data: suggestions });
+  } catch (error) { next(error); }
+});
+
+router.put("/service-users/:id/route-assignment", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const input = routeAssignmentSchema.parse(req.body);
+    const [[user], [route]] = await Promise.all([
+      pool.execute(`SELECT id, latitude, longitude FROM waste_service_users WHERE id = ? AND is_active = 1`, [req.params.id]),
+      pool.execute(`SELECT id, CAST(route_geojson AS CHAR) AS routeGeojson FROM waste_routes WHERE id = ? AND is_active = 1`, [input.routeId]),
+    ]);
+    if (!user[0]) throw httpError(404, "ไม่พบผู้ใช้บริการเก็บขยะ");
+    if (!route[0]) throw httpError(404, "ไม่พบเส้นทางเก็บขยะที่เปิดใช้งาน");
+    const distanceMeters = user[0].latitude == null || user[0].longitude == null
+      ? null
+      : routeAssignmentService.distanceToRouteMeters(
+        { latitude: Number(user[0].latitude), longitude: Number(user[0].longitude) },
+        route[0].routeGeojson ? JSON.parse(route[0].routeGeojson) : null,
+      );
+    await withTransaction(async (db) => {
+      await db.execute(
+        `UPDATE waste_service_users SET route_id = ?, route_assignment_status = 'CONFIRMED', route_assignment_distance_m = ?, route_assigned_at = NOW(), route_assigned_by = ? WHERE id = ?`,
+        [input.routeId, distanceMeters == null ? null : Math.round(distanceMeters), req.user.sub, req.params.id],
+      );
+      await syncServiceUserStop(db, req.params.id);
+    });
+    const output = { id: req.params.id, routeId: input.routeId, routeAssignmentStatus: "CONFIRMED", routeAssignmentDistanceM: distanceMeters == null ? null : Math.round(distanceMeters) };
+    await audit(req.user.sub, "ASSIGN_WASTE_SERVICE_ROUTE", "WASTE_SERVICE_USER", req.params.id, output, req.ip);
+    return res.json({ data: output });
   } catch (error) { next(error); }
 });
 

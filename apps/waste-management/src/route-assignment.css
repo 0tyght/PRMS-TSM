@@ -1,0 +1,56 @@
+.waste-route-assignment {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #d8e5d4;
+  border-radius: 14px;
+  background: #f8fbf6;
+}
+
+.waste-route-assignment > header,
+.waste-route-suggestions article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.waste-route-assignment header div,
+.waste-route-suggestions article div {
+  display: grid;
+  gap: 3px;
+}
+
+.waste-route-assignment span,
+.waste-route-assignment small {
+  color: #637064;
+}
+
+.waste-route-suggestions {
+  display: grid;
+  gap: 8px;
+}
+
+.waste-route-suggestions article {
+  padding: 12px;
+  border: 1px solid #dfe8dc;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.waste-route-suggestions article.is-recommended {
+  border-color: #82bf22;
+  box-shadow: inset 4px 0 #82bf22;
+}
+
+.waste-text-warning {
+  color: #a65b18;
+}
+
+@media (max-width: 760px) {
+  .waste-route-assignment > header,
+  .waste-route-suggestions article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

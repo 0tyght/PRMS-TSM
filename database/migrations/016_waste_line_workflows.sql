@@ -4,6 +4,7 @@ SET NAMES utf8mb4;
 
 CREATE TABLE IF NOT EXISTS waste_line_sessions (
     line_user_id VARCHAR(100) NOT NULL,
+    channel_type ENUM('CITIZEN', 'DRIVER') NOT NULL DEFAULT 'CITIZEN',
     actor_type ENUM('CITIZEN', 'DRIVER') NOT NULL,
     flow_type VARCHAR(50) NOT NULL,
     current_step VARCHAR(50) NOT NULL,
@@ -11,7 +12,7 @@ CREATE TABLE IF NOT EXISTS waste_line_sessions (
     expires_at DATETIME NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (line_user_id),
+    PRIMARY KEY (channel_type, line_user_id),
     INDEX idx_waste_line_session_expiry (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

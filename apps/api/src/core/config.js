@@ -133,6 +133,12 @@ export const config = Object.freeze({
 
   lineChannelId: readText(process.env.LINE_CHANNEL_ID),
 
+  lineDriverChannelSecret: readText(process.env.LINE_DRIVER_CHANNEL_SECRET),
+
+  lineDriverChannelAccessToken: readText(process.env.LINE_DRIVER_CHANNEL_ACCESS_TOKEN),
+
+  lineDriverChannelId: readText(process.env.LINE_DRIVER_CHANNEL_ID),
+
   wasteDriverTrackingUrl: readText(
     process.env.WASTE_DRIVER_TRACKING_URL,
     "https://0tyght.github.io/PRMS-TSM/waste-management/",
@@ -147,6 +153,11 @@ export const config = Object.freeze({
   lineConfigured: Boolean(
     readText(process.env.LINE_CHANNEL_SECRET) &&
     readText(process.env.LINE_CHANNEL_ACCESS_TOKEN)
+  ),
+
+  lineDriverConfigured: Boolean(
+    readText(process.env.LINE_DRIVER_CHANNEL_SECRET) &&
+    readText(process.env.LINE_DRIVER_CHANNEL_ACCESS_TOKEN)
   ),
 
   privateStorageDir: path.resolve(readText(process.env.PRIVATE_STORAGE_DIR, "./storage/uploads")),

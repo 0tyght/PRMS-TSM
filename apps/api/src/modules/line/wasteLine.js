@@ -57,31 +57,32 @@ function formatMoney(value) {
   return Number(value || 0).toLocaleString("th-TH", { style: "currency", currency: "THB" });
 }
 
-async function getSession(lineUserId) {
+async function getSession(lineUserId, channelType) {
   const [rows] = await pool.execute(
     `SELECT actor_type AS actorType, flow_type AS flowType, current_step AS currentStep,
             CAST(draft_json AS CHAR) AS draftJson
-     FROM waste_line_sessions WHERE line_user_id = ? AND expires_at > NOW()`,
-    [lineUserId],
+     FROM waste_line_sessions
+     WHERE channel_type = ? AND line_user_id = ? AND expires_at > NOW()`,
+    [channelType, lineUserId],
   );
   if (!rows[0]) return null;
   return { ...rows[0], draft: rows[0].draftJson ? JSON.parse(rows[0].draftJson) : {} };
 }
 
-async function saveSession(lineUserId, actorType, flowType, currentStep, draft = {}) {
+async function saveSession(lineUserId, channelType, actorType, flowType, currentStep, draft = {}) {
   await pool.execute(
     `INSERT INTO waste_line_sessions
-      (line_user_id, actor_type, flow_type, current_step, draft_json, expires_at)
-     VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))
+      (line_user_id, channel_type, actor_type, flow_type, current_step, draft_json, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))
      ON DUPLICATE KEY UPDATE actor_type = VALUES(actor_type), flow_type = VALUES(flow_type),
        current_step = VALUES(current_step), draft_json = VALUES(draft_json),
        expires_at = VALUES(expires_at)`,
-    [lineUserId, actorType, flowType, currentStep, JSON.stringify(draft), SESSION_MINUTES],
+    [lineUserId, channelType, actorType, flowType, currentStep, JSON.stringify(draft), SESSION_MINUTES],
   );
 }
 
-async function clearSession(lineUserId) {
-  await pool.execute(`DELETE FROM waste_line_sessions WHERE line_user_id = ?`, [lineUserId]);
+async function clearSession(lineUserId, channelType) {
+  await pool.execute(`DELETE FROM waste_line_sessions WHERE channel_type = ? AND line_user_id = ?`, [channelType, lineUserId]);
 }
 
 async function loadActors(lineUserId) {
@@ -92,9 +93,17 @@ async function loadActors(lineUserId) {
   return { driver: drivers[0] || null, citizen: citizens[0] || null };
 }
 
-function wasteMenu(actors) {
+function wasteMenu(actors, audience = "CITIZEN") {
+  if (audience === "DRIVER") {
+    return textMessage(
+      actors.driver
+        ? `ระบบงานคนขับรถเก็บขยะ\nผู้ปฏิบัติงาน: ${actors.driver.fullName}\nเลือกเมนูที่ต้องการ`
+        : "ระบบงานคนขับรถเก็บขยะ\nบัญชีนี้ยังไม่ได้เชื่อมกับข้อมูลคนขับ กรุณาใช้รหัสจากเจ้าหน้าที่เทศบาล",
+      actors.driver ? wasteLineShortcuts.driverMenu() : wasteLineShortcuts.driverGuest(),
+    );
+  }
   return textMessage(
-    `บริการเก็บขยะ Smart Tha Pho\n${actors.citizen ? `ผู้ใช้บริการ: ${actors.citizen.fullName}` : "ยังไม่ได้ลงทะเบียนผู้ใช้บริการ"}${actors.driver ? `\nคนขับรถ: ${actors.driver.fullName}` : ""}\nเลือกเมนูที่ต้องการ`,
+    `บริการเก็บขยะ Smart Tha Pho\n${actors.citizen ? `ผู้ใช้บริการ: ${actors.citizen.fullName}` : "ยังไม่ได้ลงทะเบียนผู้ใช้บริการ"}\nเลือกเมนูที่ต้องการ`,
     wasteLineShortcuts.menu(actors),
   );
 }
@@ -186,7 +195,7 @@ async function ensureDriverPlan(driver, planId, statuses) {
 }
 
 async function beginRegistration(lineUserId) {
-  await saveSession(lineUserId, "CITIZEN", "REGISTER", "FULL_NAME", {});
+  await saveSession(lineUserId, "CITIZEN", "CITIZEN", "REGISTER", "FULL_NAME", {});
   return textMessage("ลงทะเบียนผู้ใช้บริการเก็บขยะ\nกรุณาพิมพ์ชื่อ-นามสกุล", wasteLineShortcuts.registration("FULL_NAME"));
 }
 
@@ -196,7 +205,7 @@ async function handleRegistrationStep(event, lineUserId, session) {
   if (event.type === "message" && event.message?.type === "location" && session.currentStep === "LOCATION") {
     draft.latitude = Number(event.message.latitude);
     draft.longitude = Number(event.message.longitude);
-    await saveSession(lineUserId, "CITIZEN", "REGISTER", "CONFIRM", draft);
+    await saveSession(lineUserId, "CITIZEN", "CITIZEN", "REGISTER", "CONFIRM", draft);
     return textMessage(`ตรวจสอบข้อมูล\nชื่อ ${draft.fullName}\nโทรศัพท์ ${draft.phone}\nบ้านเลขที่ ${draft.houseNo} หมู่ ${draft.villageNo}\n${draft.addressDetail ? `${draft.addressDetail}\n` : ""}ได้รับตำแหน่งแล้ว\n\nกด “ยืนยัน” เพื่อส่งข้อมูลขึ้นทะเบียน`, wasteLineShortcuts.registration("CONFIRM"));
   }
   if (event.message?.type !== "text") return textMessage("กรุณาส่งข้อมูลตามขั้นตอนที่ระบุ", wasteLineShortcuts.registration(session.currentStep));
@@ -204,20 +213,20 @@ async function handleRegistrationStep(event, lineUserId, session) {
   if (session.currentStep === "FULL_NAME") {
     if (text.length < 2) return textMessage("กรุณาระบุชื่อ-นามสกุลอย่างน้อย 2 ตัวอักษร", wasteLineShortcuts.registration("FULL_NAME"));
     draft.fullName = text;
-    await saveSession(lineUserId, "CITIZEN", "REGISTER", "PHONE", draft);
+    await saveSession(lineUserId, "CITIZEN", "CITIZEN", "REGISTER", "PHONE", draft);
     return textMessage("กรุณาพิมพ์หมายเลขโทรศัพท์ 10 หลัก", wasteLineShortcuts.registration("PHONE"));
   }
   if (session.currentStep === "PHONE") {
     const phone = text.replace(/\D/g, "");
     if (!/^0\d{9}$/.test(phone)) return textMessage("หมายเลขโทรศัพท์ต้องมี 10 หลักและขึ้นต้นด้วย 0", wasteLineShortcuts.registration("PHONE"));
     draft.phone = phone;
-    await saveSession(lineUserId, "CITIZEN", "REGISTER", "HOUSE_NO", draft);
+    await saveSession(lineUserId, "CITIZEN", "CITIZEN", "REGISTER", "HOUSE_NO", draft);
     return textMessage("กรุณาพิมพ์บ้านเลขที่", wasteLineShortcuts.registration("HOUSE_NO"));
   }
   if (session.currentStep === "HOUSE_NO") {
     if (!text) return textMessage("กรุณาระบุบ้านเลขที่", wasteLineShortcuts.registration("HOUSE_NO"));
     draft.houseNo = text;
-    await saveSession(lineUserId, "CITIZEN", "REGISTER", "VILLAGE_NO", draft);
+    await saveSession(lineUserId, "CITIZEN", "CITIZEN", "REGISTER", "VILLAGE_NO", draft);
     return textMessage("กรุณาพิมพ์เลขหมู่บ้านในเขตเทศบาลท่าโพธ์", wasteLineShortcuts.registration("VILLAGE_NO"));
   }
   if (session.currentStep === "VILLAGE_NO") {
@@ -227,12 +236,12 @@ async function handleRegistrationStep(event, lineUserId, session) {
     draft.villageId = rows[0].id;
     draft.villageNo = rows[0].villageNo;
     draft.villageName = rows[0].name;
-    await saveSession(lineUserId, "CITIZEN", "REGISTER", "ADDRESS", draft);
+    await saveSession(lineUserId, "CITIZEN", "CITIZEN", "REGISTER", "ADDRESS", draft);
     return textMessage("พิมพ์รายละเอียดที่อยู่หรือจุดสังเกต หากไม่มีให้กด “ข้าม”", wasteLineShortcuts.registration("ADDRESS"));
   }
   if (session.currentStep === "ADDRESS") {
     draft.addressDetail = text === "ข้าม" ? null : text;
-    await saveSession(lineUserId, "CITIZEN", "REGISTER", "LOCATION", draft);
+    await saveSession(lineUserId, "CITIZEN", "CITIZEN", "REGISTER", "LOCATION", draft);
     return textMessage("กรุณาส่งตำแหน่งบ้าน เพื่อให้เจ้าหน้าที่กำหนดเส้นทางเก็บขยะได้ถูกต้อง", wasteLineShortcuts.registration("LOCATION"));
   }
   if (session.currentStep === "CONFIRM") {
@@ -252,7 +261,7 @@ async function handleRegistrationStep(event, lineUserId, session) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
         [id, serviceNo, draft.fullName, draft.phone, draft.houseNo, draft.villageId, draft.addressDetail, lineUserId, draft.latitude, draft.longitude],
       );
-      await db.execute(`DELETE FROM waste_line_sessions WHERE line_user_id = ?`, [lineUserId]);
+      await db.execute(`DELETE FROM waste_line_sessions WHERE channel_type = 'CITIZEN' AND line_user_id = ?`, [lineUserId]);
     });
     return textMessage(`ลงทะเบียนสำเร็จ\nเลขผู้ใช้บริการ ${serviceNo}\nเจ้าหน้าที่จะตรวจสอบและกำหนดเส้นทางรับผิดชอบให้ต่อไป`, [postbackAction("เมนูขยะ", "waste=menu", "เปิดเมนูบริการเก็บขยะ")]);
   }
@@ -261,9 +270,9 @@ async function handleRegistrationStep(event, lineUserId, session) {
 
 async function handleDriverSession(event, lineUserId, session, actors) {
   if (session.flowType === "DRIVER_LINK") {
-    if (event.message?.type !== "text") return textMessage("กรุณาพิมพ์รหัสเชื่อมบัญชี 6 หลัก", wasteLineShortcuts.cancelFlow());
+    if (event.message?.type !== "text") return textMessage("กรุณาพิมพ์รหัสเชื่อมบัญชี 6 หลัก", wasteLineShortcuts.driverCancelFlow());
     const code = normalizeText(event.message.text).replace(/\D/g, "");
-    if (!/^\d{6}$/.test(code)) return textMessage("รหัสเชื่อมบัญชีต้องเป็นตัวเลข 6 หลัก", wasteLineShortcuts.cancelFlow());
+    if (!/^\d{6}$/.test(code)) return textMessage("รหัสเชื่อมบัญชีต้องเป็นตัวเลข 6 หลัก", wasteLineShortcuts.driverCancelFlow());
     await withTransaction(async (db) => {
       const [rows] = await db.execute(
         `SELECT c.id, c.driver_id AS driverId, d.full_name AS fullName
@@ -276,7 +285,7 @@ async function handleDriverSession(event, lineUserId, session, actors) {
       if (used.length) throw new Error("บัญชี LINE นี้เชื่อมกับคนขับรายอื่นแล้ว");
       await db.execute(`UPDATE waste_drivers SET line_user_id = ? WHERE id = ?`, [lineUserId, rows[0].driverId]);
       await db.execute(`UPDATE waste_driver_link_codes SET used_at = NOW() WHERE id = ?`, [rows[0].id]);
-      await db.execute(`DELETE FROM waste_line_sessions WHERE line_user_id = ?`, [lineUserId]);
+      await db.execute(`DELETE FROM waste_line_sessions WHERE channel_type = 'DRIVER' AND line_user_id = ?`, [lineUserId]);
     });
     const nextActors = await loadActors(lineUserId);
     return [textMessage(`เชื่อมบัญชีคนขับสำเร็จ\n${nextActors.driver.fullName}`), wasteMenu(nextActors)];
@@ -294,12 +303,12 @@ async function handleDriverSession(event, lineUserId, session, actors) {
         [plan.id, latitude, longitude, event.message.accuracy || null],
       );
       await db.execute(`UPDATE waste_vehicles SET last_latitude = ?, last_longitude = ?, last_gps_at = NOW() WHERE id = ?`, [latitude, longitude, plan.vehicleId]);
-      await db.execute(`DELETE FROM waste_line_sessions WHERE line_user_id = ?`, [lineUserId]);
+      await db.execute(`DELETE FROM waste_line_sessions WHERE channel_type = 'DRIVER' AND line_user_id = ?`, [lineUserId]);
     });
     return textMessage(`บันทึกตำแหน่งรถสำหรับ ${plan.planNo} แล้ว`, wasteLineShortcuts.activePlan(plan));
   }
   if (session.flowType === "DRIVER_INCIDENT") {
-    if (event.message?.type !== "text" || normalizeText(event.message.text).length < 4) return textMessage("กรุณาพิมพ์รายละเอียดเหตุที่เกิดขึ้นอย่างน้อย 4 ตัวอักษร", wasteLineShortcuts.cancelFlow());
+    if (event.message?.type !== "text" || normalizeText(event.message.text).length < 4) return textMessage("กรุณาพิมพ์รายละเอียดเหตุที่เกิดขึ้นอย่างน้อย 4 ตัวอักษร", wasteLineShortcuts.driverCancelFlow());
     await withTransaction(async (db) => {
       await db.execute(
         `INSERT INTO waste_incidents (id, plan_id, vehicle_id, driver_id, incident_type, description, happened_at)
@@ -307,22 +316,27 @@ async function handleDriverSession(event, lineUserId, session, actors) {
         [crypto.randomUUID(), plan.id, plan.vehicleId, actors.driver.id, normalizeText(event.message.text)],
       );
       await db.execute(`UPDATE waste_operation_plans SET status = 'INTERRUPTED' WHERE id = ?`, [plan.id]);
-      await db.execute(`DELETE FROM waste_line_sessions WHERE line_user_id = ?`, [lineUserId]);
+      await db.execute(`DELETE FROM waste_line_sessions WHERE channel_type = 'DRIVER' AND line_user_id = ?`, [lineUserId]);
     });
     return textMessage(`ส่งเหตุของงาน ${plan.planNo} ให้เจ้าหน้าที่แล้ว\nสถานะงานเปลี่ยนเป็น “หยุดชะงัก”`, wasteLineShortcuts.activePlan(plan));
   }
-  return textMessage("ไม่พบขั้นตอนงานคนขับ กรุณายกเลิกรายการแล้วเปิดงานของฉันใหม่", wasteLineShortcuts.cancelFlow());
+  return textMessage("ไม่พบขั้นตอนงานคนขับ กรุณายกเลิกรายการแล้วเปิดงานของฉันใหม่", wasteLineShortcuts.driverCancelFlow());
 }
 
-async function handleWasteAction(params, lineUserId, actors) {
-  if (params.waste === "menu") return wasteMenu(actors);
+async function handleWasteAction(params, lineUserId, actors, audience) {
+  const action = String(params.waste || "");
+  const allowed = audience === "DRIVER"
+    ? action === "menu" || action.startsWith("driver_")
+    : action === "menu" || action === "register" || action.startsWith("citizen_");
+  if (!allowed) return wasteMenu(actors, audience);
+  if (params.waste === "menu") return wasteMenu(actors, audience);
   if (params.waste === "register") return beginRegistration(lineUserId);
   if (params.waste === "citizen_schedule") return citizenSchedule(actors.citizen);
   if (params.waste === "citizen_location") return citizenLocation(actors.citizen);
   if (params.waste === "citizen_charges") return citizenCharges(actors.citizen);
   if (params.waste === "driver_link") {
-    await saveSession(lineUserId, "DRIVER", "DRIVER_LINK", "CODE", {});
-    return textMessage("กรุณาพิมพ์รหัสเชื่อมบัญชีคนขับ 6 หลักที่ได้รับจากเจ้าหน้าที่เทศบาล\nรหัสมีอายุ 15 นาที", wasteLineShortcuts.cancelFlow());
+    await saveSession(lineUserId, "DRIVER", "DRIVER", "DRIVER_LINK", "CODE", {});
+    return textMessage("กรุณาพิมพ์รหัสเชื่อมบัญชีคนขับ 6 หลักที่ได้รับจากเจ้าหน้าที่เทศบาล\nรหัสมีอายุ 15 นาที", wasteLineShortcuts.driverCancelFlow());
   }
   if (params.waste === "driver_jobs") return driverJobs(actors.driver, lineUserId);
   if (params.waste === "driver_plan") {
@@ -357,13 +371,13 @@ async function handleWasteAction(params, lineUserId, actors) {
   }
   if (params.waste === "driver_location") {
     const plan = await ensureDriverPlan(actors.driver, params.planId, ["IN_PROGRESS", "INTERRUPTED"]);
-    await saveSession(lineUserId, "DRIVER", "DRIVER_LOCATION", "LOCATION", { planId: plan.id });
+    await saveSession(lineUserId, "DRIVER", "DRIVER", "DRIVER_LOCATION", "LOCATION", { planId: plan.id });
     return textMessage(`ส่งตำแหน่งรถสำหรับ ${plan.planNo}`, wasteLineShortcuts.driverLocation());
   }
   if (params.waste === "driver_incident") {
     const plan = await ensureDriverPlan(actors.driver, params.planId, ["IN_PROGRESS", "INTERRUPTED"]);
-    await saveSession(lineUserId, "DRIVER", "DRIVER_INCIDENT", "DESCRIPTION", { planId: plan.id });
-    return textMessage(`แจ้งเหตุสำหรับ ${plan.planNo}\nกรุณาพิมพ์รายละเอียดเหตุที่เกิดขึ้น`, wasteLineShortcuts.cancelFlow());
+    await saveSession(lineUserId, "DRIVER", "DRIVER", "DRIVER_INCIDENT", "DESCRIPTION", { planId: plan.id });
+    return textMessage(`แจ้งเหตุสำหรับ ${plan.planNo}\nกรุณาพิมพ์รายละเอียดเหตุที่เกิดขึ้น`, wasteLineShortcuts.driverCancelFlow());
   }
   if (params.waste === "driver_stops") {
     const plan = await ensureDriverPlan(actors.driver, params.planId, ["IN_PROGRESS", "INTERRUPTED"]);
@@ -390,44 +404,47 @@ async function handleWasteAction(params, lineUserId, actors) {
     );
     return textMessage(`ยืนยันเก็บขยะแล้ว\n${stops[0].stopName}`, wasteLineShortcuts.normalize([postbackAction("จุดถัดไป", `waste=driver_stops&planId=${plan.id}`, `ดูจุดเก็บถัดไป ${plan.planNo}`), ...wasteLineShortcuts.activePlan(plan)]));
   }
-  return wasteMenu(actors);
+  return wasteMenu(actors, audience);
 }
 
-export function isExplicitWasteCommand(event) {
+export function isExplicitWasteCommand(event, audience = "CITIZEN") {
   if (event?.type === "postback") return Boolean(parsePostback(event.postback?.data).waste);
   if (event?.type !== "message" || event.message?.type !== "text") return false;
   const text = normalizeText(event.message.text).toLowerCase();
-  return ["เมนูขยะ", "บริการขยะ", "รถขยะ", "เก็บขยะ", "ลงทะเบียนบริการเก็บขยะ", "กำหนดเก็บขยะ", "ตำแหน่งรถขยะ", "ค่าบริการขยะ", "งานเก็บขยะของฉัน", "ยกเลิกบริการขยะ"].includes(text)
-    || /^ยืนยันคนขับ\s*\d{6}$/.test(text);
+  if (audience === "DRIVER") {
+    return ["เมนู", "เมนูคนขับ", "งานเก็บขยะของฉัน", "ยกเลิกบริการขยะ"].includes(text)
+      || /^ยืนยันคนขับ\s*\d{6}$/.test(text);
+  }
+  return ["เมนูขยะ", "บริการขยะ", "รถขยะ", "เก็บขยะ", "ลงทะเบียนบริการเก็บขยะ", "กำหนดเก็บขยะ", "ตำแหน่งรถขยะ", "ค่าบริการขยะ", "ยกเลิกบริการขยะ"].includes(text);
 }
 
-export async function handleWasteLineEvent(event) {
+export async function handleWasteLineEvent(event, { audience = "CITIZEN", force = false } = {}) {
   const lineUserId = String(event?.source?.userId || "").trim();
   if (!lineUserId) return { handled: false };
-  const session = await getSession(lineUserId);
-  if (!session && !isExplicitWasteCommand(event)) return { handled: false };
+  const session = await getSession(lineUserId, audience);
+  if (!session && !force && !isExplicitWasteCommand(event, audience)) return { handled: false };
 
   const text = event.type === "message" && event.message?.type === "text" ? normalizeText(event.message.text) : "";
   if (text === "ยกเลิกบริการขยะ") {
-    await clearSession(lineUserId);
+    await clearSession(lineUserId, audience);
     const actors = await loadActors(lineUserId);
-    return { handled: true, messages: [textMessage("ยกเลิกรายการที่ค้างอยู่แล้ว"), wasteMenu(actors)] };
+    return { handled: true, messages: [textMessage("ยกเลิกรายการที่ค้างอยู่แล้ว"), wasteMenu(actors, audience)] };
   }
 
   const actors = await loadActors(lineUserId);
   let result;
-  if (session?.flowType === "REGISTER") result = await handleRegistrationStep(event, lineUserId, session);
-  else if (session) result = await handleDriverSession(event, lineUserId, session, actors);
-  else if (/^ยืนยันคนขับ\s*\d{6}$/.test(text)) {
-    await saveSession(lineUserId, "DRIVER", "DRIVER_LINK", "CODE", {});
-    result = await handleDriverSession({ ...event, message: { type: "text", text: text.replace(/^ยืนยันคนขับ\s*/, "") } }, lineUserId, await getSession(lineUserId), actors);
-  } else if (["ลงทะเบียนบริการเก็บขยะ"].includes(text)) result = await beginRegistration(lineUserId);
-  else if (text === "กำหนดเก็บขยะ") result = await citizenSchedule(actors.citizen);
-  else if (text === "ตำแหน่งรถขยะ") result = await citizenLocation(actors.citizen);
-  else if (text === "ค่าบริการขยะ") result = await citizenCharges(actors.citizen);
-  else if (text === "งานเก็บขยะของฉัน") result = await driverJobs(actors.driver, lineUserId);
-  else if (event.type === "postback") result = await handleWasteAction(parsePostback(event.postback?.data), lineUserId, actors);
-  else result = wasteMenu(actors);
+  if (audience === "CITIZEN" && session?.flowType === "REGISTER") result = await handleRegistrationStep(event, lineUserId, session);
+  else if (audience === "DRIVER" && session) result = await handleDriverSession(event, lineUserId, session, actors);
+  else if (audience === "DRIVER" && /^ยืนยันคนขับ\s*\d{6}$/.test(text)) {
+    await saveSession(lineUserId, "DRIVER", "DRIVER", "DRIVER_LINK", "CODE", {});
+    result = await handleDriverSession({ ...event, message: { type: "text", text: text.replace(/^ยืนยันคนขับ\s*/, "") } }, lineUserId, await getSession(lineUserId, "DRIVER"), actors);
+  } else if (audience === "CITIZEN" && ["ลงทะเบียนบริการเก็บขยะ"].includes(text)) result = await beginRegistration(lineUserId);
+  else if (audience === "CITIZEN" && text === "กำหนดเก็บขยะ") result = await citizenSchedule(actors.citizen);
+  else if (audience === "CITIZEN" && text === "ตำแหน่งรถขยะ") result = await citizenLocation(actors.citizen);
+  else if (audience === "CITIZEN" && text === "ค่าบริการขยะ") result = await citizenCharges(actors.citizen);
+  else if (audience === "DRIVER" && text === "งานเก็บขยะของฉัน") result = await driverJobs(actors.driver, lineUserId);
+  else if (event.type === "postback") result = await handleWasteAction(parsePostback(event.postback?.data), lineUserId, actors, audience);
+  else result = wasteMenu(actors, audience);
 
   return { handled: true, messages: (Array.isArray(result) ? result : [result]).filter(Boolean), preserveRichMenu: true };
 }
