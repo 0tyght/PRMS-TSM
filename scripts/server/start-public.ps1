@@ -1,4 +1,4 @@
-﻿param(
+param(
     [switch]$SkipGitPush
 )
 
@@ -547,7 +547,7 @@ if (-not (Test-HealthReady $publicHealth)) {
 $configJson = [ordered]@{
     apiBaseUrl = "{0}/api" -f $tunnelUrl
     portalApiBaseUrl = "{0}/api" -f $tunnelUrl
-    portalUrl = "https://0tyght.github.io/PRMS-TSM/"
+    portalUrl = "https://0tyght.github.io/smart-tha-pho/"
     updatedAt = (
         Get-Date
     ).ToUniversalTime().ToString("o")
@@ -562,7 +562,24 @@ ConvertTo-Json
     )
 )
 
-Copy-Item -LiteralPath $configPath -Destination (Join-Path $siteDir "runtime-config.json") -Force
+# สร้าง path ปลายทางใหม่จาก root โดยตรง เพื่อไม่พึ่งค่าตัวแปร $siteDir ที่อาจถูกเปลี่ยนระหว่างขั้นตอน
+$siteRuntimeDir = Join-Path $root ".runtime"
+$siteDir = Join-Path $siteRuntimeDir "site"
+
+if ([string]::IsNullOrWhiteSpace($siteDir)) {
+    throw "Public site directory is empty."
+}
+
+if (-not (Test-Path -LiteralPath $siteDir)) {
+    New-Item -ItemType Directory -Force -Path $siteDir | Out-Null
+}
+
+$siteRuntimeConfigPath = Join-Path $siteDir "runtime-config.json"
+
+Copy-Item `
+    -LiteralPath $configPath `
+    -Destination $siteRuntimeConfigPath `
+    -Force
 
 if (-not $SkipGitPush) {
     & git -C $root add runtime-config.json
@@ -594,5 +611,5 @@ if (-not $SkipGitPush) {
 
 Write-Host ""
 Write-Host "Smart Tha Pho is ready." -ForegroundColor Green
-Write-Host "Platform: https://0tyght.github.io/PRMS-TSM/" -ForegroundColor Green
+Write-Host "Platform: https://0tyght.github.io/smart-tha-pho/" -ForegroundColor Green
 Write-Host ("API: {0}/api" -f $tunnelUrl) -ForegroundColor Green
