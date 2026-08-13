@@ -6,8 +6,13 @@ import { pool, withTransaction } from "../../core/db.js";
 import { authenticate, requireRole } from "../../core/middleware.js";
 import { WasteOperationPlan } from "../../domain/waste/entities/WasteOperationPlan.js";
 import { HttpError } from "../../presentation/http/HttpError.js";
+import { WastePlanNumberService } from "./application/WastePlanNumberService.js";
+import { WasteTrackingTokenService } from "./application/WasteTrackingTokenService.js";
 
 const router = Router();
+const planNumberService = new WastePlanNumberService();
+const trackingTokenService = new WasteTrackingTokenService({ secret: config.jwtSecret });
+const THA_PHO_BOUNDS = Object.freeze({ minLatitude: 16.70, maxLatitude: 16.805, minLongitude: 100.15, maxLongitude: 100.27 });
 
 const dateSchema = z.string().date();
 const nullableText = (max) => z.string().trim().max(max).optional().nullable().transform((value) => value || null);
@@ -39,8 +44,8 @@ const routeSchema = z.object({
 
 const routePreviewSchema = z.object({
   waypoints: z.array(z.object({
-    latitude: z.coerce.number().min(-90).max(90),
-    longitude: z.coerce.number().min(-180).max(180),
+    latitude: z.coerce.number().min(16.70, "จุดเส้นทางอยู่นอกเขตเทศบาลท่าโพธ์").max(16.805, "จุดเส้นทางอยู่นอกเขตเทศบาลท่าโพธ์"),
+    longitude: z.coerce.number().min(100.15, "จุดเส้นทางอยู่นอกเขตเทศบาลท่าโพธ์").max(100.27, "จุดเส้นทางอยู่นอกเขตเทศบาลท่าโพธ์"),
   })).min(2).max(50),
 });
 
@@ -66,7 +71,7 @@ const serviceUserSchema = z.object({
 });
 
 const planSchema = z.object({
-  planNo: z.string().trim().min(4).max(30),
+  planNo: z.string().trim().min(4).max(30).optional(),
   scheduledDate: dateSchema,
   routeId: z.string().uuid(),
   vehicleId: z.string().uuid(),
@@ -74,6 +79,14 @@ const planSchema = z.object({
   scheduledStartAt: z.string().datetime().optional().nullable(),
   scheduledEndAt: z.string().datetime().optional().nullable(),
   note: nullableText(500),
+});
+
+const trackingLocationSchema = z.object({
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+  accuracyM: z.coerce.number().min(0).max(10_000).optional().nullable(),
+  speedKph: z.coerce.number().min(0).max(300).optional().nullable(),
+  recordedAt: z.string().datetime().optional(),
 });
 
 const planStatusSchema = z.object({
@@ -134,6 +147,21 @@ function asDateTime(value) {
 function asDateOnly(value) {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date(value));
+}
+
+function isInsideThaPho(latitude, longitude) {
+  return latitude >= THA_PHO_BOUNDS.minLatitude && latitude <= THA_PHO_BOUNDS.maxLatitude
+    && longitude >= THA_PHO_BOUNDS.minLongitude && longitude <= THA_PHO_BOUNDS.maxLongitude;
+}
+
+function readTrackingToken(req) {
+  const authorization = String(req.headers.authorization || "");
+  if (!authorization.startsWith("Bearer ")) throw httpError(401, "ไม่พบสิทธิ์ติดตามตำแหน่งรถเก็บขยะ");
+  try {
+    return trackingTokenService.verify(authorization.slice(7));
+  } catch {
+    throw httpError(401, "ลิงก์ติดตามตำแหน่งหมดอายุหรือไม่ถูกต้อง กรุณาเปิดจากเมนู LINE อีกครั้ง");
+  }
 }
 
 function mapVehicle(row) {
@@ -264,6 +292,82 @@ async function assertPlanAssignment(db, input, excludePlanId = null) {
   }
 }
 
+async function findTrackingPlan(db, claims, lock = false) {
+  const [rows] = await db.execute(
+    `SELECT p.id, p.plan_no AS planNo, p.status, p.vehicle_id AS vehicleId,
+            p.driver_id AS driverId, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate,
+            p.scheduled_start_at AS scheduledStartAt, p.scheduled_end_at AS scheduledEndAt,
+            r.route_code AS routeCode, r.route_name AS routeName,
+            CAST(r.route_geojson AS CHAR) AS routeGeojson,
+            v.vehicle_code AS vehicleCode, v.registration_no AS registrationNo,
+            v.last_latitude AS lastLatitude, v.last_longitude AS lastLongitude, v.last_gps_at AS lastGpsAt,
+            d.full_name AS driverName
+     FROM waste_operation_plans p
+     INNER JOIN waste_routes r ON r.id = p.route_id
+     INNER JOIN waste_vehicles v ON v.id = p.vehicle_id
+     INNER JOIN waste_drivers d ON d.id = p.driver_id
+     WHERE p.id = ? AND p.driver_id = ? AND d.line_user_id = ?
+     LIMIT 1${lock ? " FOR UPDATE" : ""}`,
+    [claims.planId, claims.driverId, claims.lineUserId],
+  );
+  if (!rows[0]) throw httpError(403, "ลิงก์นี้ไม่ตรงกับคนขับหรือแผนปฏิบัติงาน");
+  return rows[0];
+}
+
+router.get("/driver-tracking/session", async (req, res, next) => {
+  try {
+    const claims = readTrackingToken(req);
+    const plan = await findTrackingPlan(pool, claims);
+    return res.json({
+      data: {
+        ...plan,
+        routeGeojson: plan.routeGeojson ? JSON.parse(plan.routeGeojson) : null,
+        canTrack: ["IN_PROGRESS", "INTERRUPTED"].includes(plan.status),
+      },
+    });
+  } catch (error) { next(error); }
+});
+
+router.post("/driver-tracking/location", async (req, res, next) => {
+  try {
+    const claims = readTrackingToken(req);
+    const input = trackingLocationSchema.parse(req.body);
+    if (!isInsideThaPho(input.latitude, input.longitude)) {
+      throw httpError(422, "ตำแหน่งอยู่นอกเขตเทศบาลท่าโพธ์ กรุณาตรวจสอบ GPS ของอุปกรณ์");
+    }
+
+    const result = await withTransaction(async (db) => {
+      const plan = await findTrackingPlan(db, claims, true);
+      if (!["IN_PROGRESS", "INTERRUPTED"].includes(plan.status)) {
+        throw httpError(409, "ส่งตำแหน่งได้เฉพาะแผนที่กำลังปฏิบัติงาน");
+      }
+      const [recent] = await db.execute(
+        `SELECT recorded_at AS recordedAt FROM waste_location_logs
+         WHERE plan_id = ? ORDER BY recorded_at DESC LIMIT 1`,
+        [plan.id],
+      );
+      if (recent[0] && Date.now() - new Date(recent[0].recordedAt).getTime() < 7_000) {
+        return { accepted: false, reason: "TOO_FREQUENT", plan };
+      }
+      const recordedAt = input.recordedAt ? new Date(input.recordedAt) : new Date();
+      await db.execute(
+        `INSERT INTO waste_location_logs
+          (plan_id, latitude, longitude, accuracy_m, speed_kph, recorded_at, source)
+         VALUES (?, ?, ?, ?, ?, ?, 'LINE')`,
+        [plan.id, input.latitude, input.longitude, input.accuracyM ?? null, input.speedKph ?? null, recordedAt],
+      );
+      await db.execute(
+        `UPDATE waste_vehicles SET last_latitude = ?, last_longitude = ?, last_gps_at = ? WHERE id = ?`,
+        [input.latitude, input.longitude, recordedAt, plan.vehicleId],
+      );
+      return { accepted: true, plan };
+    });
+    return res.status(result.accepted ? 201 : 202).json({
+      data: { accepted: result.accepted, reason: result.reason || null, serverTime: new Date().toISOString() },
+    });
+  } catch (error) { next(error); }
+});
+
 router.use(authenticate);
 
 router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
@@ -382,6 +486,23 @@ router.patch("/vehicles/:id", requireRole("ADMIN", "OFFICER"), async (req, res, 
   } catch (error) { next(error); }
 });
 
+router.delete("/vehicles/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const [[usage]] = await pool.execute(
+      `SELECT (SELECT COUNT(*) FROM waste_operation_plans WHERE vehicle_id = ?) +
+              (SELECT COUNT(*) FROM waste_incidents WHERE vehicle_id = ? OR replacement_vehicle_id = ?) AS usageCount`,
+      [req.params.id, req.params.id, req.params.id],
+    );
+    if (Number(usage.usageCount || 0) > 0) {
+      throw httpError(409, "รถคันนี้มีประวัติการใช้งานแล้ว กรุณาเปลี่ยนสถานะเป็นหยุดใช้งานแทนการลบ");
+    }
+    const [result] = await pool.execute(`DELETE FROM waste_vehicles WHERE id = ?`, [req.params.id]);
+    if (!result.affectedRows) throw httpError(404, "ไม่พบข้อมูลรถเก็บขยะ");
+    await audit(req.user.sub, "DELETE_WASTE_VEHICLE", "WASTE_VEHICLE", req.params.id, null, req.ip);
+    return res.status(204).end();
+  } catch (error) { next(error); }
+});
+
 router.get("/drivers", requireRole("ADMIN", "OFFICER", "VIEWER"), async (_req, res, next) => {
   try {
     const [rows] = await pool.execute(`SELECT id, full_name AS fullName, phone, line_user_id AS lineUserId, is_active AS isActive FROM waste_drivers ORDER BY is_active DESC, full_name`);
@@ -411,6 +532,23 @@ router.patch("/drivers/:id", requireRole("ADMIN", "OFFICER"), async (req, res, n
     if (!result.affectedRows) throw httpError(404, "ไม่พบข้อมูลคนขับรถเก็บขยะ");
     await audit(req.user.sub, "UPDATE_WASTE_DRIVER", "WASTE_DRIVER", req.params.id, input, req.ip);
     return res.json({ data: { id: req.params.id, ...input } });
+  } catch (error) { next(error); }
+});
+
+router.delete("/drivers/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const [[usage]] = await pool.execute(
+      `SELECT (SELECT COUNT(*) FROM waste_operation_plans WHERE driver_id = ?) +
+              (SELECT COUNT(*) FROM waste_incidents WHERE driver_id = ?) AS usageCount`,
+      [req.params.id, req.params.id],
+    );
+    if (Number(usage.usageCount || 0) > 0) {
+      throw httpError(409, "คนขับรายนี้มีประวัติการปฏิบัติงานแล้ว กรุณาปิดการใช้งานแทนการลบ");
+    }
+    const [result] = await pool.execute(`DELETE FROM waste_drivers WHERE id = ?`, [req.params.id]);
+    if (!result.affectedRows) throw httpError(404, "ไม่พบข้อมูลคนขับรถเก็บขยะ");
+    await audit(req.user.sub, "DELETE_WASTE_DRIVER", "WASTE_DRIVER", req.params.id, null, req.ip);
+    return res.status(204).end();
   } catch (error) { next(error); }
 });
 
@@ -535,6 +673,23 @@ router.patch("/routes/:id", requireRole("ADMIN", "OFFICER"), async (req, res, ne
   } catch (error) { next(error); }
 });
 
+router.delete("/routes/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const [[usage]] = await pool.execute(
+      `SELECT (SELECT COUNT(*) FROM waste_operation_plans WHERE route_id = ?) AS planCount,
+              (SELECT COUNT(*) FROM waste_service_users WHERE route_id = ?) AS userCount`,
+      [req.params.id, req.params.id],
+    );
+    if (Number(usage.planCount || 0) > 0 || Number(usage.userCount || 0) > 0) {
+      throw httpError(409, "เส้นทางนี้ผูกกับแผนงานหรือผู้ใช้บริการแล้ว กรุณาปิดการใช้งานแทนการลบ");
+    }
+    const [result] = await pool.execute(`DELETE FROM waste_routes WHERE id = ?`, [req.params.id]);
+    if (!result.affectedRows) throw httpError(404, "ไม่พบข้อมูลเส้นทางเก็บขยะ");
+    await audit(req.user.sub, "DELETE_WASTE_ROUTE", "WASTE_ROUTE", req.params.id, null, req.ip);
+    return res.status(204).end();
+  } catch (error) { next(error); }
+});
+
 router.get("/routes/:id/stops", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
   try {
     const [routeRows] = await pool.execute(`SELECT id FROM waste_routes WHERE id = ?`, [req.params.id]);
@@ -623,12 +778,15 @@ router.post("/plans", requireRole("ADMIN", "OFFICER"), async (req, res, next) =>
   try {
     const input = planSchema.parse(req.body);
     const id = crypto.randomUUID();
+    let planNo = input.planNo;
     await withTransaction(async (db) => {
       await assertPlanAssignment(db, input);
-      await db.execute(`INSERT INTO waste_operation_plans (id, plan_no, scheduled_date, route_id, vehicle_id, driver_id, scheduled_start_at, scheduled_end_at, note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, input.planNo, input.scheduledDate, input.routeId, input.vehicleId, input.driverId, asDateTime(input.scheduledStartAt), asDateTime(input.scheduledEndAt), input.note, req.user.sub]);
+      planNo ||= await planNumberService.next(db, input.scheduledDate);
+      await db.execute(`INSERT INTO waste_operation_plans (id, plan_no, scheduled_date, route_id, vehicle_id, driver_id, scheduled_start_at, scheduled_end_at, note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, planNo, input.scheduledDate, input.routeId, input.vehicleId, input.driverId, asDateTime(input.scheduledStartAt), asDateTime(input.scheduledEndAt), input.note, req.user.sub]);
     });
-    await audit(req.user.sub, "CREATE_WASTE_PLAN", "WASTE_PLAN", id, input, req.ip);
-    return res.status(201).json({ data: { id, ...input, status: "SCHEDULED" } });
+    const created = { ...input, planNo };
+    await audit(req.user.sub, "CREATE_WASTE_PLAN", "WASTE_PLAN", id, created, req.ip);
+    return res.status(201).json({ data: { id, ...created, status: "SCHEDULED" } });
   } catch (error) { next(error); }
 });
 

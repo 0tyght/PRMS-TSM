@@ -25,6 +25,15 @@ const MAX_HISTORY = 12;
 const REQUEST_TIMEOUT_MS = 15_000;
 const IMAGE_CACHE_LIMIT = 32;
 const ASSET_SOFT_LIMIT = 850;
+const LINE_CHANNEL_SCOPE = config.lineChannelId || (
+  config.lineChannelAccessToken
+    ? crypto
+      .createHash("sha256")
+      .update(config.lineChannelAccessToken)
+      .digest("hex")
+      .slice(0, 16)
+    : "unconfigured"
+);
 
 const STATIC_ALIAS_BY_KEY = Object.freeze({
   "main-guest-v12": "prms-v12-main-guest",
@@ -1136,6 +1145,7 @@ function stableAction(action) {
 
 export function fingerprintWizardPage(page) {
   const canonical = {
+    channelScope: LINE_CHANNEL_SCOPE,
     renderVersion: RENDER_VERSION,
     size: { width: MENU_WIDTH, height: MENU_HEIGHT },
     title: page.title,

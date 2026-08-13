@@ -21,7 +21,7 @@ function PlanForm({ resources, date, initial = null, onCancel, onSubmit, saving 
     event.preventDefault();
     const value = Object.fromEntries(new FormData(event.currentTarget).entries());
     onSubmit({
-      planNo: value.planNo,
+      ...(initial?.planNo ? { planNo: initial.planNo } : {}),
       scheduledDate,
       routeId: value.routeId,
       vehicleId: value.vehicleId,
@@ -31,10 +31,9 @@ function PlanForm({ resources, date, initial = null, onCancel, onSubmit, saving 
       note: value.note || null,
     });
   };
-  const defaultPlanNo = initial?.planNo || `WST-${scheduledDate.replaceAll("-", "")}-001`;
 
   return <form className="waste-form" onSubmit={submit}>
-    <label>เลขที่แผนปฏิบัติงาน<input name="planNo" required defaultValue={defaultPlanNo} /></label>
+    <label>เลขที่แผนปฏิบัติงาน<input value={initial?.planNo || "ระบบออกเลขให้อัตโนมัติเมื่อบันทึก"} readOnly aria-readonly="true" /></label>
     <label>วันที่ปฏิบัติงาน<input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} required /></label>
     <label>เส้นทางเก็บขยะ<select name="routeId" required defaultValue={initial?.routeId || ""}><option value="" disabled>เลือกเส้นทาง</option>{resources.routes.filter((item) => item.isActive || item.id === initial?.routeId).map((item) => <option value={item.id} key={item.id}>{item.routeCode} — {item.routeName} ({formatNumber(item.stopCount)} จุด)</option>)}</select></label>
     <label>รถเก็บขยะ<select name="vehicleId" required defaultValue={initial?.vehicleId || ""}><option value="" disabled>เลือกรถเก็บขยะ</option>{resources.vehicles.filter((item) => !["MAINTENANCE", "OUT_OF_SERVICE"].includes(item.status) || item.id === initial?.vehicleId).map((item) => <option value={item.id} key={item.id}>{item.vehicleCode} — {item.registrationNo}{item.status === "IN_SERVICE" ? " (กำลังใช้งาน)" : ""}</option>)}</select><small>ระบบจะป้องกันรถหรือคนขับที่มีแผนงานเวลาเดียวกัน</small></label>
