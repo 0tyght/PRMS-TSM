@@ -20,6 +20,14 @@ export class WastePlanPolicy {
       { key: "route", label: "เส้นทางมีจุดรับบริการ", ready: Number(plan.stopTotal || 0) > 0 },
       { key: "schedule", label: "กำหนดวันและเวลาครบ", ready: Boolean(plan.scheduledDate && plan.scheduledStartAt && plan.scheduledEndAt) },
       { key: "resources", label: "กำหนดรถและคนขับแล้ว", ready: Boolean(plan.vehicleId && plan.driverId) },
+      {
+        key: "line",
+        label: "มีผู้รับ LINE อย่างน้อย 1 ราย",
+        ready:
+          plan.lineRecipientCount === undefined
+            ? true
+            : Number(plan.lineRecipientCount || 0) > 0,
+      },
     ];
     return { checks, ready: checks.every((item) => item.ready) };
   }

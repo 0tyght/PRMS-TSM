@@ -131,6 +131,25 @@ async function loadState(lineUserId) {
   }
 }
 
+function publicLineErrorMessage(error) {
+  const message = String(error?.message || "").trim();
+
+  if (
+    error?.code === "ER_DUP_ENTRY" ||
+    /Duplicate entry|uk_waste_|ER_DUP_ENTRY/i.test(message)
+  ) {
+    return "ข้อมูลนี้มีอยู่ในระบบแล้ว กรุณาตรวจสอบทะเบียนเดิม หรือติดต่อเจ้าหน้าที่เทศบาล";
+  }
+
+  if (
+    /SQLSTATE|foreign key|constraint|ER_[A-Z_]+|Unknown column|SQL syntax/i.test(message)
+  ) {
+    return "ระบบไม่สามารถบันทึกข้อมูลได้ในขณะนี้ กรุณาลองใหม่หรือติดต่อเจ้าหน้าที่เทศบาล";
+  }
+
+  return message || "ไม่สามารถดำเนินการได้ในขณะนี้";
+}
+
 async function processEvent(event, channel) {
   if (!event || event.mode === "standby") return;
 
@@ -264,7 +283,7 @@ async function processEvent(event, channel) {
     if (event.replyToken) {
       await reply(event.replyToken, [
         textMessage(
-          `${String(error?.message || "ไม่สามารถดำเนินการได้ในขณะนี้")}\n\nพิมพ์ “เมนู” เพื่อเลือกบริการใหม่ หรือพิมพ์ “ยกเลิก” เพื่อยกเลิกรายการที่ค้างอยู่`,
+          `${publicLineErrorMessage(error)}\n\nพิมพ์ “เมนู” เพื่อเลือกบริการใหม่ หรือพิมพ์ “ยกเลิก” เพื่อยกเลิกรายการที่ค้างอยู่`,
           [smartThaPhoLineMenu.homeAction(), { type: "message", label: "ยกเลิก", text: "ยกเลิก" }],
         ),
       ], channel).catch((replyError) => {

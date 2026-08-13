@@ -12,12 +12,12 @@ VALUES
 (
   'b1100000-0000-4000-8000-000000000001',
   'THP-OFFICIAL-01',
-  'รถคันที่ 1 - มหาวิทยาลัยนเรศวรและวัดสะกัดน้ำมัน',
+  'มหาวิทยาลัยนเรศวร – วัดสะกัดน้ำมัน',
   'เส้นทางตามประกาศ: ประตู 4, Big C, กลุ่มหอพักและร้านค้า, หมู่ 3, ชุมชนรอบวัดสะกัดน้ำมัน เก็บวันจันทร์-ศุกร์และอาทิตย์',
   JSON_OBJECT(
     'type','Feature',
     'properties',JSON_OBJECT(
-      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','vehicleNo',1,
+      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','sourceVehicleNo',1,
       'distanceMeters',6942,'durationSeconds',770,
       'waypoints',JSON_ARRAY('ประตู 4 มหาวิทยาลัยนเรศวร','Big C','NU Plaza','ชุมชนท่าโพธ์','วัดสะกัดน้ำมัน'),
       'officialSchedules',JSON_ARRAY(
@@ -42,11 +42,11 @@ VALUES
 (
   'b1100000-0000-4000-8000-000000000002',
   'THP-OFFICIAL-02',
-  'รถคันที่ 2 - สำนักงานเทศบาล บ้านสวน และแกรนด์โฮม',
+  'สำนักงานเทศบาล – บ้านสวน – แกรนด์โฮม',
   'เส้นทางตามประกาศ: หน้าเทศบาลฝั่งเหนือและใต้, บ้านสวน, แกรนด์โฮม, หมู่ 4, 10 และ 11 เก็บวันจันทร์-เสาร์',
   JSON_OBJECT(
     'type','Feature','properties',JSON_OBJECT(
-      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','vehicleNo',2,
+      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','sourceVehicleNo',2,
       'distanceMeters',12010,'durationSeconds',1024,
       'waypoints',JSON_ARRAY('สำนักงานเทศบาลท่าโพธ์','บ้านสวน','หมู่บ้านแกรนด์โฮม','คลองชลประทาน','วัดยางเอน'),
       'officialSchedules',JSON_ARRAY(
@@ -72,11 +72,11 @@ VALUES
 (
   'b1100000-0000-4000-8000-000000000003',
   'THP-OFFICIAL-03',
-  'รถคันที่ 3 - นเรศวรคอนโด ประตู 6 และหมู่ 3',
+  'นเรศวรคอนโด – ประตู 6 – หมู่ 3',
   'เส้นทางตามประกาศ: นเรศวรคอนโด, KFC, NU Plaza, ประตู 6, ตลาดนัด มน., หอพักและหมู่ 3 เก็บวันจันทร์-ศุกร์และอาทิตย์',
   JSON_OBJECT(
     'type','Feature','properties',JSON_OBJECT(
-      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','vehicleNo',3,
+      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','sourceVehicleNo',3,
       'distanceMeters',10827,'durationSeconds',1164,
       'waypoints',JSON_ARRAY('NU Plaza','ประตู 6 มหาวิทยาลัยนเรศวร','ตลาดนัดมหาวิทยาลัยนเรศวร','วัดสะกัดน้ำมัน','หมู่ 3'),
       'officialSchedules',JSON_ARRAY(
@@ -102,11 +102,11 @@ VALUES
 (
   'b1100000-0000-4000-8000-000000000004',
   'THP-OFFICIAL-04',
-  'รถคันที่ 4 - ถนนพิษณุโลก-กำแพงดินและวัดยางเอน',
+  'ถนนพิษณุโลก–กำแพงดิน – วัดยางเอน',
   'เส้นทางตามประกาศ: ถนนพิษณุโลก-กำแพงดิน, ซอย 1-12, วัดยางเอน, หมู่บ้านวังวารี, แกรนด์โฮมและน้ำเพชร เก็บวันจันทร์-ศุกร์และอาทิตย์',
   JSON_OBJECT(
     'type','Feature','properties',JSON_OBJECT(
-      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','vehicleNo',4,
+      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','sourceVehicleNo',4,
       'distanceMeters',8190,'durationSeconds',787,
       'waypoints',JSON_ARRAY('ถนนพิษณุโลก-กำแพงดิน','วัดยางเอน','หมู่บ้านวังวารี','น้ำเพชร','แกรนด์โฮม'),
       'officialSchedules',JSON_ARRAY(
@@ -132,11 +132,11 @@ VALUES
 (
   'b1100000-0000-4000-8000-000000000005',
   'THP-OFFICIAL-05',
-  'รถคันที่ 5 - หมู่ 7 หมู่ 8 และถนนพิษณุโลก-กำแพงดิน',
+  'หมู่ 7 – หมู่ 8 – ถนนพิษณุโลก–กำแพงดิน',
   'เส้นทางตามประกาศ: NU Plaza, หมู่ 7-8, ซอยเล็ก, ถนนพิษณุโลก-กำแพงดิน ซอย 13-36, วัดวังวารี และ PP การ์เด้น เก็บวันจันทร์-เสาร์',
   JSON_OBJECT(
     'type','Feature','properties',JSON_OBJECT(
-      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','vehicleNo',5,
+      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','sourceVehicleNo',5,
       'distanceMeters',10017,'durationSeconds',1163,
       'waypoints',JSON_ARRAY('NU Plaza','หมู่ 7','หมู่ 8','ถนนพิษณุโลก-กำแพงดิน','วัดวังวารี'),
       'officialSchedules',JSON_ARRAY(
@@ -162,11 +162,11 @@ VALUES
 (
   'b1100000-0000-4000-8000-000000000006',
   'THP-OFFICIAL-06',
-  'รถคันที่ 6 - หนองอ้อ คลองหนองเหล็ก และหมู่ 9',
+  'หนองอ้อ – คลองหนองเหล็ก – หมู่ 9',
   'เส้นทางตามประกาศ: ศูนย์รถและปั๊มน้ำมันย่านหนองอ้อ, โรงพยาบาลสัตว์, กลุ่มหอพัก, คลองหนองเหล็ก, หมู่ 9 และบ้านตาโปรด เก็บวันจันทร์-เสาร์',
   JSON_OBJECT(
     'type','Feature','properties',JSON_OBJECT(
-      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','vehicleNo',6,
+      'sourceType','MUNICIPAL_ANNOUNCEMENT','sourceDate','2023-11-24','geometryStatus','REFERENCE_OSM','sourceVehicleNo',6,
       'distanceMeters',7760,'durationSeconds',713,
       'waypoints',JSON_ARRAY('ศูนย์รถ BMW','หนองอ้อ','โรงพยาบาลสัตว์วิงมอ','คลองหนองเหล็ก','หมู่ 9'),
       'officialSchedules',JSON_ARRAY(

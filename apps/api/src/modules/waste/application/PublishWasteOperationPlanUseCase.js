@@ -10,10 +10,49 @@ export class PublishWasteOperationPlanUseCase {
     return this.repository.transaction(async (db) => {
       const record = await this.repository.findPublicationContext(db, planId, { lock: true });
       if (!record) return null;
+      const hasSchedule = Boolean(
+        record.scheduledStartAt &&
+        record.scheduledEndAt
+      );
+
+      const scheduledEndAt = record.scheduledEndAt
+        ? new Date(record.scheduledEndAt)
+        : null;
+
+      if (
+        hasSchedule &&
+        (
+          !scheduledEndAt ||
+          Number.isNaN(scheduledEndAt.getTime()) ||
+          scheduledEndAt.getTime() <= Date.now()
+        )
+      ) {
+        const error = new Error(
+          "ไม่สามารถประกาศแผนที่ช่วงเวลาปฏิบัติงานสิ้นสุดแล้ว กรุณาเลือกวันและเวลาปัจจุบันหรืออนาคต"
+        );
+        error.status = 422;
+        throw error;
+      }
+
+      const recipientCount =
+        await this.repository.countRecipients(
+          db,
+          record.routeId
+        );
+
+      if (recipientCount < 1) {
+        const error = new Error(
+          "ยังไม่มีผู้ใช้บริการที่เปิดบริการและเชื่อม LINE อยู่ในเส้นทางนี้ กรุณาตรวจทะเบียนประชาชนก่อนประกาศ"
+        );
+        error.status = 422;
+        throw error;
+      }
+
       const plan = new WasteOperationPlan(record).publish({
-        hasSchedule: Boolean(record.scheduledStartAt && record.scheduledEndAt),
+        hasSchedule,
         activeStopCount: record.activeStopCount,
       });
+
       const published = { ...record, publicNote };
       const message = this.noticeFactory.formatPublished(published);
       await this.repository.markPublished(db, {
@@ -22,13 +61,13 @@ export class PublishWasteOperationPlanUseCase {
         publicNote,
         officerId,
       });
-      const recipientCount = await this.repository.enqueueRouteNotices(db, {
+      const queuedRecipientCount = await this.repository.enqueueRouteNotices(db, {
         plan: published,
         version: plan.publicationVersion,
         type: "SCHEDULE_PUBLISHED",
         message,
       });
-      return { publicationStatus: plan.publicationStatus, publicationVersion: plan.publicationVersion, recipientCount };
+      return { publicationStatus: plan.publicationStatus, publicationVersion: plan.publicationVersion, recipientCount: queuedRecipientCount };
     });
   }
 }

@@ -54,7 +54,7 @@ function RouteAssignmentWorkspace({ user, routes, suggestions, loading, saving, 
   </section>;
 }
 
-function ServiceUserForm({ initial, villages, onCancel, onSubmit, saving }) {
+function ServiceUserForm({ initial, villages, onCancel, onSubmit, onUnlinkLine, saving }) {
   const [location, setLocation] = useState(() => ({
     latitude: initial?.latitude == null ? null : Number(initial.latitude),
     longitude: initial?.longitude == null ? null : Number(initial.longitude),
@@ -70,10 +70,10 @@ function ServiceUserForm({ initial, villages, onCancel, onSubmit, saving }) {
       houseNo: value.houseNo,
       villageId: Number(value.villageId),
       addressDetail: value.addressDetail || null,
-      lineUserId: initial?.lineUserId || null,
+      lineUserId: isActive ? (initial?.lineUserId || null) : null,
       latitude: location.latitude,
       longitude: location.longitude,
-      isActive: value.isActive === "true",
+      isActive,
     });
   }
 
@@ -86,7 +86,7 @@ function ServiceUserForm({ initial, villages, onCancel, onSubmit, saving }) {
     <label className="waste-form__wide">รายละเอียดที่อยู่<textarea name="addressDetail" defaultValue={initial?.addressDetail || ""} rows="2" placeholder="ซอย ถนน หรือจุดสังเกต" /></label>
     <div className="waste-form__wide"><LocationPicker latitude={location.latitude} longitude={location.longitude} onChange={setLocation} /></div>
     {initial ? <div className="waste-form__summary"><strong>เส้นทางรับผิดชอบ</strong><p>{initial.routeName ? `ปัจจุบัน: ${initial.routeName}` : "ยังไม่กำหนดเส้นทาง"} · การกำหนดหรือเปลี่ยนเส้นทางทำจากปุ่มในตาราง เพื่อให้ระบบคำนวณรอบวิ่งและแสดงผลเปรียบเทียบก่อนยืนยัน</p></div> : null}
-    {initial ? <div className="waste-form__summary"><strong>การเชื่อมบัญชี LINE</strong><p>{initial.lineUserId ? "เชื่อมบัญชีแล้ว ระบบไม่เปิดให้แก้รหัส LINE ด้วยมือ" : "ยังไม่เชื่อมบัญชี ผู้ใช้บริการสามารถเชื่อมผ่านขั้นตอนใน LINE ได้"}</p></div> : null}
+    {initial ? <div className="waste-form__summary"><strong>การเชื่อมบัญชี LINE</strong><p>{initial.lineUserId ? "เชื่อมบัญชีแล้ว หากต้องการให้ LINE นี้ลงทะเบียนใหม่หรือย้ายทะเบียน ให้ยกเลิกการเชื่อมก่อน" : "ยังไม่เชื่อมบัญชี ผู้ใช้บริการสามารถเชื่อมผ่านขั้นตอนใน LINE ได้"}</p>{initial.lineUserId ? <button type="button" className="waste-button waste-button--secondary" disabled={saving} onClick={() => onUnlinkLine(initial)}>ยกเลิกการเชื่อม LINE</button> : null}</div> : null}
     <label>สถานะ<select name="isActive" defaultValue={String(initial?.isActive ?? true)}><option value="true">รับบริการอยู่</option><option value="false">ปิดบริการ</option></select></label>
     <footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>ยกเลิก</button><button className="waste-button waste-button--primary" disabled={saving}>{saving ? "กำลังบันทึก" : initial ? "บันทึกการแก้ไข" : "เพิ่มจุดรับบริการ"}</button></footer>
   </form>;
@@ -139,6 +139,43 @@ export default function ServiceUsersPage({ token }) {
       await load();
     } catch (requestError) {
       setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const unlinkLine = async (user) => {
+    if (!user?.id || !user.lineUserId) return;
+
+    if (!window.confirm(
+      `ยกเลิกการเชื่อม LINE ของ ${user.fullName} ใช่หรือไม่?
+
+ประวัติผู้ใช้บริการ ค่าบริการ และประวัติการเก็บขยะจะยังอยู่ครบ`
+    )) return;
+
+    setSaving(true);
+    setError("");
+
+    try {
+      await api.post(
+        `/api/waste/service-users/${user.id}/unlink-line`,
+        {}
+      );
+
+      setModal((current) =>
+        current?.id === user.id
+          ? {
+              ...current,
+              lineUserId: null,
+            }
+          : current
+      );
+
+      await load();
+
+    } catch (requestError) {
+      setError(requestError.message);
+
     } finally {
       setSaving(false);
     }
@@ -231,7 +268,7 @@ export default function ServiceUsersPage({ token }) {
       </header>
       {loading ? <LoadingState /> : !users.length ? <EmptyState title="ยังไม่มีจุดรับบริการ" detail="เพิ่มบ้านเรือนหรือสถานที่ พร้อมตรวจพิกัดก่อนกำหนดรอบเก็บขยะ" actionLabel="เพิ่มจุดรับบริการ" onAction={() => setModal({})} /> : !filteredUsers.length ? <EmptyState title="ไม่พบข้อมูลที่ค้นหา" detail="ลองเปลี่ยนคำค้นหรือเงื่อนไขเส้นทาง" /> : <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th>เลขผู้ใช้บริการ</th><th>ผู้ใช้บริการ / ติดต่อ</th><th>ที่อยู่</th><th>เส้นทาง</th><th>LINE</th><th>สถานะ</th><th /></tr></thead><tbody>{filteredUsers.map((user) => <tr key={user.id} className={!user.routeId && user.isActive ? "waste-row-needs-action" : ""}><td><strong>{user.serviceNo}</strong></td><td><strong>{user.fullName}</strong><small>{user.phone}</small></td><td>หมู่ {user.villageNo} · {user.houseNo}<small>{user.villageName}{user.latitude != null ? " · มีพิกัด" : " · ยังไม่มีพิกัด"}</small></td><td>{user.routeName ? <><strong>{user.routeName}</strong><button type="button" className="waste-route-assign-link" onClick={() => void openRouteAssignment(user)}>เปลี่ยนเส้นทาง</button></> : <button type="button" className="waste-route-assign-button" onClick={() => void openRouteAssignment(user)}><span>ยังไม่กำหนด</span><strong>{user.latitude == null ? "ระบุตำแหน่งและกำหนดเส้นทาง" : "กำหนดเส้นทาง"}</strong></button>}</td><td>{user.lineUserId ? "เชื่อมแล้ว" : "ยังไม่เชื่อม"}</td><td><StatusBadge value={user.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><div className="waste-table-actions"><button type="button" className="waste-table-action" onClick={() => { setSuggestions([]); setModal(user); }}>แก้ไข</button><button type="button" className="waste-table-action waste-table-action--danger" onClick={() => setDeleting(user)}>ลบผู้ใช้บริการ</button></div></td></tr>)}</tbody></table></div>}
     </section>
-    {modal ? <Modal title={modal.id ? "แก้ไขจุดรับบริการเก็บขยะ" : "เพิ่มจุดรับบริการเก็บขยะ"} onClose={() => { setModal(null); setSuggestions([]); }}><ErrorNotice error={error} /><ServiceUserForm initial={modal.id ? modal : null} villages={villages} onCancel={() => { setModal(null); setSuggestions([]); }} onSubmit={save} saving={saving} /></Modal> : null}
+    {modal ? <Modal title={modal.id ? "แก้ไขจุดรับบริการเก็บขยะ" : "เพิ่มจุดรับบริการเก็บขยะ"} onClose={() => { setModal(null); setSuggestions([]); }}><ErrorNotice error={error} /><ServiceUserForm initial={modal.id ? modal : null} villages={villages} onCancel={() => { setModal(null); setSuggestions([]); }} onSubmit={save} onUnlinkLine={unlinkLine} saving={saving} /></Modal> : null}
     {assignmentUser ? <Modal title="กำหนดเส้นทางและคำนวณรอบวิ่ง" onClose={() => { setAssignmentUser(null); setSuggestions([]); }}><RouteAssignmentWorkspace user={assignmentUser} routes={routes} suggestions={suggestions} loading={assignmentLoading} saving={assignmentLoading} error={error} onCalculate={calculateRouteAssignment} onConfirm={confirmRouteAssignment} onEditLocation={() => { setModal(assignmentUser); setAssignmentUser(null); setSuggestions([]); }} /></Modal> : null}
     {deleting ? <Modal title="ยืนยันการลบผู้ใช้บริการ" onClose={() => setDeleting(null)}><div className="waste-confirmation"><strong>{deleting.serviceNo} · {deleting.fullName}</strong><p>ลบได้เฉพาะรายการที่ยังไม่มีประวัติค่าบริการหรือการจัดเก็บ หากมีประวัติ ให้แก้ไขสถานะเป็น “ปิดบริการ” เพื่อรักษาประวัติการทำงาน</p><footer><button type="button" className="waste-button waste-button--secondary" onClick={() => setDeleting(null)}>ยกเลิก</button><button type="button" className="waste-button waste-button--danger" disabled={saving} onClick={() => void remove()}>{saving ? "กำลังลบ" : "ยืนยันลบผู้ใช้บริการ"}</button></footer></div></Modal> : null}
   </>;

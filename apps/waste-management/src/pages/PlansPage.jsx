@@ -17,19 +17,143 @@ const STATUS_CONFIRMATIONS = Object.freeze({
   CANCELLED: { title: "ยืนยันยกเลิกแผนงาน", detail: "ยกเลิกได้เฉพาะแผนร่างหรือแผนที่ถอนประกาศแล้ว หากยังต้องปฏิบัติงานให้สร้างแผนใหม่", action: "ยกเลิกแผนงาน" },
 });
 
-function PlanForm({ resources, date, initial = null, onCancel, onSubmit, saving }) {
+function PlanForm({ api, resources, date, initial = null, onCancel, onSubmit, saving }) {
   const [scheduledDate, setScheduledDate] = useState(initial?.scheduledDate?.slice?.(0, 10) || date);
   const [routeId, setRouteId] = useState(initial?.routeId || "");
   const initialTimes = { start: toTimeInput(initial?.scheduledStartAt), end: toTimeInput(initial?.scheduledEndAt) };
   const [startTime, setStartTime] = useState(initialTimes.start);
   const [endTime, setEndTime] = useState(initialTimes.end);
-  const schedule = wastePlanFormController.schedule(resources, routeId, scheduledDate);
+
+  const [vehicleId, setVehicleId] =
+    useState(initial?.vehicleId || "");
+
+  const [driverId, setDriverId] =
+    useState(initial?.driverId || "");
+
+  const [availability, setAvailability] =
+    useState({ vehicles: [], drivers: [] });
+
+  const [availabilityLoading, setAvailabilityLoading] =
+    useState(false);
+
+  const [resourceNotice, setResourceNotice] =
+    useState("");
+
+  const schedule =
+    wastePlanFormController.schedule(
+      resources,
+      routeId,
+      scheduledDate
+    );
 
   const applyOfficialTime = (nextRouteId = routeId, nextDate = scheduledDate) => {
     const range = wastePlanFormController.defaults(resources, nextRouteId, nextDate);
     setStartTime(range.start);
     setEndTime(range.end);
   };
+  useEffect(() => {
+    if (
+      !scheduledDate ||
+      !startTime ||
+      !endTime
+    ) {
+      setAvailability({
+        vehicles: [],
+        drivers: [],
+      });
+
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const timer = window.setTimeout(
+      async () => {
+        setAvailabilityLoading(true);
+
+        try {
+          const params =
+            new URLSearchParams({
+              scheduledDate,
+              scheduledStartAt:
+                toIso(
+                  scheduledDate,
+                  startTime
+                ),
+              scheduledEndAt:
+                toIso(
+                  scheduledDate,
+                  endTime
+                ),
+            });
+
+          if (initial?.id) {
+            params.set(
+              "excludePlanId",
+              initial.id
+            );
+          }
+
+          const result =
+            await api.get(
+              `/api/waste/plans/resource-availability?${params.toString()}`
+            );
+
+          if (!cancelled) {
+            setAvailability(result);
+          }
+
+        } catch (requestError) {
+          if (!cancelled) {
+            setResourceNotice(
+              requestError.message
+            );
+          }
+        } finally {
+          if (!cancelled) {
+            setAvailabilityLoading(false);
+          }
+        }
+      },
+      250
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    api,
+    scheduledDate,
+    startTime,
+    endTime,
+    initial?.id,
+  ]);
+
+  const vehicleOptions =
+    availability.vehicles.length
+      ? availability.vehicles
+      : resources.vehicles.map(
+          (item) => ({
+            ...item,
+            available: false,
+            reason:
+              "กำหนดวัน เวลาเริ่ม และเวลาสิ้นสุดก่อนเลือกรถ",
+          })
+        );
+
+  const driverOptions =
+    availability.drivers.length
+      ? availability.drivers
+      : resources.drivers.map(
+          (item) => ({
+            ...item,
+            available: false,
+            reason:
+              "กำหนดวัน เวลาเริ่ม และเวลาสิ้นสุดก่อนเลือกคนขับ",
+          })
+        );
+
   const submit = (event) => {
     event.preventDefault();
     const value = Object.fromEntries(new FormData(event.currentTarget).entries());
@@ -37,8 +161,8 @@ function PlanForm({ resources, date, initial = null, onCancel, onSubmit, saving 
       ...(initial?.planNo ? { planNo: initial.planNo } : {}),
       scheduledDate,
       routeId,
-      vehicleId: value.vehicleId,
-      driverId: value.driverId,
+      vehicleId,
+      driverId,
       scheduledStartAt: toIso(scheduledDate, startTime),
       scheduledEndAt: toIso(scheduledDate, endTime),
       note: value.note || null,
@@ -49,11 +173,214 @@ function PlanForm({ resources, date, initial = null, onCancel, onSubmit, saving 
     <div className="waste-form__summary"><strong>ขั้นที่ 1 · บันทึกแผนร่าง</strong><p>เลือกวัน เส้นทาง รถ และคนขับ ระบบช่วยเติมเวลาจากประกาศของเทศบาลตามวันจริง จากนั้นตรวจสอบก่อนประกาศผ่าน LINE</p></div>
     <label>เลขที่แผนปฏิบัติงาน<input value={initial?.planNo || "ระบบออกเลขให้อัตโนมัติเมื่อบันทึก"} readOnly aria-readonly="true" /></label>
     <label>วันที่ปฏิบัติงาน<input type="date" value={scheduledDate} onChange={(event) => { const value = event.target.value; setScheduledDate(value); window.requestAnimationFrame(() => applyOfficialTime(routeId, value)); }} required /></label>
-    <label>เส้นทางเก็บขยะ<select required value={routeId} onChange={(event) => { const value = event.target.value; setRouteId(value); applyOfficialTime(value, scheduledDate); }}><option value="" disabled>เลือกเส้นทาง</option>{resources.routes.filter((item) => item.isActive || item.id === initial?.routeId).map((item) => <option value={item.id} key={item.id}>{item.routeCode} — {item.routeName} ({formatNumber(item.stopCount)} จุด)</option>)}</select></label>
-    <label>รถเก็บขยะ<select name="vehicleId" required defaultValue={initial?.vehicleId || ""}><option value="" disabled>เลือกรถเก็บขยะ</option>{resources.vehicles.filter((item) => !["MAINTENANCE", "OUT_OF_SERVICE"].includes(item.status) || item.id === initial?.vehicleId).map((item) => <option value={item.id} key={item.id}>{item.vehicleCode} — {item.registrationNo}{item.status === "IN_SERVICE" ? " (กำลังใช้งาน)" : ""}</option>)}</select></label>
-    <label>คนขับรถเก็บขยะ<select name="driverId" required defaultValue={initial?.driverId || ""}><option value="" disabled>เลือกคนขับรถเก็บขยะ</option>{resources.drivers.filter((item) => item.isActive || item.id === initial?.driverId).map((item) => <option value={item.id} key={item.id}>{item.fullName}</option>)}</select></label>
-    <label>เวลาเริ่มตามแผน<input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required /></label>
-    <label>เวลาสิ้นสุดตามแผน<input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required /></label>
+    <label>
+      เส้นทางเก็บขยะ
+      <select
+        required
+        value={routeId}
+        onChange={(event) => {
+          const value = event.target.value;
+          const route = resources.routes.find((item) => item.id === value);
+
+          const status =
+            route?.routeGeojson?.properties?.geometryStatus;
+
+          const ready =
+            route?.isActive &&
+            Number(route.stopCount || 0) >= 2 &&
+            route?.routeGeojson?.geometry?.type === "LineString" &&
+            status !== "RECALCULATION_REQUIRED";
+
+          if (!ready) {
+            setResourceNotice(
+              !route?.isActive
+                ? "เส้นทางนี้ถูกปิดใช้งาน"
+                : Number(route?.stopCount || 0) < 2
+                  ? "เส้นทางต้องมีจุดรับบริการอย่างน้อย 2 จุด"
+                  : status === "RECALCULATION_REQUIRED"
+                    ? "จุดรับบริการเปลี่ยนแปลง กรุณาคำนวณเส้นทางใหม่ก่อน"
+                    : "เส้นทางนี้ยังไม่มีแนวถนนที่พร้อมใช้งาน"
+            );
+            return;
+          }
+
+          setResourceNotice("");
+          setRouteId(value);
+          setVehicleId("");
+          setDriverId("");
+          applyOfficialTime(value, scheduledDate);
+        }}
+      >
+        <option value="" disabled>
+          เลือกเส้นทาง
+        </option>
+
+        {resources.routes.map((item) => {
+          const status =
+            item.routeGeojson?.properties?.geometryStatus;
+
+          const ready =
+            item.isActive &&
+            Number(item.stopCount || 0) >= 2 &&
+            item.routeGeojson?.geometry?.type === "LineString" &&
+            status !== "RECALCULATION_REQUIRED";
+
+          return (
+            <option
+              value={item.id}
+              key={item.id}
+              style={{
+                color: ready
+                  ? undefined
+                  : "#b42318",
+              }}
+            >
+              {item.routeCode} — {item.routeName} ({formatNumber(item.stopCount)} จุด)
+              {ready
+                ? ""
+                : " — ไม่พร้อมใช้งาน"}
+            </option>
+          );
+        })}
+      </select>
+    </label>
+
+    <label>
+      เวลาเริ่มตามแผน
+      <input
+        type="time"
+        value={startTime}
+        onChange={(event) => {
+          setStartTime(event.target.value);
+          setVehicleId("");
+          setDriverId("");
+        }}
+        required
+      />
+    </label>
+
+    <label>
+      เวลาสิ้นสุดตามแผน
+      <input
+        type="time"
+        value={endTime}
+        onChange={(event) => {
+          setEndTime(event.target.value);
+          setVehicleId("");
+          setDriverId("");
+        }}
+        required
+      />
+    </label>
+
+    {resourceNotice
+      ? <div className="waste-plan-resource-warning">
+          <strong>ไม่สามารถเลือกได้</strong>
+          <span>{resourceNotice}</span>
+        </div>
+      : null}
+
+    <label>
+      รถเก็บขยะ
+      <select
+        required
+        value={vehicleId}
+        disabled={availabilityLoading}
+        onChange={(event) => {
+          const item =
+            vehicleOptions.find(
+              (vehicle) =>
+                vehicle.id ===
+                event.target.value
+            );
+
+          if (!item?.available) {
+            setResourceNotice(
+              `${item?.vehicleCode || "รถคันนี้"}: ${item?.reason || "ไม่พร้อมใช้งาน"}`
+            );
+            return;
+          }
+
+          setResourceNotice("");
+          setVehicleId(item.id);
+        }}
+      >
+        <option value="" disabled>
+          {availabilityLoading
+            ? "กำลังตรวจสอบรถที่ว่าง..."
+            : "เลือกรถเก็บขยะ"}
+        </option>
+
+        {vehicleOptions.map((item) => (
+          <option
+            value={item.id}
+            key={item.id}
+            style={{
+              color: item.available
+                ? "#176b35"
+                : "#b42318",
+            }}
+          >
+            {item.vehicleCode} — {item.registrationNo}
+            {" — "}
+            {item.available
+              ? "ว่าง"
+              : item.reason}
+          </option>
+        ))}
+      </select>
+    </label>
+
+    <label>
+      คนขับรถเก็บขยะ
+      <select
+        required
+        value={driverId}
+        disabled={availabilityLoading}
+        onChange={(event) => {
+          const item =
+            driverOptions.find(
+              (driver) =>
+                driver.id ===
+                event.target.value
+            );
+
+          if (!item?.available) {
+            setResourceNotice(
+              `${item?.fullName || "คนขับรายนี้"}: ${item?.reason || "ไม่พร้อมปฏิบัติงาน"}`
+            );
+            return;
+          }
+
+          setResourceNotice("");
+          setDriverId(item.id);
+        }}
+      >
+        <option value="" disabled>
+          {availabilityLoading
+            ? "กำลังตรวจสอบคนขับที่ว่าง..."
+            : "เลือกคนขับรถเก็บขยะ"}
+        </option>
+
+        {driverOptions.map((item) => (
+          <option
+            value={item.id}
+            key={item.id}
+            style={{
+              color: item.available
+                ? "#176b35"
+                : "#b42318",
+            }}
+          >
+            {item.fullName}
+            {" — "}
+            {item.available
+              ? "ว่าง"
+              : item.reason}
+          </option>
+        ))}
+      </select>
+    </label>
     {schedule ? <div className="waste-form__summary"><strong>{schedule.label} · ตารางตามประกาศ {schedule.time} น.</strong><p>{schedule.areas.join(" · ")}</p></div> : routeId ? <p className="waste-form__hint">ไม่พบตารางตามประกาศสำหรับวันนี้ กรุณาระบุเวลาที่เทศบาลจัดแผนเพิ่มเติมเอง</p> : null}
     <label className="waste-form__wide">หมายเหตุภายใน<textarea name="note" rows="3" defaultValue={initial?.note || ""} placeholder="คำสั่งการหรือรายละเอียดสำหรับเจ้าหน้าที่และคนขับ" /></label>
     <footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>ยกเลิก</button><button className="waste-button waste-button--primary" disabled={saving}>{saving ? "กำลังบันทึก" : initial ? "บันทึกการแก้ไข" : "บันทึกเป็นแผนร่าง"}</button></footer>
@@ -104,8 +431,8 @@ export default function PlansPage({ token, navigate }) {
       <div className="waste-plan-list__main"><header><div><small>{plan.planNo}</small><h2>{plan.routeName}</h2></div><div className="waste-plan-statuses"><span className={`waste-publication waste-publication--${String(plan.publicationStatus || "DRAFT").toLowerCase()}`}>{wastePlanPolicy.publicationLabel(plan.publicationStatus)}</span><StatusBadge value={plan.status} /></div></header><dl><div><dt>รถเก็บขยะ</dt><dd>{plan.vehicleCode}</dd></div><div><dt>คนขับ</dt><dd>{plan.driverName}</dd></div><div><dt>จุดรับบริการ</dt><dd>{formatNumber(plan.stopTotal)} จุด</dd></div><div><dt>เวลา</dt><dd>{plan.scheduledStartAt ? `${formatDate(plan.scheduledStartAt, { hour: "2-digit", minute: "2-digit" })}–${formatDate(plan.scheduledEndAt, { hour: "2-digit", minute: "2-digit" })}` : "ยังไม่ครบ"}</dd></div></dl>{plan.publicationStatus === "PUBLISHED" ? <div className="waste-line-delivery"><span>LINE เป้าหมาย {formatNumber(plan.lineRecipientCount)}</span><span>ส่งแล้ว {formatNumber(plan.lineSentCount)}</span><span>รอส่ง {formatNumber(plan.linePendingCount)}</span>{plan.lineFailedCount ? <span className="is-failed">ไม่สำเร็จ {formatNumber(plan.lineFailedCount)}</span> : null}</div> : null}</div>
       <div className="waste-plan-list__actions">{plan.status === "SCHEDULED" ? <>{plan.publicationStatus !== "PUBLISHED" ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => setEditing(plan)}>แก้ไขแผนร่าง</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => setPublication({ plan, mode: "publish" })}>ตรวจและประกาศ</button></> : <><button type="button" className="waste-button waste-button--secondary" onClick={() => setPublication({ plan, mode: "withdraw" })}>ถอนประกาศ</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => setStatusConfirmation({ plan, status: "IN_PROGRESS" })}>เริ่มปฏิบัติงาน</button></>}<button type="button" className="waste-button waste-button--quiet" disabled={saving} onClick={() => setStatusConfirmation({ plan, status: "CANCELLED" })}>ยกเลิก</button></> : null}{["IN_PROGRESS", "INTERRUPTED"].includes(plan.status) ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate(`tracking?plan=${plan.id}`)}>ติดตาม</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => setStatusConfirmation({ plan, status: "COMPLETED" })}>บันทึกเสร็จสิ้น</button></> : null}</div>
     </article>)}</div>}</section>
-    {createOpen ? <Modal title="สร้างแผนปฏิบัติงานเก็บขยะ" onClose={() => setCreateOpen(false)}><PlanForm resources={resources} date={date} onCancel={() => setCreateOpen(false)} onSubmit={(input) => savePlan(input)} saving={saving} /></Modal> : null}
-    {editing ? <Modal title="แก้ไขแผนร่าง" onClose={() => setEditing(null)}><PlanForm resources={resources} date={date} initial={editing} onCancel={() => setEditing(null)} onSubmit={(input) => savePlan(input, editing)} saving={saving} /></Modal> : null}
+    {createOpen ? <Modal title="สร้างแผนปฏิบัติงานเก็บขยะ" onClose={() => setCreateOpen(false)}><PlanForm api={api} resources={resources} date={date} onCancel={() => setCreateOpen(false)} onSubmit={(input) => savePlan(input)} saving={saving} /></Modal> : null}
+    {editing ? <Modal title="แก้ไขแผนร่าง" onClose={() => setEditing(null)}><PlanForm api={api} resources={resources} date={date} initial={editing} onCancel={() => setEditing(null)} onSubmit={(input) => savePlan(input, editing)} saving={saving} /></Modal> : null}
     {publication ? <Modal title={publication.mode === "publish" ? "ตรวจและประกาศตาราง" : "ถอนประกาศตาราง"} onClose={() => setPublication(null)}><PublicationModal {...publication} saving={saving} onCancel={() => setPublication(null)} onConfirm={(input) => updatePublication(publication.plan, publication.mode, input)} /></Modal> : null}
     {statusConfirmation ? <Modal title={STATUS_CONFIRMATIONS[statusConfirmation.status].title} onClose={() => setStatusConfirmation(null)}><div className="waste-confirmation"><strong>{statusConfirmation.plan.planNo} · {statusConfirmation.plan.routeName}</strong><p>{STATUS_CONFIRMATIONS[statusConfirmation.status].detail}</p><footer><button type="button" className="waste-button waste-button--secondary" onClick={() => setStatusConfirmation(null)}>กลับไปตรวจสอบ</button><button type="button" className={statusConfirmation.status === "CANCELLED" ? "waste-button waste-button--danger" : "waste-button waste-button--primary"} disabled={saving} onClick={() => { const { plan, status } = statusConfirmation; setStatusConfirmation(null); void updateStatus(plan.id, status); }}>{STATUS_CONFIRMATIONS[statusConfirmation.status].action}</button></footer></div></Modal> : null}
   </>;

@@ -62,3 +62,23 @@ html{font-size:16px}body{overflow-x:hidden;color:#213e34;background:#f2f6f3}.was
 @media(max-width:600px){.waste-route-endpoints{grid-template-columns:1fr}.waste-route-steps,.waste-route-inline-guide{grid-template-columns:24px 1fr}.waste-route-cards{padding:12px}.waste-modal-actions .waste-button{width:100%}.waste-route-map-picker{grid-template-columns:1fr}.waste-route-map-picker>div{display:grid;grid-template-columns:1fr 1fr;justify-content:stretch}.waste-route-map-picker>div button:last-child{grid-column:1/-1}.waste-route-map-picker>span{grid-column:auto}.waste-route-comparison-table>div{grid-template-columns:1fr 1fr}.waste-route-comparison-table>div>*:nth-child(3),.waste-route-comparison-table>div>*:nth-child(4){text-align:right}}
 .waste-tracking-map-legend{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:11px 16px;border-top:1px solid #e1e9e4;color:#5e756a;background:#fbfdfc;font-size:10px}.waste-tracking-map-legend span{display:flex;align-items:center;gap:6px;font-weight:700}.waste-tracking-map-legend i{display:block;width:22px;height:4px;border-radius:999px}.waste-tracking-map-legend i.is-route{background:#278432}.waste-tracking-map-legend i.is-gps{background:#2476a8}.waste-tracking-map-legend small{margin-left:auto;color:#83948c;font-size:9px}@media(max-width:700px){.waste-tracking-map-legend small{width:100%;margin-left:0}}
 .waste-driver-tracking{display:grid;min-height:100vh;place-items:center;padding:24px;background:radial-gradient(circle at 20% 0%,#e9f3ec 0,transparent 42%),linear-gradient(155deg,#f7faf8 0%,#edf3ef 100%)}.waste-driver-card{width:min(560px,100%);padding:clamp(22px,5vw,38px);border:1px solid #dce8e1;border-radius:24px;background:#fff;box-shadow:0 24px 65px rgb(20 63 47 / .14)}.waste-driver-card>header{display:flex;align-items:center;gap:14px;padding-bottom:20px;border-bottom:1px solid #e4ece7}.waste-driver-card__mark{display:grid;width:50px;height:50px;flex:none;place-items:center;border-radius:15px;color:#7d430b;background:#ffe4c8;font-family:"Prompt";font-weight:700}.waste-driver-card header small{display:block;color:#b15d11;font-size:10px;font-weight:700;letter-spacing:.08em}.waste-driver-card h1{margin:4px 0 0;color:#173c2e;font-family:"Prompt";font-size:clamp(21px,5vw,28px)}.waste-driver-card__status{display:flex;align-items:center;gap:9px;margin:18px 0;padding:12px 14px;border-radius:11px;color:#79572f;background:#fff5e8;font-size:13px;font-weight:700}.waste-driver-card__status i{width:10px;height:10px;border-radius:50%;background:#d57a23}.waste-driver-card__status[data-active="true"]{color:#176b4d;background:#e8f7ef}.waste-driver-card__status[data-active="true"] i{background:#189364;box-shadow:0 0 0 5px rgb(24 147 100 / .12);animation:waste-live-pulse 1.8s ease-in-out infinite}.waste-driver-card dl{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0}.waste-driver-card dl>div{min-width:0;padding:12px;border:1px solid #e2ebe6;border-radius:11px;background:#fbfdfc}.waste-driver-card dt{color:#758980;font-size:10px}.waste-driver-card dd{overflow-wrap:anywhere;margin:4px 0 0;color:#294d3f;font-size:13px;font-weight:700}.waste-driver-card__telemetry{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;padding:14px;border-radius:12px;color:#466158;background:#f1f6f3}.waste-driver-card__telemetry small,.waste-driver-card__telemetry strong{display:block}.waste-driver-card__telemetry small{font-size:10px}.waste-driver-card__telemetry strong{margin-top:4px;font-size:12px}.waste-driver-card__telemetry p{grid-column:1/-1;margin:0;color:#73867e;font-size:10px}.waste-driver-card__error{margin:14px 0 0;padding:12px;border:1px solid #f1cec8;border-radius:10px;color:#963e34;background:#fff4f2;font-size:12px;line-height:1.5}.waste-driver-card__button{width:100%;min-height:50px;margin-top:18px;font-size:14px}.waste-driver-card__notice{margin:13px 0 0;color:#74877e;font-size:11px;line-height:1.6;text-align:center}@media(max-width:520px){.waste-driver-tracking{align-items:start;padding:0;background:#fff}.waste-driver-card{min-height:100vh;padding:22px 17px;border:0;border-radius:0;box-shadow:none}.waste-driver-card dl{grid-template-columns:1fr}.waste-driver-card__telemetry{grid-template-columns:1fr}.waste-driver-card__telemetry p{grid-column:auto}}
+
+/* P0 FR17 resource availability */
+.waste-plan-resource-warning {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: .2rem;
+  border: 1px solid #e6a69d;
+  background: #fff4f1;
+  color: #992d22;
+  border-radius: 12px;
+  padding: .75rem .9rem;
+}
+
+.waste-plan-resource-warning strong {
+  font-weight: 800;
+}
+
+.waste-form option[style*="b42318"] {
+  color: #b42318;
+}
