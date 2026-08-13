@@ -325,7 +325,7 @@ async function assertPlanAssignment(db, input, excludePlanId = null) {
             CASE WHEN p.vehicle_id = ? THEN 'VEHICLE' ELSE 'DRIVER' END AS conflictType
      FROM waste_operation_plans p
      WHERE p.scheduled_date = ?
-       AND p.status NOT IN ('CANCELLED')
+       AND p.status IN ('SCHEDULED', 'IN_PROGRESS', 'INTERRUPTED')
        AND (? IS NULL OR p.id <> ?)
        AND (p.vehicle_id = ? OR p.driver_id = ?)
        AND (
@@ -930,7 +930,7 @@ router.get("/plans/resource-availability", requireRole("ADMIN", "OFFICER", "VIEW
                 DATE_FORMAT(p.scheduled_end_at, '%H:%i') AS endTime
          FROM waste_operation_plans p
          WHERE p.scheduled_date = ?
-           AND p.status <> 'CANCELLED'
+           AND p.status IN ('SCHEDULED', 'IN_PROGRESS', 'INTERRUPTED')
            AND (? IS NULL OR p.id <> ?)
            AND (
              ? IS NULL
