@@ -397,8 +397,15 @@ function PublicationModal({ plan, mode, saving, onCancel, onConfirm }) {
 
 export default function PlansPage({ token, navigate }) {
   const api = useMemo(() => createWasteApplication(token), [token]);
-  const [date, setDate] = useState(toDateInput());
   const [plans, setPlans] = useState([]);
+
+  const [search, setSearch] = useState("");
+  const [dateMode, setDateMode] = useState("ALL");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [routeFilter, setRouteFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [publicationFilter, setPublicationFilter] = useState("ALL");
   const [resources, setResources] = useState({ vehicles: [], drivers: [], routes: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -411,10 +418,21 @@ export default function PlansPage({ token, navigate }) {
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [nextPlans, vehicles, drivers, routes] = await Promise.all([api.get(`/api/waste/plans?date=${date}`), api.get("/api/waste/vehicles"), api.get("/api/waste/drivers"), api.get("/api/waste/routes")]);
-      setPlans(nextPlans); setResources({ vehicles, drivers, routes });
-    } catch (requestError) { setError(requestError.message); } finally { setLoading(false); }
-  }, [api, date]);
+      const [nextPlans, vehicles, drivers, routes] = await Promise.all([
+        api.get("/api/waste/plans"),
+        api.get("/api/waste/vehicles"),
+        api.get("/api/waste/drivers"),
+        api.get("/api/waste/routes"),
+      ]);
+
+      setPlans(nextPlans);
+      setResources({ vehicles, drivers, routes });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
   useEffect(() => { void load(); }, [load]);
 
   async function run(action) { setSaving(true); setError(""); try { await action(); await load(); } catch (requestError) { setError(requestError.message); } finally { setSaving(false); } }
@@ -432,33 +450,285 @@ export default function PlansPage({ token, navigate }) {
       setEditing(null);
       setCreateOpen(false);
 
-      // หลังบันทึก ให้หน้าเว็บพาไปวันที่ของแผนที่เพิ่งบันทึก
-      // เพื่อไม่ให้ผู้ใช้เข้าใจว่าแผนหาย
-      if (input.scheduledDate !== date) {
-        setDate(input.scheduledDate);
-      } else {
-        await load();
-      }
+      // รีโหลดรายการทั้งหมด แผนใหม่ต้องเห็นทันที
+      await load();
     } catch (requestError) {
       setError(requestError.message);
     } finally {
       setSaving(false);
     }
   }
+
   async function updateStatus(id, status) { await run(() => api.patch(`/api/waste/plans/${id}/status`, { status })); }
   async function updatePublication(plan, mode, input) { await run(() => api.post(`/api/waste/plans/${plan.id}/${mode === "publish" ? "publish" : "withdraw"}`, input)); setPublication(null); }
 
+  const filteredPlans = useMemo(() => {
+    const today = toDateInput();
+
+    const todayDate = new Date(`${today}T00:00:00+07:00`);
+
+    const weekEnd = new Date(todayDate);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+
+    const monthStart = new Date(
+      todayDate.getFullYear(),
+      todayDate.getMonth(),
+      1
+    );
+
+    const monthEnd = new Date(
+      todayDate.getFullYear(),
+      todayDate.getMonth() + 1,
+      0
+    );
+
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return plans.filter((plan) => {
+      const scheduledDate = String(plan.scheduledDate || "").slice(0, 10);
+      const planDate = new Date(`${scheduledDate}T00:00:00+07:00`);
+
+      if (dateMode === "TODAY" && scheduledDate !== today) {
+        return false;
+      }
+
+      if (
+        dateMode === "NEXT_7_DAYS" &&
+        (
+          planDate < todayDate ||
+          planDate > weekEnd
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        dateMode === "THIS_MONTH" &&
+        (
+          planDate < monthStart ||
+          planDate > monthEnd
+        )
+      ) {
+        return false;
+      }
+
+      if (dateMode === "CUSTOM") {
+        if (customFrom && scheduledDate < customFrom) {
+          return false;
+        }
+
+        if (customTo && scheduledDate > customTo) {
+          return false;
+        }
+      }
+
+      if (
+        routeFilter !== "ALL" &&
+        plan.routeId !== routeFilter
+      ) {
+        return false;
+      }
+
+      if (
+        statusFilter !== "ALL" &&
+        plan.status !== statusFilter
+      ) {
+        return false;
+      }
+
+      if (
+        publicationFilter !== "ALL" &&
+        plan.publicationStatus !== publicationFilter
+      ) {
+        return false;
+      }
+
+      if (normalizedSearch) {
+        const haystack = [
+          plan.planNo,
+          plan.routeName,
+          plan.vehicleCode,
+          plan.driverName,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        if (!haystack.includes(normalizedSearch)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    plans,
+    search,
+    dateMode,
+    customFrom,
+    customTo,
+    routeFilter,
+    statusFilter,
+    publicationFilter,
+  ]);
+
+  const clearFilters = () => {
+    setSearch("");
+    setDateMode("ALL");
+    setCustomFrom("");
+    setCustomTo("");
+    setRouteFilter("ALL");
+    setStatusFilter("ALL");
+    setPublicationFilter("ALL");
+  };
+
+  const hasFilters =
+    search ||
+    dateMode !== "ALL" ||
+    routeFilter !== "ALL" ||
+    statusFilter !== "ALL" ||
+    publicationFilter !== "ALL";
+
   return <>
-    <PageHead eyebrow="OPERATION PLANNING · FR17" title="แผนปฏิบัติงานเก็บขยะ" detail="จัดแผนตามวันและเส้นทางจริง ตรวจความพร้อม แล้วประกาศตารางให้ประชาชนเฉพาะพื้นที่ผ่าน LINE" actions={<><label className="waste-date-field"><span>วันที่ปฏิบัติงาน</span><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><button type="button" className="waste-button waste-button--primary" onClick={() => setCreateOpen(true)}>+ สร้างแผนร่าง</button></>} />
+    <PageHead
+      eyebrow="OPERATION PLANNING · FR17"
+      title="แผนปฏิบัติงานเก็บขยะ"
+      detail="ดูแผนทั้งหมดในภาพเดียว แล้วใช้ตัวกรองเพื่อค้นหาช่วงเวลา เส้นทาง สถานะแผน หรือสถานะการประกาศที่ต้องการ"
+      actions={
+        <button
+          type="button"
+          className="waste-button waste-button--primary"
+          onClick={() => setCreateOpen(true)}
+        >
+          + สร้างแผนร่าง
+        </button>
+      }
+    />
     <section className="waste-plan-workflow" aria-label="ขั้นตอนจัดแผน"><article><b>1</b><span><strong>จัดแผนร่าง</strong><small>วัน เส้นทาง รถ คนขับ เวลา</small></span></article><article><b>2</b><span><strong>ตรวจความพร้อม</strong><small>ทรัพยากรไม่ซ้ำและเส้นทางพร้อม</small></span></article><article><b>3</b><span><strong>ประกาศผ่าน LINE</strong><small>ส่งเฉพาะผู้ใช้บริการในพื้นที่</small></span></article></section>
+    <section className="waste-panel waste-plan-filters">
+      <header className="waste-panel__head">
+        <div>
+          <p>FILTER & SEARCH</p>
+          <h2>ค้นหาและกรองแผน</h2>
+        </div>
+
+        <div>
+          <strong>{formatNumber(filteredPlans.length)}</strong>
+          <span> จาก {formatNumber(plans.length)} แผน</span>
+        </div>
+      </header>
+
+      <div className="waste-filter-row">
+        <label>
+          <span>ค้นหา</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="เลขแผน เส้นทาง รถ หรือคนขับ"
+          />
+        </label>
+
+        <label>
+          <span>ช่วงเวลา</span>
+          <select
+            value={dateMode}
+            onChange={(event) => setDateMode(event.target.value)}
+          >
+            <option value="ALL">ทุกช่วงเวลา</option>
+            <option value="TODAY">วันนี้</option>
+            <option value="NEXT_7_DAYS">7 วันข้างหน้า</option>
+            <option value="THIS_MONTH">เดือนนี้</option>
+            <option value="CUSTOM">กำหนดเอง</option>
+          </select>
+        </label>
+
+        <label>
+          <span>เส้นทาง</span>
+          <select
+            value={routeFilter}
+            onChange={(event) => setRouteFilter(event.target.value)}
+          >
+            <option value="ALL">ทุกเส้นทาง</option>
+            {resources.routes.map((route) => (
+              <option key={route.id} value={route.id}>
+                {route.routeCode} — {route.routeName}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <span>สถานะแผน</span>
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="ALL">ทุกสถานะ</option>
+            <option value="SCHEDULED">ตามแผน</option>
+            <option value="IN_PROGRESS">กำลังปฏิบัติงาน</option>
+            <option value="INTERRUPTED">หยุดชะงัก</option>
+            <option value="COMPLETED">เสร็จสิ้น</option>
+            <option value="CANCELLED">ยกเลิก</option>
+          </select>
+        </label>
+
+        <label>
+          <span>การประกาศ</span>
+          <select
+            value={publicationFilter}
+            onChange={(event) => setPublicationFilter(event.target.value)}
+          >
+            <option value="ALL">ทุกสถานะ</option>
+            <option value="DRAFT">ยังไม่ประกาศ</option>
+            <option value="PUBLISHED">ประกาศแล้ว</option>
+            <option value="WITHDRAWN">ถอนประกาศแล้ว</option>
+          </select>
+        </label>
+
+        {hasFilters ? (
+          <button
+            type="button"
+            className="waste-button waste-button--secondary"
+            onClick={clearFilters}
+          >
+            ล้างตัวกรอง
+          </button>
+        ) : null}
+      </div>
+
+      {dateMode === "CUSTOM" ? (
+        <div className="waste-filter-row">
+          <label>
+            <span>ตั้งแต่วันที่</span>
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(event) => setCustomFrom(event.target.value)}
+            />
+          </label>
+
+          <label>
+            <span>ถึงวันที่</span>
+            <input
+              type="date"
+              min={customFrom || undefined}
+              value={customTo}
+              onChange={(event) => setCustomTo(event.target.value)}
+            />
+          </label>
+        </div>
+      ) : null}
+    </section>
+
     <ErrorNotice error={error} onRetry={load} />
-    <section className="waste-panel">{loading ? <LoadingState /> : !plans.length ? <EmptyState title="ยังไม่มีแผนปฏิบัติงาน" detail="สร้างแผนร่างจากเส้นทางจริง แล้วตรวจและประกาศตารางก่อนเริ่มงาน" actionLabel="สร้างแผนร่าง" onAction={() => setCreateOpen(true)} /> : <div className="waste-plan-list">{plans.map((plan) => <article key={plan.id}>
+    <section className="waste-panel">{loading ? <LoadingState /> : !plans.length ? <EmptyState title="ยังไม่มีแผนปฏิบัติงาน" detail="สร้างแผนร่างจากเส้นทางจริง แล้วตรวจและประกาศตารางก่อนเริ่มงาน" actionLabel="สร้างแผนร่าง" onAction={() => setCreateOpen(true)} /> : !filteredPlans.length ? <EmptyState title="ไม่พบแผนตามตัวกรอง" detail="ลองเปลี่ยนเงื่อนไขการค้นหา หรือล้างตัวกรองเพื่อดูแผนทั้งหมด" actionLabel="ล้างตัวกรอง" onAction={clearFilters} /> : <div className="waste-plan-list">{filteredPlans.map((plan) => <article key={plan.id}>
       <div className="waste-plan-list__date"><strong>{formatDate(plan.scheduledDate, { day: "numeric" })}</strong><span>{formatDate(plan.scheduledDate, { month: "short" })}</span></div>
       <div className="waste-plan-list__main"><header><div><small>{plan.planNo}</small><h2>{plan.routeName}</h2></div><div className="waste-plan-statuses"><span className={`waste-publication waste-publication--${String(plan.publicationStatus || "DRAFT").toLowerCase()}`}>{wastePlanPolicy.publicationLabel(plan.publicationStatus)}</span><StatusBadge value={plan.status} /></div></header><dl><div><dt>รถเก็บขยะ</dt><dd>{plan.vehicleCode}</dd></div><div><dt>คนขับ</dt><dd>{plan.driverName}</dd></div><div><dt>จุดรับบริการ</dt><dd>{formatNumber(plan.stopTotal)} จุด</dd></div><div><dt>เวลา</dt><dd>{plan.scheduledStartAt ? `${formatDate(plan.scheduledStartAt, { hour: "2-digit", minute: "2-digit" })}–${formatDate(plan.scheduledEndAt, { hour: "2-digit", minute: "2-digit" })}` : "ยังไม่ครบ"}</dd></div></dl>{plan.publicationStatus === "PUBLISHED" ? <div className="waste-line-delivery"><span>LINE เป้าหมาย {formatNumber(plan.lineRecipientCount)}</span><span>ส่งแล้ว {formatNumber(plan.lineSentCount)}</span><span>รอส่ง {formatNumber(plan.linePendingCount)}</span>{plan.lineFailedCount ? <span className="is-failed">ไม่สำเร็จ {formatNumber(plan.lineFailedCount)}</span> : null}</div> : null}</div>
       <div className="waste-plan-list__actions">{plan.status === "SCHEDULED" ? <>{plan.publicationStatus !== "PUBLISHED" ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => setEditing(plan)}>แก้ไขแผนร่าง</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => setPublication({ plan, mode: "publish" })}>ตรวจและประกาศ</button></> : <><button type="button" className="waste-button waste-button--secondary" onClick={() => setPublication({ plan, mode: "withdraw" })}>ถอนประกาศ</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => setStatusConfirmation({ plan, status: "IN_PROGRESS" })}>เริ่มปฏิบัติงาน</button></>}<button type="button" className="waste-button waste-button--quiet" disabled={saving} onClick={() => setStatusConfirmation({ plan, status: "CANCELLED" })}>ยกเลิก</button></> : null}{["IN_PROGRESS", "INTERRUPTED"].includes(plan.status) ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate(`tracking?plan=${plan.id}`)}>ติดตาม</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => setStatusConfirmation({ plan, status: "COMPLETED" })}>บันทึกเสร็จสิ้น</button></> : null}</div>
     </article>)}</div>}</section>
-    {createOpen ? <Modal title="สร้างแผนปฏิบัติงานเก็บขยะ" onClose={() => setCreateOpen(false)}><PlanForm api={api} resources={resources} date={date} onCancel={() => setCreateOpen(false)} onSubmit={(input) => savePlan(input)} saving={saving} /></Modal> : null}
-    {editing ? <Modal title="แก้ไขแผนร่าง" onClose={() => setEditing(null)}><PlanForm api={api} resources={resources} date={date} initial={editing} onCancel={() => setEditing(null)} onSubmit={(input) => savePlan(input, editing)} saving={saving} /></Modal> : null}
+    {createOpen ? <Modal title="สร้างแผนปฏิบัติงานเก็บขยะ" onClose={() => setCreateOpen(false)}><PlanForm api={api} resources={resources} date={toDateInput()} onCancel={() => setCreateOpen(false)} onSubmit={(input) => savePlan(input)} saving={saving} /></Modal> : null}
+    {editing ? <Modal title="แก้ไขแผนร่าง" onClose={() => setEditing(null)}><PlanForm api={api} resources={resources} date={toDateInput()} initial={editing} onCancel={() => setEditing(null)} onSubmit={(input) => savePlan(input, editing)} saving={saving} /></Modal> : null}
     {publication ? <Modal title={publication.mode === "publish" ? "ตรวจและประกาศตาราง" : "ถอนประกาศตาราง"} onClose={() => setPublication(null)}><PublicationModal {...publication} saving={saving} onCancel={() => setPublication(null)} onConfirm={(input) => updatePublication(publication.plan, publication.mode, input)} /></Modal> : null}
     {statusConfirmation ? <Modal title={STATUS_CONFIRMATIONS[statusConfirmation.status].title} onClose={() => setStatusConfirmation(null)}><div className="waste-confirmation"><strong>{statusConfirmation.plan.planNo} · {statusConfirmation.plan.routeName}</strong><p>{STATUS_CONFIRMATIONS[statusConfirmation.status].detail}</p><footer><button type="button" className="waste-button waste-button--secondary" onClick={() => setStatusConfirmation(null)}>กลับไปตรวจสอบ</button><button type="button" className={statusConfirmation.status === "CANCELLED" ? "waste-button waste-button--danger" : "waste-button waste-button--primary"} disabled={saving} onClick={() => { const { plan, status } = statusConfirmation; setStatusConfirmation(null); void updateStatus(plan.id, status); }}>{STATUS_CONFIRMATIONS[statusConfirmation.status].action}</button></footer></div></Modal> : null}
   </>;
