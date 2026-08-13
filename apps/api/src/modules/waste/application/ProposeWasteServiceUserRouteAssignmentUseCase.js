@@ -31,50 +31,45 @@ export class ProposeWasteServiceUserRouteAssignmentUseCase {
       previousRouteId: serviceUser.routeId || null,
       routeAssignmentDistanceM: Math.round(this.routeAssignmentService.distanceToRouteMeters(serviceUser, route.routeGeojson) || 0),
     };
+    if (!this.routeAssignmentService.isWithinAssignableDistance(candidateStop.routeAssignmentDistanceM)) {
+      throw new Error("SERVICE_LOCATION_OUTSIDE_ROUTE");
+    }
     const allStops = [...existingStops, candidateStop];
     if (allStops.length > this.maximumStops) throw new Error("TOO_MANY_STOPS");
     if (allStops.some((stop) => !Number.isFinite(stop.latitude) || !Number.isFinite(stop.longitude))) throw new Error("STOPS_MISSING_LOCATION");
 
-    if (allStops.length === 1) {
-      const geometry = route.routeGeojson?.geometry;
-      if (geometry?.type !== "LineString" || !Array.isArray(geometry.coordinates) || geometry.coordinates.length < 2) {
-        throw new Error("INSUFFICIENT_STOPS");
-      }
-
-      const insertionPlan = this.routeAssignmentService.planStopInsertion(serviceUser, route.routeGeojson);
-      const routeAnchors = [
-        { id: `route-segment-start:${routeId}`, latitude: insertionPlan.start.latitude, longitude: insertionPlan.start.longitude },
-        candidateStop,
-        { id: `route-segment-end:${routeId}`, latitude: insertionPlan.end.latitude, longitude: insertionPlan.end.longitude },
-      ];
-      const detour = await this.routeOptimizer.optimize(routeAnchors, { returnToStart: false });
-      const baselineDistanceMeters = Number(route.routeGeojson?.properties?.distanceMeters || 0);
-      const baselineDurationSeconds = Number(route.routeGeojson?.properties?.durationSeconds || 0);
-      const additionalDistanceMeters = Math.max(0, detour.distanceMeters - insertionPlan.replacedDistanceMeters);
-      const additionalDurationSeconds = Math.max(0, detour.durationSeconds - Math.round(insertionPlan.replacedDistanceMeters / 8.33));
-      const proposal = new WasteRouteProposal({
-        routeId,
-        stops: allStops,
-        geometry: this.routeAssignmentService.mergeStopDetour(route.routeGeojson, insertionPlan, detour.geometry),
-        distanceMeters: baselineDistanceMeters + additionalDistanceMeters,
-        durationSeconds: baselineDurationSeconds + additionalDurationSeconds,
-      });
-      return this.routeRepository.saveProposal(proposal);
+    const geometry = route.routeGeojson?.geometry;
+    const baselineDistanceMeters = Number(route.routeGeojson?.properties?.distanceMeters);
+    const baselineDurationSeconds = Number(route.routeGeojson?.properties?.durationSeconds);
+    if (geometry?.type !== "LineString" || !Array.isArray(geometry.coordinates) || geometry.coordinates.length < 2
+      || !Number.isFinite(baselineDistanceMeters) || baselineDistanceMeters <= 0
+      || !Number.isFinite(baselineDurationSeconds) || baselineDurationSeconds <= 0) {
+      throw new Error("ROUTE_BASELINE_MISSING");
     }
 
-    const optimized = await this.routeOptimizer.optimize(allStops.map((stop) => ({
-      id: stop.id,
-      latitude: stop.latitude,
-      longitude: stop.longitude,
-    })), { returnToStart: true });
-    const byId = new Map(allStops.map((stop) => [stop.id, stop]));
-    const orderedStops = optimized.orderedStopIds.map((id) => byId.get(id)).filter(Boolean);
+    const insertionPlan = this.routeAssignmentService.planStopInsertion(serviceUser, route.routeGeojson);
+    const routeAnchors = [
+      { id: `route-segment-start:${routeId}`, latitude: insertionPlan.start.latitude, longitude: insertionPlan.start.longitude },
+      candidateStop,
+      { id: `route-segment-end:${routeId}`, latitude: insertionPlan.end.latitude, longitude: insertionPlan.end.longitude },
+    ];
+    const detour = await this.routeOptimizer.optimize(routeAnchors, { returnToStart: false });
+    const replacedDurationSeconds = Math.round(
+      baselineDurationSeconds * (insertionPlan.replacedDistanceMeters / baselineDistanceMeters),
+    );
+    const additionalDistanceMeters = Math.max(0, detour.distanceMeters - insertionPlan.replacedDistanceMeters);
+    const additionalDurationSeconds = Math.max(0, detour.durationSeconds - replacedDurationSeconds);
+    const orderedStops = this.routeAssignmentService.insertStopInExistingOrder(
+      existingStops,
+      candidateStop,
+      route.routeGeojson,
+    );
     const proposal = new WasteRouteProposal({
       routeId,
       stops: orderedStops,
-      geometry: optimized.geometry,
-      distanceMeters: optimized.distanceMeters,
-      durationSeconds: optimized.durationSeconds,
+      geometry: this.routeAssignmentService.mergeStopDetour(route.routeGeojson, insertionPlan, detour.geometry),
+      distanceMeters: baselineDistanceMeters + additionalDistanceMeters,
+      durationSeconds: baselineDurationSeconds + additionalDurationSeconds,
     });
     return this.routeRepository.saveProposal(proposal);
   }

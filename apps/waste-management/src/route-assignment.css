@@ -321,6 +321,38 @@
   font-weight: 700;
 }
 
+.waste-assignment-route-list em.is-warning {
+  color: #97550f;
+  background: #fff0dc;
+}
+
+.waste-assignment-route-list em.is-danger {
+  color: #a33d32;
+  background: #fde8e5;
+}
+
+.waste-assignment-warning {
+  display: grid;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid #efc890;
+  border-radius: 11px;
+  color: #744817;
+  background: #fff8ed;
+  font-size: 10px;
+}
+
+.waste-assignment-warning strong {
+  font-family: "Prompt";
+  font-size: 11px;
+}
+
+.waste-assignment-warning.is-danger {
+  border-color: #e7aaa3;
+  color: #8b352d;
+  background: #fff1ef;
+}
+
 .waste-assignment-map {
   overflow: hidden;
   border: 1px solid #dce7e1;

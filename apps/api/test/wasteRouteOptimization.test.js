@@ -103,21 +103,48 @@ test("confirmation rejects a proposal when a stop location changed", async () =>
 
 test("route assignment proposal includes the new service point without changing assignment", async () => {
   let saved;
-  const serviceUser = { id: "user-new", routeId: null, fullName: "บ้านใหม่", houseNo: "9", latitude: 16.765, longitude: 100.205 };
+  const serviceUser = { id: "user-new", routeId: null, fullName: "บ้านใหม่", houseNo: "9", latitude: 16.755, longitude: 100.195 };
+  const baselineGeometry = { type: "LineString", coordinates: [[100.19, 16.75], [100.20, 16.76], [100.21, 16.77]] };
   const repository = {
     findActiveServiceUserById: async () => serviceUser,
-    findById: async () => ({ id: "route-1", routeGeojson: { type: "Feature", geometry: { type: "LineString", coordinates: [[100.19, 16.75], [100.20, 16.76]] } } }),
+    findById: async () => ({ id: "route-1", routeGeojson: { type: "Feature", properties: { distanceMeters: 3200, durationSeconds: 540 }, geometry: baselineGeometry } }),
     findStopByServiceUserId: async () => null,
-    listActiveStops: async () => stops.slice(0, 2),
+    listActiveStops: async () => [stops[0], stops[2]],
     saveProposal: async (proposal) => { saved = proposal; return new WasteRouteProposal({ ...proposal, id: "proposal-assign", expiresAt: new Date(Date.now() + 60_000) }); },
   };
-  const optimizer = { optimize: async (input) => ({ orderedStopIds: [input[0].id, input[2].id, input[1].id], geometry: { type: "LineString", coordinates: [[100.19, 16.75], [100.205, 16.765], [100.20, 16.76]] }, distanceMeters: 4400, durationSeconds: 720 }) };
-  const routeAssignmentService = { distanceToRouteMeters: () => 135 };
-  const useCase = new ProposeWasteServiceUserRouteAssignmentUseCase({ routeRepository: repository, routeOptimizer: optimizer, routeAssignmentService });
+  const optimizer = { optimize: async () => ({ geometry: { type: "LineString", coordinates: [[100.19, 16.75], [100.195, 16.755], [100.20, 16.76]] }, distanceMeters: 1900, durationSeconds: 300 }) };
+  const useCase = new ProposeWasteServiceUserRouteAssignmentUseCase({ routeRepository: repository, routeOptimizer: optimizer, routeAssignmentService: new RouteAssignmentService() });
   const proposal = await useCase.execute({ serviceUserId: serviceUser.id, routeId: "route-1" });
   assert.equal(proposal.stops.find((stop) => stop.serviceUserId === serviceUser.id).assignmentCandidate, true);
   assert.equal(saved.stops.length, 3);
+  assert.deepEqual(saved.stops.map((stop) => stop.id), ["a", "assignment:user-new", "c"]);
+  assert.deepEqual(saved.geometry.coordinates.at(-1), baselineGeometry.coordinates.at(-1));
+  assert.ok(saved.distanceMeters >= 3200);
   assert.equal(serviceUser.routeId, null);
+});
+
+test("route assignment rejects a route without confirmed baseline metrics", async () => {
+  const serviceUser = { id: "user-new", routeId: null, fullName: "บ้านใหม่", houseNo: "9", latitude: 16.755, longitude: 100.195 };
+  const repository = {
+    findActiveServiceUserById: async () => serviceUser,
+    findById: async () => ({ id: "route-1", routeGeojson: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [[100.19, 16.75], [100.20, 16.76]] } } }),
+    findStopByServiceUserId: async () => null,
+    listActiveStops: async () => [],
+  };
+  const useCase = new ProposeWasteServiceUserRouteAssignmentUseCase({ routeRepository: repository, routeOptimizer: {}, routeAssignmentService: new RouteAssignmentService() });
+  await assert.rejects(() => useCase.execute({ serviceUserId: serviceUser.id, routeId: "route-1" }), /ROUTE_BASELINE_MISSING/);
+});
+
+test("route assignment rejects a service point outside the route threshold", async () => {
+  const serviceUser = { id: "user-far", routeId: null, fullName: "บ้านไกล", houseNo: "99", latitude: 16.79, longitude: 100.25 };
+  const repository = {
+    findActiveServiceUserById: async () => serviceUser,
+    findById: async () => ({ id: "route-1", routeGeojson: { type: "Feature", properties: { distanceMeters: 3200, durationSeconds: 540 }, geometry: { type: "LineString", coordinates: [[100.19, 16.75], [100.20, 16.76]] } } }),
+    findStopByServiceUserId: async () => null,
+    listActiveStops: async () => [],
+  };
+  const useCase = new ProposeWasteServiceUserRouteAssignmentUseCase({ routeRepository: repository, routeOptimizer: {}, routeAssignmentService: new RouteAssignmentService({ maximumAssignableDistanceM: 500 }) });
+  await assert.rejects(() => useCase.execute({ serviceUserId: serviceUser.id, routeId: "route-1" }), /SERVICE_LOCATION_OUTSIDE_ROUTE/);
 });
 
 test("first service point inserts a road detour without discarding the municipal route", async () => {

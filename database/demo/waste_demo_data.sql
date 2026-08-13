@@ -51,7 +51,18 @@ VALUES
   ('a4000000-0000-4000-8000-000000000014','DEMO-S014','[ตัวอย่าง] รอระบุตำแหน่ง','0990000114','88',(SELECT id FROM villages WHERE village_no=8 LIMIT 1),'ลงทะเบียนแล้ว รอระบุตำแหน่ง',NULL,NULL,NULL,NULL,1),
   ('a4000000-0000-4000-8000-000000000015','DEMO-S015','[ตัวอย่าง] ยกเลิกบริการ','0990000115','99',(SELECT id FROM villages WHERE village_no=2 LIMIT 1),'ข้อมูลตัวอย่างผู้ใช้ที่ปิดบริการ',NULL,NULL,16.7812000,100.2199000,0)
 ON DUPLICATE KEY UPDATE full_name=VALUES(full_name), phone=VALUES(phone), house_no=VALUES(house_no), village_id=VALUES(village_id),
-  address_detail=VALUES(address_detail), line_user_id=NULL, route_id=VALUES(route_id), latitude=VALUES(latitude), longitude=VALUES(longitude), is_active=VALUES(is_active);
+  address_detail=VALUES(address_detail), line_user_id=NULL, route_id=VALUES(route_id), latitude=VALUES(latitude), longitude=VALUES(longitude), is_active=VALUES(is_active),
+  route_assignment_status=IF(VALUES(route_id) IS NULL,'UNASSIGNED','CONFIRMED'),
+  route_assignment_distance_m=IF(VALUES(route_id) IS NULL,NULL,route_assignment_distance_m),
+  route_assigned_at=IF(VALUES(route_id) IS NULL,NULL,route_assigned_at),
+  route_assigned_by=IF(VALUES(route_id) IS NULL,NULL,route_assigned_by);
+
+DELETE FROM waste_route_stops
+WHERE service_user_id IN (
+  'a4000000-0000-4000-8000-000000000013',
+  'a4000000-0000-4000-8000-000000000014',
+  'a4000000-0000-4000-8000-000000000015'
+);
 
 INSERT INTO waste_route_stops (id, route_id, service_user_id, sequence_no, stop_name, latitude, longitude, is_active)
 SELECT CONCAT('a5000000-0000-4000-8000-', LPAD(SUBSTRING(service_no, 7), 12, '0')),

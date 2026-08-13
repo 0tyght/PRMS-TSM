@@ -41,13 +41,27 @@ function routeCoordinates(routeGeojson) {
     .filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
 }
 
+function nearestRoutePosition(location, coordinates) {
+  let segmentIndex = 0;
+  let distanceMeters = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const candidateDistance = pointToSegmentMeters(location, coordinates[index - 1], coordinates[index]);
+    if (candidateDistance < distanceMeters) {
+      distanceMeters = candidateDistance;
+      segmentIndex = index - 1;
+    }
+  }
+  return { segmentIndex, distanceMeters };
+}
+
 function sameCoordinate(left, right) {
   return left?.[0] === right?.[0] && left?.[1] === right?.[1];
 }
 
 export class RouteAssignmentService {
-  constructor({ maximumSuggestedDistanceM = 1_000 } = {}) {
+  constructor({ maximumSuggestedDistanceM = 1_000, maximumAssignableDistanceM = 5_000 } = {}) {
     this.maximumSuggestedDistanceM = maximumSuggestedDistanceM;
+    this.maximumAssignableDistanceM = maximumAssignableDistanceM;
   }
 
   distanceToRouteMeters(location, routeGeojson) {
@@ -61,29 +75,39 @@ export class RouteAssignmentService {
     return minimum;
   }
 
+  isWithinSuggestedDistance(distanceMeters) {
+    return Number.isFinite(distanceMeters) && distanceMeters <= this.maximumSuggestedDistanceM;
+  }
+
+  isWithinAssignableDistance(distanceMeters) {
+    return Number.isFinite(distanceMeters) && distanceMeters <= this.maximumAssignableDistanceM;
+  }
+
   planStopInsertion(location, routeGeojson) {
     const coordinates = routeCoordinates(routeGeojson);
     if (coordinates.length < 2) throw new Error("ROUTE_GEOMETRY_MISSING");
-
-    let nearestSegmentIndex = 0;
-    let nearestDistanceMeters = Number.POSITIVE_INFINITY;
-    for (let index = 1; index < coordinates.length; index += 1) {
-      const distanceMeters = pointToSegmentMeters(location, coordinates[index - 1], coordinates[index]);
-      if (distanceMeters < nearestDistanceMeters) {
-        nearestDistanceMeters = distanceMeters;
-        nearestSegmentIndex = index - 1;
-      }
-    }
-
-    const start = coordinates[nearestSegmentIndex];
-    const end = coordinates[nearestSegmentIndex + 1];
+    const nearest = nearestRoutePosition(location, coordinates);
+    const start = coordinates[nearest.segmentIndex];
+    const end = coordinates[nearest.segmentIndex + 1];
     return Object.freeze({
-      segmentIndex: nearestSegmentIndex,
-      nearestDistanceMeters,
+      segmentIndex: nearest.segmentIndex,
+      nearestDistanceMeters: nearest.distanceMeters,
       replacedDistanceMeters: haversineMeters(start, end),
       start: Object.freeze({ ...start }),
       end: Object.freeze({ ...end }),
     });
+  }
+
+  insertStopInExistingOrder(existingStops, candidateStop, routeGeojson) {
+    const coordinates = routeCoordinates(routeGeojson);
+    if (coordinates.length < 2) throw new Error("ROUTE_GEOMETRY_MISSING");
+    const candidatePosition = nearestRoutePosition(candidateStop, coordinates).segmentIndex;
+    const insertionIndex = existingStops.findIndex((stop) => (
+      nearestRoutePosition(stop, coordinates).segmentIndex > candidatePosition
+    ));
+    const orderedStops = [...existingStops];
+    orderedStops.splice(insertionIndex < 0 ? orderedStops.length : insertionIndex, 0, candidateStop);
+    return Object.freeze(orderedStops);
   }
 
   mergeStopDetour(routeGeojson, insertionPlan, detourGeometry) {
@@ -115,7 +139,8 @@ export class RouteAssignmentService {
       .map((route, index) => ({
         ...route,
         distanceMeters: Math.round(route.distanceMeters),
-        recommended: index === 0 && route.distanceMeters <= this.maximumSuggestedDistanceM,
+        eligible: this.isWithinAssignableDistance(route.distanceMeters),
+        recommended: index === 0 && this.isWithinSuggestedDistance(route.distanceMeters),
       }));
   }
 }
