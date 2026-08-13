@@ -7,6 +7,7 @@ import { ConfirmWasteRouteProposalUseCase } from "../src/modules/waste/applicati
 import { ProposeWasteServiceUserRouteAssignmentUseCase } from "../src/modules/waste/application/ProposeWasteServiceUserRouteAssignmentUseCase.js";
 import { ConfirmWasteServiceUserRouteAssignmentUseCase } from "../src/modules/waste/application/ConfirmWasteServiceUserRouteAssignmentUseCase.js";
 import { OsrmTripRouteOptimizer } from "../src/modules/waste/infrastructure/OsrmTripRouteOptimizer.js";
+import { RouteAssignmentService } from "../src/modules/waste/domain/RouteAssignmentService.js";
 
 const stops = [
   { id: "a", serviceUserId: "ua", stopName: "บ้าน ก", latitude: 16.75, longitude: 100.19 },
@@ -119,7 +120,7 @@ test("route assignment proposal includes the new service point without changing 
   assert.equal(serviceUser.routeId, null);
 });
 
-test("first service point routes from the municipal start through the home to the municipal finish", async () => {
+test("first service point inserts a road detour without discarding the municipal route", async () => {
   const baselineGeometry = { type: "LineString", coordinates: [[100.19, 16.75], [100.20, 16.76], [100.21, 16.77]] };
   const serviceUser = { id: "user-first", routeId: null, fullName: "บ้านแรก", houseNo: "1", latitude: 16.755, longitude: 100.195 };
   let optimizerInput;
@@ -131,28 +132,28 @@ test("first service point routes from the municipal start through the home to th
     listActiveStops: async () => [],
     saveProposal: async (proposal) => new WasteRouteProposal({ ...proposal, id: "proposal-first", expiresAt: new Date(Date.now() + 60_000) }),
   };
-  const optimizedGeometry = { type: "LineString", coordinates: [[100.19, 16.75], [100.195, 16.755], [100.21, 16.77]] };
+  const optimizedGeometry = { type: "LineString", coordinates: [[100.19, 16.75], [100.195, 16.755], [100.20, 16.76]] };
   const optimizer = { optimize: async (input, options) => {
     optimizerInput = input;
     optimizerOptions = options;
     return {
       orderedStopIds: input.map((stop) => stop.id),
       geometry: optimizedGeometry,
-      distanceMeters: 3600,
-      durationSeconds: 600,
+      distanceMeters: 1900,
+      durationSeconds: 300,
     };
   } };
-  const useCase = new ProposeWasteServiceUserRouteAssignmentUseCase({ routeRepository: repository, routeOptimizer: optimizer, routeAssignmentService: { distanceToRouteMeters: () => 50 } });
+  const useCase = new ProposeWasteServiceUserRouteAssignmentUseCase({ routeRepository: repository, routeOptimizer: optimizer, routeAssignmentService: new RouteAssignmentService() });
   const proposal = await useCase.execute({ serviceUserId: serviceUser.id, routeId: "route-empty" });
   assert.deepEqual(optimizerInput.map(({ id, latitude, longitude }) => ({ id, latitude, longitude })), [
-    { id: "route-start:route-empty", latitude: 16.75, longitude: 100.19 },
+    { id: "route-segment-start:route-empty", latitude: 16.75, longitude: 100.19 },
     { id: "assignment:user-first", latitude: 16.755, longitude: 100.195 },
-    { id: "route-end:route-empty", latitude: 16.77, longitude: 100.21 },
+    { id: "route-segment-end:route-empty", latitude: 16.76, longitude: 100.20 },
   ]);
   assert.equal(optimizerOptions.returnToStart, false);
   assert.equal(proposal.stops.length, 1);
-  assert.deepEqual(proposal.geometry, optimizedGeometry);
-  assert.equal(proposal.distanceMeters, 3600);
+  assert.deepEqual(proposal.geometry.coordinates, [[100.19, 16.75], [100.195, 16.755], [100.20, 16.76], [100.21, 16.77]]);
+  assert.ok(proposal.distanceMeters >= 3200);
 });
 
 test("route assignment confirmation validates state and delegates one atomic save", async () => {

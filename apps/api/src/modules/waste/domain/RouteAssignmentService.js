@@ -41,6 +41,10 @@ function routeCoordinates(routeGeojson) {
     .filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
 }
 
+function sameCoordinate(left, right) {
+  return left?.[0] === right?.[0] && left?.[1] === right?.[1];
+}
+
 export class RouteAssignmentService {
   constructor({ maximumSuggestedDistanceM = 1_000 } = {}) {
     this.maximumSuggestedDistanceM = maximumSuggestedDistanceM;
@@ -55,6 +59,50 @@ export class RouteAssignmentService {
       minimum = Math.min(minimum, pointToSegmentMeters(location, coordinates[index - 1], coordinates[index]));
     }
     return minimum;
+  }
+
+  planStopInsertion(location, routeGeojson) {
+    const coordinates = routeCoordinates(routeGeojson);
+    if (coordinates.length < 2) throw new Error("ROUTE_GEOMETRY_MISSING");
+
+    let nearestSegmentIndex = 0;
+    let nearestDistanceMeters = Number.POSITIVE_INFINITY;
+    for (let index = 1; index < coordinates.length; index += 1) {
+      const distanceMeters = pointToSegmentMeters(location, coordinates[index - 1], coordinates[index]);
+      if (distanceMeters < nearestDistanceMeters) {
+        nearestDistanceMeters = distanceMeters;
+        nearestSegmentIndex = index - 1;
+      }
+    }
+
+    const start = coordinates[nearestSegmentIndex];
+    const end = coordinates[nearestSegmentIndex + 1];
+    return Object.freeze({
+      segmentIndex: nearestSegmentIndex,
+      nearestDistanceMeters,
+      replacedDistanceMeters: haversineMeters(start, end),
+      start: Object.freeze({ ...start }),
+      end: Object.freeze({ ...end }),
+    });
+  }
+
+  mergeStopDetour(routeGeojson, insertionPlan, detourGeometry) {
+    const baselineCoordinates = routeGeojson?.geometry?.coordinates;
+    const detourCoordinates = detourGeometry?.coordinates;
+    if (!Array.isArray(baselineCoordinates) || baselineCoordinates.length < 2 || !Array.isArray(detourCoordinates) || detourCoordinates.length < 2) {
+      throw new Error("ROUTE_GEOMETRY_MISSING");
+    }
+
+    const before = baselineCoordinates.slice(0, insertionPlan.segmentIndex + 1);
+    const after = baselineCoordinates.slice(insertionPlan.segmentIndex + 1);
+    const merged = [...before];
+    for (const coordinate of detourCoordinates) {
+      if (!sameCoordinate(merged.at(-1), coordinate)) merged.push(coordinate);
+    }
+    for (const coordinate of after) {
+      if (!sameCoordinate(merged.at(-1), coordinate)) merged.push(coordinate);
+    }
+    return Object.freeze({ type: "LineString", coordinates: merged });
   }
 
   suggest(location, routes, limit = 3) {

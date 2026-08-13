@@ -41,24 +41,23 @@ export class ProposeWasteServiceUserRouteAssignmentUseCase {
         throw new Error("INSUFFICIENT_STOPS");
       }
 
-      const firstCoordinate = geometry.coordinates[0];
-      const lastCoordinate = geometry.coordinates.at(-1);
+      const insertionPlan = this.routeAssignmentService.planStopInsertion(serviceUser, route.routeGeojson);
       const routeAnchors = [
-        { id: `route-start:${routeId}`, latitude: Number(firstCoordinate?.[1]), longitude: Number(firstCoordinate?.[0]) },
+        { id: `route-segment-start:${routeId}`, latitude: insertionPlan.start.latitude, longitude: insertionPlan.start.longitude },
         candidateStop,
-        { id: `route-end:${routeId}`, latitude: Number(lastCoordinate?.[1]), longitude: Number(lastCoordinate?.[0]) },
+        { id: `route-segment-end:${routeId}`, latitude: insertionPlan.end.latitude, longitude: insertionPlan.end.longitude },
       ];
-      if (routeAnchors.some((stop) => !Number.isFinite(stop.latitude) || !Number.isFinite(stop.longitude))) {
-        throw new Error("INSUFFICIENT_STOPS");
-      }
-
-      const optimized = await this.routeOptimizer.optimize(routeAnchors, { returnToStart: false });
+      const detour = await this.routeOptimizer.optimize(routeAnchors, { returnToStart: false });
+      const baselineDistanceMeters = Number(route.routeGeojson?.properties?.distanceMeters || 0);
+      const baselineDurationSeconds = Number(route.routeGeojson?.properties?.durationSeconds || 0);
+      const additionalDistanceMeters = Math.max(0, detour.distanceMeters - insertionPlan.replacedDistanceMeters);
+      const additionalDurationSeconds = Math.max(0, detour.durationSeconds - Math.round(insertionPlan.replacedDistanceMeters / 8.33));
       const proposal = new WasteRouteProposal({
         routeId,
         stops: allStops,
-        geometry: optimized.geometry,
-        distanceMeters: optimized.distanceMeters,
-        durationSeconds: optimized.durationSeconds,
+        geometry: this.routeAssignmentService.mergeStopDetour(route.routeGeojson, insertionPlan, detour.geometry),
+        distanceMeters: baselineDistanceMeters + additionalDistanceMeters,
+        durationSeconds: baselineDurationSeconds + additionalDurationSeconds,
       });
       return this.routeRepository.saveProposal(proposal);
     }
