@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 import { wasteBillingPolicy } from "../src/domain/WasteBillingPolicy.js";
 import { wasteDashboardPolicy } from "../src/domain/WasteDashboardPolicy.js";
@@ -33,7 +33,9 @@ test("WasteServiceUserPolicy filters by route and summarizes readiness", () => {
   const users = [
     { serviceNo: "A", fullName: "สมชาย", isActive: true, routeId: null, lineUserId: "U1" },
     { serviceNo: "B", fullName: "สมหญิง", isActive: true, routeId: "r1", lineUserId: null },
+    { serviceNo: "C", fullName: "สมปอง", isActive: false, routeId: "r1", lineUserId: "U2" },
   ];
+  assert.equal(wasteServiceUserPolicy.filter(users).length, 2);
   assert.equal(wasteServiceUserPolicy.filter(users, { routeId: "UNASSIGNED" }).length, 1);
   assert.deepEqual(wasteServiceUserPolicy.summarize(users), { total: 2, unassigned: 1, linkedToLine: 1 });
 });
@@ -44,3 +46,4 @@ test("WastePlanPolicy resolves the official municipal schedule and publication r
   assert.equal(wastePlanPolicy.readiness({ scheduledDate: "2026-08-13", scheduledStartAt: "start", scheduledEndAt: "end", vehicleId: "v", driverId: "d", stopTotal: 2 }).ready, true);
   assert.equal(wastePlanPolicy.readiness({ scheduledDate: "2026-08-13", vehicleId: "v", driverId: "d", stopTotal: 2 }).ready, false);
 });
+
