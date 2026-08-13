@@ -228,12 +228,17 @@ async function syncServiceUserStop(db, serviceUserId) {
   if (!user) return;
 
   const [existingRows] = await db.execute(
-    `SELECT id, route_id AS routeId FROM waste_route_stops WHERE service_user_id = ? FOR UPDATE`,
+    `SELECT id, route_id AS routeId FROM waste_route_stops WHERE service_user_id = ? AND is_active = 1 FOR UPDATE`,
     [serviceUserId],
   );
   const existing = existingRows[0];
   if (!user.routeId || !toBoolean(user.isActive)) {
-    if (existing) await db.execute(`DELETE FROM waste_route_stops WHERE id = ?`, [existing.id]);
+    if (existing) {
+    await db.execute(
+      `UPDATE waste_route_stops SET is_active = 0 WHERE id = ?`,
+      [existing.id],
+    );
+  }
     return;
   }
   if (existing?.routeId === user.routeId) {
@@ -243,7 +248,12 @@ async function syncServiceUserStop(db, serviceUserId) {
     );
     return;
   }
-  if (existing) await db.execute(`DELETE FROM waste_route_stops WHERE id = ?`, [existing.id]);
+  if (existing) {
+    await db.execute(
+      `UPDATE waste_route_stops SET is_active = 0 WHERE id = ?`,
+      [existing.id],
+    );
+  }
 
   const [[sequence]] = await db.execute(
     `SELECT COALESCE(MAX(sequence_no), 0) + 1 AS nextSequence
