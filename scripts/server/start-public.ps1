@@ -3,6 +3,8 @@
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 function Test-HealthReady {
     param(
@@ -201,7 +203,8 @@ function Invoke-DatabaseMigrations {
 function Publish-StaffPortal {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
-        [Parameter(Mandatory = $true)][string]$RuntimeDirectory
+        [Parameter(Mandatory = $true)][string]$RuntimeDirectory,
+        [Parameter(Mandatory = $true)][string]$SiteDirectory
     )
 
     Write-Host "Building Smart Tha Pho web applications..." -ForegroundColor Cyan
@@ -209,7 +212,7 @@ function Publish-StaffPortal {
     Push-Location $Root
     try {
         $env:SMART_THA_PHO_PUBLIC_SITE = "true"
-        & npm.cmd run build
+        & npm.cmd run build | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -ne 0) { throw "Web application build failed." }
     }
     finally {
@@ -217,14 +220,13 @@ function Publish-StaffPortal {
         Pop-Location
     }
 
-    $siteDirectory = Join-Path $RuntimeDirectory "site"
-    if ((Split-Path -Parent $siteDirectory) -ne $RuntimeDirectory) {
+    if ((Split-Path -Parent $SiteDirectory) -ne $RuntimeDirectory) {
         throw "Public site directory is outside the Smart Tha Pho runtime directory."
     }
-    if (Test-Path -LiteralPath $siteDirectory) {
-        Remove-Item -LiteralPath $siteDirectory -Recurse -Force
+    if (Test-Path -LiteralPath $SiteDirectory) {
+        Remove-Item -LiteralPath $SiteDirectory -Recurse -Force
     }
-    New-Item -ItemType Directory -Path $siteDirectory -Force | Out-Null
+    New-Item -ItemType Directory -Path $SiteDirectory -Force | Out-Null
 
     $applications = [ordered]@{
         "portal" = ""
@@ -240,17 +242,16 @@ function Publish-StaffPortal {
             throw ("Build output is missing for {0}." -f $application.Key)
         }
         $destination = if ([string]::IsNullOrWhiteSpace($application.Value)) {
-            $siteDirectory
+            $SiteDirectory
         }
         else {
-            Join-Path $siteDirectory $application.Value
+            Join-Path $SiteDirectory $application.Value
         }
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
         Copy-Item -Path (Join-Path $source "*") -Destination $destination -Recurse -Force
     }
 
     Write-Host "Web applications ready." -ForegroundColor Green
-    return $siteDirectory
 }
 
 function Restart-SmartThaPhoApi {
@@ -307,7 +308,8 @@ Write-Host `
 Invoke-DatabaseMigrations -Root $root
 Write-Host "Database migrations ready." -ForegroundColor Green
 
-$siteDir = Publish-StaffPortal -Root $root -RuntimeDirectory $runtimeDir
+$siteDir = Join-Path $runtimeDir "site"
+Publish-StaffPortal -Root $root -RuntimeDirectory $runtimeDir -SiteDirectory $siteDir
 Restart-SmartThaPhoApi -Root $root
 
 $localHealth = Get-LocalHealth

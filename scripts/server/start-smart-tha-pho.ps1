@@ -6,6 +6,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 if ([string]::IsNullOrWhiteSpace($ProjectPath)) {
     $ProjectPath = (
