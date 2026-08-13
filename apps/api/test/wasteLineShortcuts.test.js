@@ -28,7 +28,7 @@ test("covers every citizen waste menu with visible postback shortcuts", () => {
   assertValidActions(actions);
   assert.deepEqual(
     actions.filter((action) => action.type === "postback").map((action) => action.data),
-    ["waste=citizen_schedule", "waste=citizen_location", "waste=citizen_charges", "waste=driver_link"],
+    ["waste=citizen_schedule", "waste=citizen_location", "waste=citizen_charges", "waste=driver_link", "smart=menu"],
   );
 });
 
@@ -70,7 +70,7 @@ test("renders up to eight driver plans as one LINE message with complete shortcu
   assert.match(message.text, /WST-20260813-001/);
   assert.match(message.text, /WST-20260820-001/);
   assertValidActions(actionsOf(message));
-  assert.equal(actionsOf(message).length, 10);
+  assert.equal(actionsOf(message).length, 11);
   assert.equal(actionsOf(message).filter((action) => String(action.data || "").includes("waste=driver_plan")).length, 8);
 });
 

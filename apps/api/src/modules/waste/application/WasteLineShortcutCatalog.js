@@ -22,6 +22,10 @@ export class WasteLineShortcutCatalog {
     return { type: "uri", label: String(label).slice(0, 20), uri };
   }
 
+  smartThaPhoHome() {
+    return this.postback("Smart Tha Pho", "smart=menu", "กลับเมนูหลัก Smart Tha Pho");
+  }
+
   normalize(actions = []) {
     const seen = new Set();
     return actions.filter(Boolean).filter((action) => {
@@ -43,6 +47,7 @@ export class WasteLineShortcutCatalog {
     actions.push(actors.driver
       ? this.postback("งานคนขับ", "waste=driver_jobs", "ดูงานเก็บขยะของฉัน")
       : this.postback("เชื่อมบัญชีคนขับ", "waste=driver_link", "เชื่อมบัญชีคนขับรถเก็บขยะ"));
+    actions.push(this.smartThaPhoHome());
     return this.normalize(actions);
   }
 
@@ -52,6 +57,7 @@ export class WasteLineShortcutCatalog {
       this.postback("ตำแหน่งรถ", "waste=citizen_location", "ดูตำแหน่งรถเก็บขยะ"),
       this.postback("ค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการขยะ"),
       this.postback("เมนูขยะ", "waste=menu", "กลับเมนูบริการเก็บขยะ"),
+      this.smartThaPhoHome(),
     ]);
   }
 
@@ -59,11 +65,12 @@ export class WasteLineShortcutCatalog {
     return this.normalize([
       this.postback("ลงทะเบียน", "waste=register", "ลงทะเบียนบริการเก็บขยะ"),
       this.postback("เมนูขยะ", "waste=menu", "กลับเมนูบริการเก็บขยะ"),
+      this.smartThaPhoHome(),
     ]);
   }
 
   cancelFlow(extra = []) {
-    return this.normalize([...extra, this.message("ยกเลิก", "ยกเลิกบริการขยะ")]);
+    return this.normalize([...extra, this.message("ยกเลิก", "ยกเลิกบริการขยะ"), this.smartThaPhoHome()]);
   }
 
   registration(step) {
@@ -77,6 +84,7 @@ export class WasteLineShortcutCatalog {
     return this.normalize([
       this.postback("งานของฉัน", "waste=driver_jobs", "ดูงานเก็บขยะของฉัน"),
       this.postback("เมนูขยะ", "waste=menu", "กลับเมนูบริการเก็บขยะ"),
+      this.smartThaPhoHome(),
     ]);
   }
 

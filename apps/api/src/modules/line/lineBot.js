@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 
 import { config } from "../../core/config.js";
 import {
-  buildCitizenStatusFlex,
   loadCitizenExperienceByLineUserId,
   syncRichMenuForLineUser,
 } from "./citizenExperience.js";
@@ -14,8 +13,8 @@ import {
 import {
   decorateNativeCitizenResultWithRichMenu,
   handleWizardControl,
-  showWizardMainMenu,
 } from "./lineRichMenuWizard.js";
+import { smartThaPhoLineMenu } from "./SmartThaPhoLineMenu.js";
 import { handleWasteLineEvent } from "./wasteLine.js";
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
@@ -43,10 +42,6 @@ function textMessage(text, quickReplyItems = []) {
     text: String(text || "").slice(0, 5000),
     ...(quickReplyItems.length ? { quickReply: { items: quickReplyItems.slice(0, 13).map((action) => ({ type: "action", action })) } } : {}),
   };
-}
-
-function wasteMenuAction() {
-  return { type: "postback", label: "บริการรถเก็บขยะ", data: "waste=menu", displayText: "เปิดบริการรถเก็บขยะ" };
 }
 
 async function reply(replyToken, messages) {
@@ -136,6 +131,45 @@ async function processEvent(event) {
       return;
     }
 
+    const smartMenuRequest = smartThaPhoLineMenu.parse(event);
+    if (smartMenuRequest?.action === "menu") {
+      await smartThaPhoLineMenu.clearPendingFlows(lineUserId);
+      if (event.replyToken) await reply(event.replyToken, [smartThaPhoLineMenu.message()]);
+      await completeLineWebhookEvent(event);
+      return;
+    }
+
+    if (smartMenuRequest?.action === "system") {
+      await smartThaPhoLineMenu.clearPendingFlows(lineUserId);
+
+      if (smartMenuRequest.system === "waste") {
+        const wasteResult = await handleWasteLineEvent({
+          ...event,
+          type: "postback",
+          postback: { data: "waste=menu" },
+        });
+        if (event.replyToken && wasteResult.messages?.length) {
+          await reply(event.replyToken, wasteResult.messages);
+        }
+        await completeLineWebhookEvent(event);
+        return;
+      }
+
+      if (smartMenuRequest.system !== "pet") {
+        if (event.replyToken) {
+          await reply(event.replyToken, [smartThaPhoLineMenu.unavailableMessage(smartMenuRequest.system)]);
+        }
+        await completeLineWebhookEvent(event);
+        return;
+      }
+
+      event = {
+        ...event,
+        type: "postback",
+        postback: { data: "action=menu" },
+      };
+    }
+
     const wasteResult = await handleWasteLineEvent(event);
     if (wasteResult.handled) {
       if (event.replyToken && wasteResult.messages?.length) {
@@ -146,27 +180,6 @@ async function processEvent(event) {
     }
 
     const state = await loadState(lineUserId);
-
-    if (event.type === "follow") {
-      const menuTask = showWizardMainMenu(lineUserId, state);
-      const replyTask = event.replyToken
-        ? reply(event.replyToken, [
-            textMessage(
-              state.linked
-                ? `ยินดีต้อนรับกลับ ${state.owner?.fullName || ""}
-เลือกบริการทะเบียนสัตว์เลี้ยงจาก Rich Menu หรือพิมพ์ “เมนูขยะ” เพื่อใช้บริการเก็บขยะ`
-                : "ยินดีต้อนรับสู่ Smart Tha Pho\nเลือกบริการทะเบียนสัตว์เลี้ยงจาก Rich Menu หรือพิมพ์ “เมนูขยะ” เพื่อใช้บริการเก็บขยะ โดยไม่ต้องเปิดเว็บไซต์",
-              [wasteMenuAction()],
-            ),
-            buildCitizenStatusFlex(state),
-          ])
-        : Promise.resolve({ status: "SKIPPED" });
-
-      continueRichMenuTask(menuTask, event);
-      await replyTask;
-      await completeLineWebhookEvent(event);
-      return;
-    }
 
     const wizardControl = await handleWizardControl(event, state);
     let result;
@@ -228,7 +241,7 @@ async function processEvent(event) {
       await reply(event.replyToken, [
         textMessage(
           `${String(error?.message || "ไม่สามารถดำเนินการได้ในขณะนี้")}\n\nพิมพ์ “เมนู” เพื่อเลือกบริการใหม่ หรือพิมพ์ “ยกเลิก” เพื่อยกเลิกรายการที่ค้างอยู่`,
-          [wasteMenuAction(), { type: "message", label: "เมนูหลัก", text: "เมนู" }, { type: "message", label: "ยกเลิก", text: "ยกเลิก" }],
+          [smartThaPhoLineMenu.homeAction(), { type: "message", label: "ยกเลิก", text: "ยกเลิก" }],
         ),
       ]).catch((replyError) => {
         console.error("[line-bot] error reply failed", replyError);

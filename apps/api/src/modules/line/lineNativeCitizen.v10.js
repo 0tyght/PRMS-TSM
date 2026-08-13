@@ -2178,10 +2178,13 @@ async function cancelRequest(lineUserId, kind, id, confirmed = false) {
 }
 
 export function buildMainMenuActions(state) {
-  return buildMainWizardDefinition(state).choices.map((choice) => ({
-    ...choice.action,
-    displayText: choice.label,
-  }));
+  return [
+    ...buildMainWizardDefinition(state).choices.map((choice) => ({
+      ...choice.action,
+      displayText: choice.label,
+    })),
+    postbackAction("Smart Tha Pho", "smart=menu", "กลับเมนูหลัก Smart Tha Pho"),
+  ];
 }
 
 function nativeMenuMessage(state) {

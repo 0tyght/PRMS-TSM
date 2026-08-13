@@ -169,7 +169,14 @@ test("builds streamlined owner main menu without duplicate add-pet shortcut", ()
     ],
   );
   assert.equal(definition.choices[5].action.data, "action=action_center");
-  assert.deepEqual(buildMainMenuActions({ linked: true }), definition.choices.map((choice) => ({ ...choice.action, displayText: choice.label })));
+  const actions = buildMainMenuActions({ linked: true });
+  assert.deepEqual(actions.slice(0, -1), definition.choices.map((choice) => ({ ...choice.action, displayText: choice.label })));
+  assert.deepEqual(actions.at(-1), {
+    type: "postback",
+    label: "Smart Tha Pho",
+    data: "smart=menu",
+    displayText: "กลับเมนูหลัก Smart Tha Pho",
+  });
 });
 
 test("keeps each static submenu focused on one real-world task group", () => {
