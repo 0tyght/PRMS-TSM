@@ -37,11 +37,16 @@ export function verifyLineWebhookSignature(rawBody, signature, channelSecret) {
   );
 }
 
-function textMessage(text) {
+function textMessage(text, quickReplyItems = []) {
   return {
     type: "text",
     text: String(text || "").slice(0, 5000),
+    ...(quickReplyItems.length ? { quickReply: { items: quickReplyItems.slice(0, 13).map((action) => ({ type: "action", action })) } } : {}),
   };
+}
+
+function wasteMenuAction() {
+  return { type: "postback", label: "บริการรถเก็บขยะ", data: "waste=menu", displayText: "เปิดบริการรถเก็บขยะ" };
 }
 
 async function reply(replyToken, messages) {
@@ -151,6 +156,7 @@ async function processEvent(event) {
                 ? `ยินดีต้อนรับกลับ ${state.owner?.fullName || ""}
 เลือกบริการทะเบียนสัตว์เลี้ยงจาก Rich Menu หรือพิมพ์ “เมนูขยะ” เพื่อใช้บริการเก็บขยะ`
                 : "ยินดีต้อนรับสู่ Smart Tha Pho\nเลือกบริการทะเบียนสัตว์เลี้ยงจาก Rich Menu หรือพิมพ์ “เมนูขยะ” เพื่อใช้บริการเก็บขยะ โดยไม่ต้องเปิดเว็บไซต์",
+              [wasteMenuAction()],
             ),
             buildCitizenStatusFlex(state),
           ])
@@ -222,6 +228,7 @@ async function processEvent(event) {
       await reply(event.replyToken, [
         textMessage(
           `${String(error?.message || "ไม่สามารถดำเนินการได้ในขณะนี้")}\n\nพิมพ์ “เมนู” เพื่อเลือกบริการใหม่ หรือพิมพ์ “ยกเลิก” เพื่อยกเลิกรายการที่ค้างอยู่`,
+          [wasteMenuAction(), { type: "message", label: "เมนูหลัก", text: "เมนู" }, { type: "message", label: "ยกเลิก", text: "ยกเลิก" }],
         ),
       ]).catch((replyError) => {
         console.error("[line-bot] error reply failed", replyError);
