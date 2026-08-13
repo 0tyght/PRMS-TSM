@@ -32,9 +32,23 @@ export class ProposeWasteServiceUserRouteAssignmentUseCase {
       routeAssignmentDistanceM: Math.round(this.routeAssignmentService.distanceToRouteMeters(serviceUser, route.routeGeojson) || 0),
     };
     const allStops = [...existingStops, candidateStop];
-    if (allStops.length < 2) throw new Error("INSUFFICIENT_STOPS");
     if (allStops.length > this.maximumStops) throw new Error("TOO_MANY_STOPS");
     if (allStops.some((stop) => !Number.isFinite(stop.latitude) || !Number.isFinite(stop.longitude))) throw new Error("STOPS_MISSING_LOCATION");
+
+    if (allStops.length === 1) {
+      const geometry = route.routeGeojson?.geometry;
+      if (geometry?.type !== "LineString" || !Array.isArray(geometry.coordinates) || geometry.coordinates.length < 2) {
+        throw new Error("INSUFFICIENT_STOPS");
+      }
+      const proposal = new WasteRouteProposal({
+        routeId,
+        stops: allStops,
+        geometry,
+        distanceMeters: route.routeGeojson?.properties?.distanceMeters || 0,
+        durationSeconds: route.routeGeojson?.properties?.durationSeconds || 0,
+      });
+      return this.routeRepository.saveProposal(proposal);
+    }
 
     const optimized = await this.routeOptimizer.optimize(allStops.map((stop) => ({
       id: stop.id,

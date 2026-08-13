@@ -119,6 +119,26 @@ test("route assignment proposal includes the new service point without changing 
   assert.equal(serviceUser.routeId, null);
 });
 
+test("first service point keeps the confirmed municipal road geometry", async () => {
+  const baselineGeometry = { type: "LineString", coordinates: [[100.19, 16.75], [100.20, 16.76], [100.21, 16.77]] };
+  const serviceUser = { id: "user-first", routeId: null, fullName: "บ้านแรก", houseNo: "1", latitude: 16.755, longitude: 100.195 };
+  let optimizerCalled = false;
+  const repository = {
+    findActiveServiceUserById: async () => serviceUser,
+    findById: async () => ({ id: "route-empty", routeGeojson: { type: "Feature", properties: { distanceMeters: 3200, durationSeconds: 540 }, geometry: baselineGeometry } }),
+    findStopByServiceUserId: async () => null,
+    listActiveStops: async () => [],
+    saveProposal: async (proposal) => new WasteRouteProposal({ ...proposal, id: "proposal-first", expiresAt: new Date(Date.now() + 60_000) }),
+  };
+  const optimizer = { optimize: async () => { optimizerCalled = true; throw new Error("SHOULD_NOT_RUN"); } };
+  const useCase = new ProposeWasteServiceUserRouteAssignmentUseCase({ routeRepository: repository, routeOptimizer: optimizer, routeAssignmentService: { distanceToRouteMeters: () => 50 } });
+  const proposal = await useCase.execute({ serviceUserId: serviceUser.id, routeId: "route-empty" });
+  assert.equal(optimizerCalled, false);
+  assert.equal(proposal.stops.length, 1);
+  assert.deepEqual(proposal.geometry, baselineGeometry);
+  assert.equal(proposal.distanceMeters, 3200);
+});
+
 test("route assignment confirmation validates state and delegates one atomic save", async () => {
   const candidate = { id: "assignment:user-new", serviceUserId: "user-new", stopName: "บ้าน 9 · บ้านใหม่", latitude: 16.765, longitude: 100.205, assignmentCandidate: true, previousRouteId: null };
   const proposal = new WasteRouteProposal({ id: "proposal-assign", routeId: "route-1", stops: [stops[0], candidate, stops[1]], geometry: { type: "LineString", coordinates: [[100.19, 16.75], [100.205, 16.765], [100.20, 16.76]] }, distanceMeters: 4400, durationSeconds: 720, expiresAt: new Date(Date.now() + 60_000) });

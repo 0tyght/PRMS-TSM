@@ -1,7 +1,7 @@
 export class WasteRouteProposal {
   constructor({ id = null, routeId, stops, geometry, distanceMeters, durationSeconds, generatedAt = new Date(), expiresAt = null }) {
     if (!routeId) throw new TypeError("WasteRouteProposal requires routeId");
-    if (!Array.isArray(stops) || stops.length < 2) throw new TypeError("WasteRouteProposal requires at least two stops");
+    if (!Array.isArray(stops) || stops.length < 1) throw new TypeError("WasteRouteProposal requires at least one stop");
     if (geometry?.type !== "LineString" || !Array.isArray(geometry.coordinates)) {
       throw new TypeError("WasteRouteProposal requires LineString geometry");
     }
