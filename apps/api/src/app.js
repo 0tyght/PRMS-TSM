@@ -977,7 +977,7 @@ export class SmartThaPhoApiApplication {
   }
 
   create() {
-  const { lineNotifications, nativeCitizen, citizenSubmissionApproval, lineBot, reportExports, mfa } = this.services;
+  const { lineNotifications, nativeCitizen, citizenSubmissionApproval, lineBot, reportExports, mfa, wasteRouteOptimization } = this.services;
   const handleCitizenLineWebhook = (req, res) => lineBot.handleCitizenWebhook(req, res);
   const handleDriverLineWebhook = (req, res) => lineBot.handleDriverWebhook(req, res);
   const deliverLineNotification = (id) => lineNotifications.deliver(id);
@@ -995,6 +995,7 @@ export class SmartThaPhoApiApplication {
   const encryptMfaSecret = (secret) => mfa.encryptSecret(secret);
   const verifyTotp = (secret, code, options) => mfa.verify(secret, code, options);
   const app = this.expressFactory();
+  app.locals.wasteRouteOptimization = wasteRouteOptimization;
   app.set("trust proxy", 1);
 
   app.use((req, res, next) => {

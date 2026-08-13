@@ -8,6 +8,7 @@ import ServiceUsersPage from "./pages/ServiceUsersPage.jsx";
 import BillingPage from "./pages/BillingPage.jsx";
 import IncidentsPage from "./pages/IncidentsPage.jsx";
 import ReportsPage from "./pages/ReportsPage.jsx";
+import RoutePlanningPage from "./pages/RoutePlanningPage.jsx";
 import DriverTrackingPage from "./pages/DriverTrackingPage.jsx";
 import { useHashPage } from "./lib/useHashPage.js";
 import { WasteApplicationController } from "./application/WasteApplicationController.js";
@@ -23,6 +24,7 @@ const PAGES = Object.freeze({
   billing: BillingPage,
   incidents: IncidentsPage,
   reports: ReportsPage,
+  "route-planning": RoutePlanningPage,
 });
 
 const applicationController = new WasteApplicationController({ pageIds: Object.keys(PAGES) });

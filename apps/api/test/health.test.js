@@ -106,6 +106,22 @@ test("protects the waste route preview endpoint before calling the routing provi
   assert.ok((await response.json()).message);
 });
 
+test("protects waste route optimization before loading private stop coordinates", async (t) => {
+  const server = createApp().listen(0, "127.0.0.1");
+  await new Promise((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/waste/routes/00000000-0000-4000-8000-000000000000/optimization-proposals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(response.status, 401);
+});
+
 test("returns a road-following GeoJSON preview for authorized waste officers", async (t) => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options) => {

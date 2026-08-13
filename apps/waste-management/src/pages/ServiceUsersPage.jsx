@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import LocationPicker from "../components/LocationPicker.jsx";
+import WasteMap from "../components/WasteMap.jsx";
 import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, StatusBadge, formatNumber } from "../components/ui.jsx";
 import { wasteServiceUserPolicy } from "../domain/WasteServiceUserPolicy.js";
 
@@ -11,6 +12,34 @@ function RouteAssignmentPanel({ user, suggestions, loading, onLoad, onAssign }) 
     {user.latitude == null ? <p className="waste-text-warning">ปักตำแหน่งบ้านแล้วบันทึกก่อน จึงจะค้นหาเส้นทางใกล้เคียงได้</p> : null}
     {suggestions.length ? <div className="waste-route-suggestions">{suggestions.map((route) => <article key={route.id} className={route.recommended ? "is-recommended" : ""}><div><b>{route.routeCode} · {route.routeName}</b><small>ห่างจากแนวเส้นทางประมาณ {Number(route.distanceMeters).toLocaleString("th-TH")} เมตร{route.recommended ? " · ใกล้ที่สุด" : ""}</small></div><button type="button" className="waste-button waste-button--primary" disabled={loading || route.id === user.routeId} onClick={() => onAssign(route)}>{route.id === user.routeId ? "ใช้อยู่" : "ยืนยันเส้นทางนี้"}</button></article>)}</div> : null}
     <small>ระบบแนะนำจากระยะถึงแนวถนน แต่เจ้าหน้าที่ต้องตรวจและยืนยันก่อนสร้างจุดเก็บ</small>
+  </section>;
+}
+
+function RouteAssignmentWorkspace({ user, routes, suggestions, loading, saving, onAssign, onEditLocation }) {
+  const [selectedRouteId, setSelectedRouteId] = useState("");
+
+  useEffect(() => {
+    const preferred = suggestions.find((route) => route.recommended) || suggestions[0];
+    setSelectedRouteId(preferred?.id || user.routeId || "");
+  }, [suggestions, user.routeId]);
+
+  const selectedSuggestion = suggestions.find((route) => route.id === selectedRouteId);
+  const selectedRoute = routes.find((route) => route.id === selectedRouteId);
+  const hasLocation = user.latitude != null && user.longitude != null;
+
+  if (!hasLocation) return <section className="waste-assignment-missing-location">
+    <div><b>1</b><strong>ต้องระบุตำแหน่งจุดรับขยะก่อน</strong></div>
+    <p>ระบบต้องใช้ตำแหน่งบ้านเพื่อค้นหาเส้นทางที่ใกล้ที่สุดและสร้างจุดแวะบนเส้นทางเดินรถ</p>
+    <button type="button" className="waste-button waste-button--primary" onClick={onEditLocation}>ระบุตำแหน่งบนแผนที่</button>
+  </section>;
+
+  return <section className="waste-assignment-workspace">
+    <header><div><small>{user.serviceNo}</small><h3>{user.fullName}</h3><span>บ้านเลขที่ {user.houseNo} · หมู่ {user.villageNo} {user.villageName}</span></div><div className="waste-assignment-location-status"><i />มีตำแหน่งจุดรับขยะแล้ว</div></header>
+    {loading ? <LoadingState label="กำลังค้นหาเส้นทางใกล้บ้าน" /> : !suggestions.length ? <EmptyState title="ยังไม่มีเส้นทางที่พร้อมแนะนำ" detail="ต้องคำนวณแนวถนนของเส้นทางเก็บขยะก่อน จึงจะเปรียบเทียบระยะห่างจากบ้านได้" /> : <div className="waste-assignment-grid">
+      <div className="waste-assignment-route-list"><strong>เลือกเส้นทางรับผิดชอบ</strong>{suggestions.map((route, index) => <button type="button" key={route.id} className={selectedRouteId === route.id ? "is-selected" : ""} onClick={() => setSelectedRouteId(route.id)}><span>{index + 1}</span><div><b>{route.routeCode} · {route.routeName}</b><small>ห่างจากแนวเส้นทางประมาณ {Number(route.distanceMeters).toLocaleString("th-TH")} เมตร</small></div>{route.recommended ? <em>แนะนำ</em> : null}</button>)}</div>
+      <div className="waste-assignment-map"><WasteMap routeGeojson={selectedRoute?.routeGeojson || null} routeStops={[{ id: user.id, stopName: `จุดรับขยะ ${user.fullName}`, latitude: user.latitude, longitude: user.longitude, markerRole: "HOME" }]} /><div><i />จุดรับขยะของผู้ใช้บริการ <span>เส้นสีเขียวคือเส้นทางที่เลือก</span></div></div>
+    </div>}
+    <footer><div>{selectedSuggestion ? <><span>เส้นทางที่เลือก</span><strong>{selectedSuggestion.routeCode} · {selectedSuggestion.routeName}</strong></> : null}</div><button type="button" className="waste-button waste-button--primary" disabled={!selectedSuggestion || loading || saving || selectedSuggestion.id === user.routeId} onClick={() => onAssign(selectedSuggestion)}>{saving ? "กำลังบันทึก…" : selectedSuggestion?.id === user.routeId ? "ใช้เส้นทางนี้อยู่แล้ว" : "ยืนยันกำหนดเส้นทางนี้"}</button></footer>
   </section>;
 }
 
@@ -61,6 +90,7 @@ export default function ServiceUsersPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modal, setModal] = useState(null);
+  const [assignmentUser, setAssignmentUser] = useState(null);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [routeFilter, setRouteFilter] = useState("ALL");
@@ -117,7 +147,7 @@ export default function ServiceUsersPage({ token }) {
   };
 
   const openRouteAssignment = async (user) => {
-    setModal(user);
+    setAssignmentUser(user);
     setSuggestions([]);
     if (user.latitude == null || user.longitude == null) return;
     setAssignmentLoading(true);
@@ -132,13 +162,14 @@ export default function ServiceUsersPage({ token }) {
   };
 
   const assignRoute = async (route) => {
-    if (!modal?.id) return;
+    if (!assignmentUser?.id && !modal?.id) return;
+    const targetUser = assignmentUser || modal;
     setAssignmentLoading(true);
     setError("");
     try {
-      await api.put(`/api/waste/service-users/${modal.id}/route-assignment`, { routeId: route.id });
-      const nextModal = { ...modal, routeId: route.id, routeName: route.routeName, routeAssignmentStatus: "CONFIRMED", routeAssignmentDistanceM: route.distanceMeters };
-      setModal(nextModal);
+      await api.put(`/api/waste/service-users/${targetUser.id}/route-assignment`, { routeId: route.id });
+      if (modal?.id) setModal({ ...modal, routeId: route.id, routeName: route.routeName, routeAssignmentStatus: "CONFIRMED", routeAssignmentDistanceM: route.distanceMeters });
+      setAssignmentUser(null);
       setSuggestions([]);
       await load();
     } catch (requestError) {
@@ -159,7 +190,7 @@ export default function ServiceUsersPage({ token }) {
     <ErrorNotice error={error} onRetry={load} />
     <section className="waste-compact-stats" aria-label="สรุปทะเบียนผู้ใช้บริการ">
       <article><span>ผู้ใช้บริการทั้งหมด</span><strong>{formatNumber(summary.total)}</strong><small>ราย</small></article>
-      <article className={summary.unassigned ? "is-warning" : ""}><span>ยังไม่กำหนดเส้นทาง</span><strong>{formatNumber(summary.unassigned)}</strong><small>รายที่ต้องดำเนินการ</small></article>
+      <article className={summary.unassigned ? "is-warning" : ""}><span>ยังไม่กำหนดเส้นทาง</span><strong>{formatNumber(summary.unassigned)}</strong><small>รายที่ต้องดำเนินการ</small>{summary.unassigned ? <button type="button" className="waste-stat-action" onClick={() => setRouteFilter("UNASSIGNED")}>เปิดคิวกำหนดเส้นทาง</button> : null}</article>
       <article><span>เชื่อม LINE แล้ว</span><strong>{formatNumber(summary.linkedToLine)}</strong><small>จาก {formatNumber(summary.total)} ราย</small></article>
     </section>
     <section className="waste-panel">
@@ -170,8 +201,9 @@ export default function ServiceUsersPage({ token }) {
           <label><span className="sr-only">กรองตามเส้นทาง</span><select value={routeFilter} onChange={(event) => setRouteFilter(event.target.value)}><option value="ALL">ทุกเส้นทาง</option><option value="UNASSIGNED">ยังไม่กำหนดเส้นทาง</option>{routes.map((route) => <option key={route.id} value={route.id}>{route.routeCode} — {route.routeName}</option>)}</select></label>
         </div>
       </header>
-      {loading ? <LoadingState /> : !users.length ? <EmptyState title="ยังไม่มีทะเบียนผู้ใช้บริการ" detail="เพิ่มบ้านเรือนหรือสถานที่เพื่อกำหนดเส้นทางเก็บขยะและออกค่าบริการ" actionLabel="เพิ่มผู้ใช้บริการ" onAction={() => setModal({})} /> : !filteredUsers.length ? <EmptyState title="ไม่พบข้อมูลที่ค้นหา" detail="ลองเปลี่ยนคำค้นหรือเงื่อนไขเส้นทาง" /> : <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th>เลขผู้ใช้บริการ</th><th>ผู้ใช้บริการ / ติดต่อ</th><th>ที่อยู่</th><th>เส้นทาง</th><th>LINE</th><th>สถานะ</th><th /></tr></thead><tbody>{filteredUsers.map((user) => <tr key={user.id}><td><strong>{user.serviceNo}</strong></td><td><strong>{user.fullName}</strong><small>{user.phone}</small></td><td>หมู่ {user.villageNo} · {user.houseNo}<small>{user.villageName}{user.latitude != null ? " · มีพิกัด" : " · ยังไม่มีพิกัด"}</small></td><td><strong>{user.routeName || <span className="waste-text-warning">ยังไม่กำหนด</span>}</strong><button type="button" className="waste-route-assign-link" onClick={() => void openRouteAssignment(user)}>{user.routeId ? "เปลี่ยนเส้นทาง" : "กำหนดเส้นทาง"}</button></td><td>{user.lineUserId ? "เชื่อมแล้ว" : "ยังไม่เชื่อม"}</td><td><StatusBadge value={user.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><button type="button" className="waste-table-action" onClick={() => { setSuggestions([]); setModal(user); }}>แก้ไขข้อมูล</button></td></tr>)}</tbody></table></div>}
+      {loading ? <LoadingState /> : !users.length ? <EmptyState title="ยังไม่มีทะเบียนผู้ใช้บริการ" detail="เพิ่มบ้านเรือนหรือสถานที่เพื่อกำหนดเส้นทางเก็บขยะและออกค่าบริการ" actionLabel="เพิ่มผู้ใช้บริการ" onAction={() => setModal({})} /> : !filteredUsers.length ? <EmptyState title="ไม่พบข้อมูลที่ค้นหา" detail="ลองเปลี่ยนคำค้นหรือเงื่อนไขเส้นทาง" /> : <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th>เลขผู้ใช้บริการ</th><th>ผู้ใช้บริการ / ติดต่อ</th><th>ที่อยู่</th><th>เส้นทาง</th><th>LINE</th><th>สถานะ</th><th /></tr></thead><tbody>{filteredUsers.map((user) => <tr key={user.id} className={!user.routeId && user.isActive ? "waste-row-needs-action" : ""}><td><strong>{user.serviceNo}</strong></td><td><strong>{user.fullName}</strong><small>{user.phone}</small></td><td>หมู่ {user.villageNo} · {user.houseNo}<small>{user.villageName}{user.latitude != null ? " · มีพิกัด" : " · ยังไม่มีพิกัด"}</small></td><td>{user.routeName ? <><strong>{user.routeName}</strong><button type="button" className="waste-route-assign-link" onClick={() => void openRouteAssignment(user)}>เปลี่ยนเส้นทาง</button></> : <button type="button" className="waste-route-assign-button" onClick={() => void openRouteAssignment(user)}><span>ยังไม่กำหนด</span><strong>{user.latitude == null ? "ระบุตำแหน่งและกำหนดเส้นทาง" : "กำหนดเส้นทาง"}</strong></button>}</td><td>{user.lineUserId ? "เชื่อมแล้ว" : "ยังไม่เชื่อม"}</td><td><StatusBadge value={user.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><button type="button" className="waste-table-action" onClick={() => { setSuggestions([]); setModal(user); }}>แก้ไขข้อมูล</button></td></tr>)}</tbody></table></div>}
     </section>
     {modal ? <Modal title={modal.id ? "แก้ไขผู้ใช้บริการเก็บขยะ" : "เพิ่มผู้ใช้บริการเก็บขยะ"} onClose={() => { setModal(null); setSuggestions([]); }}><ServiceUserForm initial={modal.id ? modal : null} villages={villages} onCancel={() => { setModal(null); setSuggestions([]); }} onSubmit={save} onSuggestRoutes={suggestRoutes} onAssignRoute={assignRoute} suggestions={suggestions} assignmentLoading={assignmentLoading} saving={saving} /></Modal> : null}
+    {assignmentUser ? <Modal title="กำหนดเส้นทางรับผิดชอบ" onClose={() => { setAssignmentUser(null); setSuggestions([]); }}><RouteAssignmentWorkspace user={assignmentUser} routes={routes} suggestions={suggestions} loading={assignmentLoading} saving={assignmentLoading} onAssign={assignRoute} onEditLocation={() => { setModal(assignmentUser); setAssignmentUser(null); setSuggestions([]); }} /></Modal> : null}
   </>;
 }

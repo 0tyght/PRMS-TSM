@@ -58,6 +58,12 @@ const routeStopsSchema = z.object({
   })).max(999),
 });
 
+const routeProposalSchema = z.object({ proposalId: z.string().uuid() });
+const routeOptimizationSchema = z.object({
+  startStopId: z.string().uuid().optional().nullable(),
+  endStopId: z.string().uuid().optional().nullable(),
+});
+
 const serviceUserSchema = z.object({
   serviceNo: z.string().trim().min(2).max(30),
   fullName: z.string().trim().min(2).max(150),
@@ -712,6 +718,67 @@ router.get("/routes/:id/stops", requireRole("ADMIN", "OFFICER", "VIEWER"), async
     );
     return res.json({ data: rows.map((row) => ({ ...row, sequenceNo: Number(row.sequenceNo) })) });
   } catch (error) { next(error); }
+});
+
+function routeOptimizationError(error) {
+  const errors = {
+    ROUTE_NOT_FOUND: [404, "ไม่พบข้อมูลเส้นทางเก็บขยะ"],
+    INSUFFICIENT_STOPS: [422, "ต้องมีจุดเก็บขยะที่ระบุตำแหน่งอย่างน้อย 2 จุด"],
+    STOPS_MISSING_LOCATION: [422, "ยังมีจุดเก็บขยะที่ไม่มีพิกัด กรุณาระบุตำแหน่งให้ครบก่อนคำนวณ"],
+    TOO_MANY_STOPS: [422, "เส้นทางหนึ่งรองรับการจัดลำดับอัตโนมัติไม่เกิน 50 จุด กรุณาแบ่งเป็นรอบย่อย"],
+    ROUTE_NOT_FOUND_BY_PROVIDER: [422, "ไม่พบถนนที่เชื่อมต่อจุดเก็บขยะทั้งหมด"],
+    ROUTING_SERVICE_UNAVAILABLE: [502, "ไม่สามารถเชื่อมต่อบริการคำนวณเส้นทางได้ในขณะนี้"],
+    ROUTING_SERVICE_FAILED: [502, "บริการคำนวณเส้นทางไม่สามารถประมวลผลจุดเก็บขยะได้"],
+    PROPOSAL_EXPIRED: [410, "ข้อเสนอเส้นทางหมดอายุแล้ว กรุณาคำนวณใหม่"],
+    PROPOSAL_ROUTE_MISMATCH: [422, "ข้อเสนอเส้นทางไม่ตรงกับเส้นทางที่เลือก"],
+    ROUTE_STOPS_CHANGED: [409, "จุดเก็บขยะมีการเปลี่ยนแปลงหลังคำนวณ กรุณาคำนวณใหม่ก่อนยืนยัน"],
+    START_STOP_NOT_FOUND: [422, "ไม่พบจุดเริ่มต้นในเส้นทางนี้"],
+    END_STOP_NOT_FOUND: [422, "ไม่พบจุดสิ้นสุดในเส้นทางนี้"],
+    START_END_STOP_MUST_DIFFER: [422, "จุดเริ่มต้นและจุดสิ้นสุดต้องเป็นคนละจุด หรือเลือกกลับจุดเริ่มต้น"],
+  };
+  const [status, message] = errors[error.message] || [500, "ไม่สามารถจัดเส้นทางเก็บขยะได้"];
+  return httpError(status, message);
+}
+
+router.post("/routes/:id/optimization-proposals", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const input = routeOptimizationSchema.parse(req.body);
+    const proposal = await req.app.locals.wasteRouteOptimization.propose.execute({ routeId: req.params.id, ...input });
+    return res.status(201).json({
+      data: {
+        proposalId: proposal.id,
+        routeId: proposal.routeId,
+        stops: proposal.stops.map((stop, index) => ({ ...stop, sequenceNo: index + 1 })),
+        routeGeojson: proposal.toGeoJson(),
+        distanceMeters: proposal.distanceMeters,
+        durationSeconds: proposal.durationSeconds,
+        expiresAt: proposal.expiresAt,
+      },
+    });
+  } catch (error) {
+    return next(routeOptimizationError(error));
+  }
+});
+
+router.post("/routes/:id/optimization-confirmations", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    const input = routeProposalSchema.parse(req.body);
+    const proposal = await req.app.locals.wasteRouteOptimization.confirm.execute({
+      routeId: req.params.id,
+      proposalId: input.proposalId,
+      confirmedBy: req.user.sub,
+      ipAddress: req.ip,
+    });
+    return res.json({
+      data: {
+        routeId: proposal.routeId,
+        stopCount: proposal.stops.length,
+        distanceMeters: proposal.distanceMeters,
+        durationSeconds: proposal.durationSeconds,
+        confirmed: true,
+      },
+    });
+  } catch (error) { next(routeOptimizationError(error)); }
 });
 
 router.put("/routes/:id/stops", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {

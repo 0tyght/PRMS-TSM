@@ -66,6 +66,263 @@
   color: #0d4f1e;
 }
 
+.waste-stat-action {
+  justify-self: start;
+  margin-top: 8px;
+  padding: 5px 9px;
+  border: 1px solid #e1b377;
+  border-radius: 8px;
+  color: #8b4b0c;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.waste-row-needs-action td {
+  background: #fffdf8;
+}
+
+.waste-route-assign-button {
+  display: grid;
+  width: 100%;
+  min-width: 165px;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px solid #e5bd86;
+  border-radius: 10px;
+  color: #8c4d10;
+  background: #fff8ed;
+  text-align: left;
+  cursor: pointer;
+}
+
+.waste-route-assign-button:hover,
+.waste-route-assign-button:focus-visible {
+  border-color: #b96718;
+  background: #fff3df;
+}
+
+.waste-route-assign-button span {
+  font-size: 9px;
+}
+
+.waste-route-assign-button strong {
+  color: #176b2c;
+  font-size: 11px;
+}
+
+.waste-assignment-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.waste-assignment-workspace > header,
+.waste-assignment-workspace > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.waste-assignment-workspace > header small,
+.waste-assignment-workspace > header span,
+.waste-assignment-workspace > footer span,
+.waste-assignment-workspace > footer strong {
+  display: block;
+}
+
+.waste-assignment-workspace > header small {
+  color: #a75b15;
+  font-weight: 700;
+}
+
+.waste-assignment-workspace > header h3 {
+  margin: 3px 0;
+  color: #24483b;
+  font-family: "Prompt";
+  font-size: 17px;
+}
+
+.waste-assignment-workspace > header span,
+.waste-assignment-workspace > footer span {
+  color: #75887f;
+  font-size: 11px;
+}
+
+.waste-assignment-location-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #176b4c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.waste-assignment-location-status i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #249561;
+  box-shadow: 0 0 0 4px rgb(36 149 97 / .12);
+}
+
+.waste-assignment-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, .78fr) minmax(360px, 1.35fr);
+  gap: 14px;
+}
+
+.waste-assignment-route-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.waste-assignment-route-list > strong {
+  margin-bottom: 2px;
+  color: #37574a;
+  font-size: 12px;
+}
+
+.waste-assignment-route-list > button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid #dce7e1;
+  border-radius: 11px;
+  color: #315246;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.waste-assignment-route-list > button.is-selected {
+  border-color: #75b72c;
+  background: #f7fceb;
+  box-shadow: inset 4px 0 #75b72c;
+}
+
+.waste-assignment-route-list button > span {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 8px;
+  color: #39733d;
+  background: #eaf5d6;
+  font-weight: 700;
+}
+
+.waste-assignment-route-list b,
+.waste-assignment-route-list small {
+  display: block;
+}
+
+.waste-assignment-route-list b {
+  font-size: 11px;
+}
+
+.waste-assignment-route-list small {
+  margin-top: 3px;
+  color: #7c8e85;
+  font-size: 9px;
+}
+
+.waste-assignment-route-list em {
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: #176b4c;
+  background: #e2f4e9;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.waste-assignment-map {
+  overflow: hidden;
+  border: 1px solid #dce7e1;
+  border-radius: 12px;
+}
+
+.waste-assignment-map .waste-map {
+  height: 330px;
+}
+
+.waste-assignment-map > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  color: #5f756b;
+  background: #f8fbf9;
+  font-size: 9px;
+}
+
+.waste-assignment-map > div:last-child i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2476a8;
+}
+
+.waste-assignment-map > div:last-child span {
+  margin-left: auto;
+}
+
+.waste-assignment-workspace > footer {
+  padding-top: 14px;
+  border-top: 1px solid #e2eae5;
+}
+
+.waste-assignment-workspace > footer strong {
+  margin-top: 3px;
+  color: #2d5042;
+  font-size: 12px;
+}
+
+.waste-assignment-missing-location {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 30px 20px;
+  border: 1px solid #efd4b2;
+  border-radius: 14px;
+  background: #fffaf3;
+  text-align: center;
+}
+
+.waste-assignment-missing-location > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.waste-assignment-missing-location b {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #b96718;
+}
+
+.waste-assignment-missing-location strong {
+  color: #70491f;
+  font-family: "Prompt";
+}
+
+.waste-assignment-missing-location p {
+  max-width: 520px;
+  margin: 0;
+  color: #79664f;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 .waste-official-schedule,
 .waste-official-schedule > div {
   display: grid;
@@ -117,5 +374,15 @@
 
   .waste-official-schedule article {
     grid-template-columns: 1fr;
+  }
+
+  .waste-assignment-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .waste-assignment-workspace > header,
+  .waste-assignment-workspace > footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
