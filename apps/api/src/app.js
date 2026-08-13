@@ -52,6 +52,7 @@ const registrationStatusSchema = z.object({
     REGISTRATION_STATUS.REJECTED,
   ]),
   note: z.string().trim().max(500).optional().default(""),
+  version: z.coerce.number().int().positive(),
 }).superRefine((input, context) => {
   if (
     [REGISTRATION_STATUS.NEED_MORE_INFO, REGISTRATION_STATUS.REJECTED].includes(input.status) &&
@@ -366,50 +367,6 @@ function ensureOccurredDate(value, fieldLabel) {
   if (!value) return;
   const today = new Date().toISOString().slice(0, 10);
   if (value > today) throw createHttpError(422, `${fieldLabel}ต้องไม่เป็นวันที่ในอนาคต`);
-}
-
-async function applyCitizenSubmission(db, submission, reviewerId, nativeCitizenService) {
-  const proposed = parseJsonObject(submission.proposedPayload);
-  const current = parseJsonObject(submission.currentPayload);
-  if (submission.subjectType === "OWNER_TRANSFER") {
-    await nativeCitizenService.applyOwnerTransfer(db, submission, reviewerId);
-    return;
-  }
-  if (submission.subjectType === "PET_UPDATE") {
-    await db.execute(
-      `UPDATE pets SET name = ?, species = ?, sex = ?, breed = NULLIF(?, ''), color = NULLIF(?, ''),
-                        birth_date = NULLIF(?, ''), microchip_no = NULLIF(?, '')
-       WHERE id = ? AND deleted_at IS NULL`,
-      [proposed.petName, proposed.species, proposed.sex, proposed.breed, proposed.color, proposed.birthDate || "", proposed.microchipNo, submission.petId],
-    );
-    return;
-  }
-  if (submission.subjectType === "VACCINATION") {
-    await db.execute(
-      `INSERT INTO vaccination_records
-        (id, pet_id, vaccine_name, lot_no, vaccinated_at, next_due_at, provider_name, recorded_by)
-       VALUES (?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), ?)`,
-      [crypto.randomUUID(), submission.petId, proposed.vaccineName, proposed.lotNo, proposed.vaccinatedAt, proposed.nextDueAt || "", proposed.providerName, reviewerId],
-    );
-    return;
-  }
-  if (submission.subjectType === "STERILIZATION") {
-    await db.execute(
-      `INSERT INTO sterilization_records (id, pet_id, sterilized_at, provider_name, note, recorded_by)
-       VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)`,
-      [crypto.randomUUID(), submission.petId, proposed.sterilizedAt, proposed.providerName, proposed.note, reviewerId],
-    );
-    return;
-  }
-  if (submission.subjectType === "PET_STATUS") {
-    await db.execute("UPDATE pets SET status = ? WHERE id = ? AND deleted_at IS NULL", [proposed.status, submission.petId]);
-    await db.execute(
-      `INSERT INTO pet_status_history
-        (id, pet_id, old_status, new_status, effective_at, note, recorded_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [crypto.randomUUID(), submission.petId, current?.status || null, proposed.status, proposed.effectiveAt, proposed.reason, reviewerId],
-    );
-  }
 }
 
 function createRegistrationNo(referenceNo) {
@@ -1020,7 +977,7 @@ export class SmartThaPhoApiApplication {
   }
 
   create() {
-  const { lineNotifications, nativeCitizen, lineBot, reportExports, mfa } = this.services;
+  const { lineNotifications, nativeCitizen, citizenSubmissionApproval, lineBot, reportExports, mfa } = this.services;
   const handleLineWebhook = (req, res) => lineBot.handleWebhook(req, res);
   const deliverLineNotification = (id) => lineNotifications.deliver(id);
   const enqueueLineNotification = (database, notification) => lineNotifications.enqueue(database, notification);
@@ -2082,7 +2039,7 @@ export class SmartThaPhoApiApplication {
             'REGISTRATION' AS sourceType,
             'REGISTER_PET' AS requestType,
             r.status,
-            1 AS version,
+            r.version,
             r.submitted_at AS submittedAt,
             r.reviewed_at AS reviewedAt,
             o.full_name AS ownerName,
@@ -2291,13 +2248,22 @@ export class SmartThaPhoApiApplication {
           const submission = rows[0];
           if (!submission) throw createHttpError(404, "ไม่พบข้อมูลรายการนี้หรือไม่มีสิทธิ์เข้าถึง");
           new CitizenSubmission(submission).assertVersion(input.version).transitionTo(input.status);
-          if (input.status === "APPROVED") await applyCitizenSubmission(db, submission, req.user.sub, nativeCitizen);
-          await db.execute(
+          if (input.status === "APPROVED") {
+            await citizenSubmissionApproval.execute({
+              database: db,
+              submission,
+              reviewerId: req.user.sub,
+            });
+          }
+          const [statusUpdate] = await db.execute(
             `UPDATE citizen_submissions
              SET status = ?, review_note = NULLIF(?, ''), reviewed_by = ?, reviewed_at = NOW(), version = version + 1
              WHERE id = ? AND version = ?`,
             [input.status, input.note, req.user.sub, submission.id, input.version],
           );
+          if (Number(statusUpdate.affectedRows || 0) !== 1) {
+            throw createHttpError(409, "ข้อมูลถูกแก้ไขโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุด");
+          }
           await db.execute(
             `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
              VALUES (?, ?, 'REVIEW_CITIZEN_SUBMISSION', 'CITIZEN_SUBMISSION', ?, ?, ?, ?)`,
@@ -2572,6 +2538,7 @@ export class SmartThaPhoApiApplication {
               r.id,
               r.reference_no AS referenceNo,
               r.status,
+              r.version,
               r.submitted_at AS submittedAt,
               o.full_name AS ownerName,
               p.name AS petName,
@@ -2607,7 +2574,7 @@ export class SmartThaPhoApiApplication {
       const [rows] = await pool.execute(
         `
           SELECT
-            r.id, r.reference_no AS referenceNo, r.status,
+            r.id, r.reference_no AS referenceNo, r.status, r.version,
             r.review_note AS reviewNote, r.submitted_at AS submittedAt,
             r.reviewed_at AS reviewedAt, reviewer.full_name AS reviewerName,
             o.id AS ownerId, o.full_name AS ownerName, o.phone,
@@ -2685,7 +2652,7 @@ export class SmartThaPhoApiApplication {
     requireRole("ADMIN", "OFFICER"),
     async (req, res, next) => {
       try {
-        const { status, note } = registrationStatusSchema.parse(req.body);
+        const { status, note, version } = registrationStatusSchema.parse(req.body);
         const statusText = {
           UNDER_REVIEW: "เจ้าหน้าที่เริ่มตรวจสอบข้อมูลแล้ว",
           NEED_MORE_INFO: "ข้อมูลต้องแก้ไขหรือเพิ่มเติม",
@@ -2703,6 +2670,7 @@ export class SmartThaPhoApiApplication {
                 r.owner_id AS ownerId,
                 r.pet_id AS petId,
                 r.status AS oldStatus,
+                r.version,
                 o.line_user_id AS lineUserId
               FROM registrations r
               INNER JOIN owners o ON o.id = r.owner_id
@@ -2719,19 +2687,25 @@ export class SmartThaPhoApiApplication {
             throw createHttpError(404, "ไม่พบข้อมูลขึ้นทะเบียน");
           }
 
-          new Registration({ id: req.params.id, status: registration.oldStatus }).transitionTo(status);
+          new Registration({ id: req.params.id, status: registration.oldStatus, version: registration.version })
+            .assertVersion(version)
+            .transitionTo(status);
 
-          await db.execute(
+          const [statusUpdate] = await db.execute(
             `
               UPDATE registrations
               SET status = ?,
                   review_note = NULLIF(?, ''),
                   reviewed_by = ?,
-                  reviewed_at = NOW()
-              WHERE id = ?
+                  reviewed_at = NOW(),
+                  version = version + 1
+              WHERE id = ? AND version = ?
             `,
-            [status, note, req.user.sub, req.params.id],
+            [status, note, req.user.sub, req.params.id, version],
           );
+          if (Number(statusUpdate.affectedRows || 0) !== 1) {
+            throw createHttpError(409, "ข้อมูลถูกแก้ไขโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุด");
+          }
 
           if (status === REGISTRATION_STATUS.APPROVED) {
             const registrationNo = createRegistrationNo(
@@ -2868,11 +2842,12 @@ export class SmartThaPhoApiApplication {
             lineUserId: registration.lineUserId,
             notificationId: queued.id,
             queuedStatus: queued.status,
+            version: version + 1,
           };
         });
         const notification = result.queuedStatus === "PENDING" ? await deliverLineNotification(result.notificationId) : { status: result.queuedStatus };
 
-        return res.json({ data: { id: result.id, status: result.status, notification: notification.status } });
+        return res.json({ data: { id: result.id, status: result.status, version: result.version, notification: notification.status } });
       } catch (error) {
         next(error);
       }

@@ -329,6 +329,8 @@ CREATE TABLE IF NOT EXISTS registrations (
 
     reviewed_by CHAR(36) NULL,
 
+    version INT UNSIGNED NOT NULL DEFAULT 1,
+
     submitted_at DATETIME NULL,
 
     reviewed_at DATETIME NULL,

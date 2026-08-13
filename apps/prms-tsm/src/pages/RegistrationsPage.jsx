@@ -541,6 +541,7 @@ export default function RegistrationsPage({ token }) {
         await api.patch(`/api/admin/registrations/${item.id}/status`, {
           status: nextStatus,
           note: reviewNote,
+          version: Number(detail?.version ?? item.version),
         });
       } else {
         await api.patch(`/api/admin/citizen-submissions/${item.id}/status`, {

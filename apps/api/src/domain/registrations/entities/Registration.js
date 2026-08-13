@@ -9,12 +9,18 @@ const STATUS_TRANSITIONS = Object.freeze({
 export class Registration {
   #status;
 
-  constructor({ id = null, status }) {
+  constructor({ id = null, status, version = 1 }) {
     this.id = id;
     this.#status = status;
+    this.version = Number(version);
   }
 
   get status() { return this.#status; }
+
+  assertVersion(expectedVersion) {
+    if (this.version !== Number(expectedVersion)) throw new DomainRuleViolation("REGISTRATION_VERSION_CONFLICT", "ข้อมูลถูกแก้ไขโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุด");
+    return this;
+  }
 
   transitionTo(nextStatus) {
     if (!(STATUS_TRANSITIONS[this.#status] || []).includes(nextStatus)) throw new DomainRuleViolation("REGISTRATION_TRANSITION_NOT_ALLOWED", "ไม่สามารถเปลี่ยนสถานะข้อมูลตามลำดับงานนี้ได้");
@@ -22,4 +28,3 @@ export class Registration {
     return this;
   }
 }
-

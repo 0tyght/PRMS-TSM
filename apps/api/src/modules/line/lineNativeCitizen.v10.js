@@ -18,6 +18,7 @@ import {
 const LINE_CONTENT_ENDPOINT = "https://api-data.line.me/v2/bot/message";
 const SESSION_TTL_HOURS = 24;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const PET_PICKER_PAGE_SIZE = 8;
 
 const FLOW_LABELS = Object.freeze({
   REGISTER: "ลงทะเบียนสัตว์เลี้ยง",
@@ -473,6 +474,7 @@ async function loadPet(lineUserId, petId, db = pool, { forUpdate = false } = {})
      FROM pets p
      INNER JOIN owners o ON o.id = p.owner_id AND o.deleted_at IS NULL
      WHERE p.id = ? AND o.line_user_id = ? AND o.is_active = TRUE AND p.deleted_at IS NULL
+       AND p.registration_no IS NOT NULL AND p.registered_at IS NOT NULL
      LIMIT 1${forUpdate ? " FOR UPDATE" : ""}`,
     [petId, lineUserId],
   );
@@ -520,8 +522,10 @@ function petPickerTitle(action) {
   return titles[action] || "เลือกสัตว์เลี้ยงที่ต้องการดำเนินการ";
 }
 
-async function loadPets(lineUserId, page = 0, action = "pet_detail") {
-  void page;
+async function loadPets(lineUserId, page = 0, action = "pet_detail", statusFilter = "") {
+  const safePage = Math.max(0, Number.parseInt(String(page || 0), 10) || 0);
+  const allowedStatuses = new Set(["", "ACTIVE", "MISSING", "MOVED_OUT", "DECEASED", "TRANSFERRED"]);
+  if (!allowedStatuses.has(statusFilter)) throw new Error("ตัวกรองสถานะสัตว์ไม่ถูกต้อง");
   const eligibility = petEligibilityClause(action);
   const [rows] = await pool.execute(
     `SELECT p.id, p.registration_no AS registrationNo, p.name AS petName,
@@ -531,13 +535,20 @@ async function loadPets(lineUserId, page = 0, action = "pet_detail") {
      FROM pets p
      INNER JOIN owners o ON o.id = p.owner_id AND o.deleted_at IS NULL
      WHERE o.line_user_id = ? AND o.is_active = TRUE AND p.deleted_at IS NULL
+       AND p.registration_no IS NOT NULL AND p.registered_at IS NOT NULL
+       AND (? = '' OR p.status = ?)
        ${eligibility}
      ORDER BY p.created_at DESC
-     LIMIT 500`,
-    [lineUserId],
+     LIMIT ${PET_PICKER_PAGE_SIZE + 1} OFFSET ${safePage * PET_PICKER_PAGE_SIZE}`,
+    [lineUserId, statusFilter, statusFilter],
   );
 
-  return { rows, hasNext: false, page: 0 };
+  return {
+    rows: rows.slice(0, PET_PICKER_PAGE_SIZE),
+    hasNext: rows.length > PET_PICKER_PAGE_SIZE,
+    page: safePage,
+    statusFilter,
+  };
 }
 
 function petPickerMessage(result, action) {
@@ -566,14 +577,33 @@ function petPickerMessage(result, action) {
     );
   });
 
+  if (result.page > 0) {
+    items.push(postbackAction(
+      "ก่อนหน้า",
+      `action=pet_page&target=${encodeURIComponent(action)}&page=${result.page - 1}&status=${encodeURIComponent(result.statusFilter || "")}`,
+      "ดูสัตว์เลี้ยงหน้าก่อนหน้า",
+    ));
+  }
+  if (result.hasNext) {
+    items.push(postbackAction(
+      "ถัดไป",
+      `action=pet_page&target=${encodeURIComponent(action)}&page=${result.page + 1}&status=${encodeURIComponent(result.statusFilter || "")}`,
+      "ดูสัตว์เลี้ยงหน้าถัดไป",
+    ));
+  }
+  if (action === "pet_detail") {
+    items.push(postbackAction("กรองสถานะ", "action=pets_filter", "กรองสัตว์เลี้ยงตามสถานะ"));
+  }
   items.push(postbackAction("เมนูหลัก", "action=menu", "กลับเมนูหลัก"));
-  return textMessage(petPickerTitle(action), quickReply(items));
+  const filterLabel = result.statusFilter
+    ? ` • ${PET_STATUS_LABELS[result.statusFilter] || result.statusFilter}`
+    : "";
+  return textMessage(`${petPickerTitle(action)}${filterLabel}\nหน้า ${result.page + 1}`, quickReply(items));
 }
 
-async function showPetPicker(lineUserId, action, page = 0) {
-  void page;
+async function showPetPicker(lineUserId, action, page = 0, statusFilter = "") {
   await assertOwner(lineUserId);
-  return [petPickerMessage(await loadPets(lineUserId, 0, action), action)];
+  return [petPickerMessage(await loadPets(lineUserId, page, action, statusFilter), action)];
 }
 
 async function downloadLineImage(lineUserId, messageId) {
@@ -784,7 +814,54 @@ async function finalizeRegistration(lineUserId, draft) {
 async function createCitizenSubmission(lineUserId, subjectType, petId, current, proposed, attachmentId = null) {
   return withTransaction(async (db) => {
     const pet = await loadPet(lineUserId, petId, db, { forUpdate: true });
-    if (!pet) throw new Error("ไม่พบสัตว์เลี้ยงหรือไม่มีสิทธิ์ดำเนินการ");
+    if (!pet) throw new Error("ไม่พบสัตว์เลี้ยงที่ขึ้นทะเบียนแล้วหรือไม่มีสิทธิ์ดำเนินการ");
+    if (["VACCINATION", "STERILIZATION"].includes(subjectType) && !attachmentId) {
+      throw new Error("กรุณาแนบรูปหลักฐานก่อนส่งข้อมูลให้เจ้าหน้าที่ตรวจสอบ");
+    }
+
+    if (subjectType === "VACCINATION") {
+      const [duplicateRecords] = await db.execute(
+        `SELECT id FROM vaccination_records
+         WHERE pet_id = ? AND vaccine_name = ? AND vaccinated_at = ?
+         LIMIT 1 FOR UPDATE`,
+        [petId, proposed.vaccineName, proposed.vaccinatedAt],
+      );
+      if (duplicateRecords[0]) {
+        throw new Error("มีประวัติวัคซีนชนิดนี้ในวันที่ระบุแล้ว กรุณาตรวจสอบข้อมูลสัตว์เลี้ยง");
+      }
+      const [pendingRecords] = await db.execute(
+        `SELECT reference_no AS referenceNo
+         FROM citizen_submissions
+         WHERE pet_id = ? AND subject_type = 'VACCINATION'
+           AND status IN ('SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO')
+           AND JSON_UNQUOTE(JSON_EXTRACT(proposed_payload, '$.vaccineName')) = ?
+           AND JSON_UNQUOTE(JSON_EXTRACT(proposed_payload, '$.vaccinatedAt')) = ?
+         ORDER BY submitted_at DESC LIMIT 1 FOR UPDATE`,
+        [petId, proposed.vaccineName, proposed.vaccinatedAt],
+      );
+      if (pendingRecords[0]) {
+        throw new Error(`ข้อมูลวัคซีนนี้อยู่ระหว่างตรวจสอบแล้ว เลขอ้างอิง ${pendingRecords[0].referenceNo}`);
+      }
+    }
+
+    if (subjectType === "STERILIZATION") {
+      const [existingRecords] = await db.execute(
+        "SELECT id FROM sterilization_records WHERE pet_id = ? LIMIT 1 FOR UPDATE",
+        [petId],
+      );
+      if (existingRecords[0]) throw new Error("สัตว์เลี้ยงตัวนี้มีประวัติการทำหมันในทะเบียนแล้ว");
+      const [pendingRecords] = await db.execute(
+        `SELECT reference_no AS referenceNo
+         FROM citizen_submissions
+         WHERE pet_id = ? AND subject_type = 'STERILIZATION'
+           AND status IN ('SUBMITTED','UNDER_REVIEW','NEED_MORE_INFO')
+         ORDER BY submitted_at DESC LIMIT 1 FOR UPDATE`,
+        [petId],
+      );
+      if (pendingRecords[0]) {
+        throw new Error(`ข้อมูลทำหมันอยู่ระหว่างตรวจสอบแล้ว เลขอ้างอิง ${pendingRecords[0].referenceNo}`);
+      }
+    }
     const id = crypto.randomUUID();
     const referenceNo = createReferenceNo("TSM-C");
     await db.execute(
@@ -1194,7 +1271,7 @@ async function vaccinationPrompt(session) {
   if (step === "PROVIDER") return [textMessage("พิมพ์ชื่อสถานที่หรือผู้ให้บริการวัคซีน หรือกดข้าม", cancelQuickReply([
     postbackAction("ข้าม", "session=provider_skip", "ข้ามชื่อผู้ให้บริการ"),
   ]))];
-  if (step === "PHOTO") return [photoPrompt()];
+  if (step === "PHOTO") return [photoPrompt({ required: true })];
   if (step === "CONFIRM") return [confirmationFlex(
     `แจ้งวัคซีนของ ${draft.petName}`,
     [
@@ -1253,9 +1330,6 @@ async function handleVaccinationSession(event, session, params) {
   } else if (session.currentStep === "PHOTO" && event.message?.type === "image") {
     draft.attachmentId = await downloadLineImage(session.lineUserId, event.message.id);
     next = "CONFIRM";
-  } else if (session.currentStep === "PHOTO" && params.session === "photo_skip") {
-    draft.attachmentId = null;
-    next = "CONFIRM";
   } else return { messages: await vaccinationPrompt(session) };
   const updated = await updateSession(session, next, draft);
   return { messages: await vaccinationPrompt(updated) };
@@ -1278,7 +1352,7 @@ async function sterilizationPrompt(session) {
   if (step === "NOTE") return [textMessage("พิมพ์หมายเหตุ หรือกดข้าม", cancelQuickReply([
     postbackAction("ข้าม", "session=note_skip", "ข้ามหมายเหตุ"),
   ]))];
-  if (step === "PHOTO") return [photoPrompt()];
+  if (step === "PHOTO") return [photoPrompt({ required: true })];
   if (step === "CONFIRM") return [confirmationFlex(
     `แจ้งทำหมันของ ${draft.petName}`,
     [
@@ -1320,9 +1394,6 @@ async function handleSterilizationSession(event, session, params) {
     next = "PHOTO";
   } else if (session.currentStep === "PHOTO" && event.message?.type === "image") {
     draft.attachmentId = await downloadLineImage(session.lineUserId, event.message.id);
-    next = "CONFIRM";
-  } else if (session.currentStep === "PHOTO" && params.session === "photo_skip") {
-    draft.attachmentId = null;
     next = "CONFIRM";
   } else return { messages: await sterilizationPrompt(session) };
   const updated = await updateSession(session, next, draft);
@@ -2517,7 +2588,21 @@ async function handleAction(event, state, params) {
         lineUserId,
         "pet_detail",
         Number(params.page || 0),
+        String(params.status || ""),
       ),
+    };
+  }
+  if (action === "pets_filter") {
+    await assertOwner(lineUserId);
+    return {
+      messages: [textMessage("เลือกสถานะสัตว์เลี้ยงที่ต้องการดู", quickReply([
+        postbackAction("ทั้งหมด", "action=pets&page=0", "ดูสัตว์เลี้ยงทุกสถานะ"),
+        postbackAction("ปกติ", "action=pets&page=0&status=ACTIVE", "ดูสัตว์เลี้ยงสถานะปกติ"),
+        postbackAction("สูญหาย", "action=pets&page=0&status=MISSING", "ดูสัตว์เลี้ยงที่สูญหาย"),
+        postbackAction("ย้ายออก", "action=pets&page=0&status=MOVED_OUT", "ดูสัตว์เลี้ยงที่ย้ายออกจากพื้นที่"),
+        postbackAction("เสียชีวิต", "action=pets&page=0&status=DECEASED", "ดูสัตว์เลี้ยงที่เสียชีวิต"),
+        postbackAction("เมนูหลัก", "action=menu", "กลับเมนูหลัก"),
+      ]))],
     };
   }
   if (action === "pet_page") {
@@ -2526,6 +2611,7 @@ async function handleAction(event, state, params) {
         lineUserId,
         params.target || "pet_detail",
         Number(params.page || 0),
+        String(params.status || ""),
       ),
     };
   }

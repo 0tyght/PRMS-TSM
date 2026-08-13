@@ -15,9 +15,10 @@ test("Pet enforces lifecycle and owner-transfer rules", () => {
 });
 
 test("Registration rejects transitions from terminal states", () => {
-  const registration = new Registration({ status: "SUBMITTED" });
-  registration.transitionTo("UNDER_REVIEW").transitionTo("APPROVED");
+  const registration = new Registration({ status: "SUBMITTED", version: 2 });
+  registration.assertVersion(2).transitionTo("UNDER_REVIEW").transitionTo("APPROVED");
   assert.equal(registration.status, "APPROVED");
+  assert.throws(() => registration.assertVersion(1), { code: "REGISTRATION_VERSION_CONFLICT" });
   assert.throws(() => registration.transitionTo("REJECTED"), { code: "REGISTRATION_TRANSITION_NOT_ALLOWED" });
 });
 
