@@ -1,6 +1,6 @@
 export class WasteDashboardPolicy {
   routeWithoutGeometryCount(routes = []) {
-    return routes.filter((route) => !route.routeGeojson).length;
+    return routes.filter((route) => !route.routeGeojson || route.routeGeojson.properties?.geometryStatus === "RECALCULATION_REQUIRED").length;
   }
 
   selectedRoute(routes = [], routeId = "") {

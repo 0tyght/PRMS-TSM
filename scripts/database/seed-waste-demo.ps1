@@ -58,4 +58,15 @@ if ($LASTEXITCODE -ne 0) {
     throw "Waste demo data import failed"
 }
 
+Push-Location $repoRoot
+try {
+    & node "scripts/database/rebuild-waste-routing-demo.mjs"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Waste routing demo rebuild failed"
+    }
+}
+finally {
+    Pop-Location
+}
+
 Write-Host "Waste demo data loaded successfully" -ForegroundColor Green

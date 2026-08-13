@@ -44,7 +44,29 @@ export class ProposeWasteServiceUserRouteAssignmentUseCase {
     if (geometry?.type !== "LineString" || !Array.isArray(geometry.coordinates) || geometry.coordinates.length < 2
       || !Number.isFinite(baselineDistanceMeters) || baselineDistanceMeters <= 0
       || !Number.isFinite(baselineDurationSeconds) || baselineDurationSeconds <= 0) {
-      throw new Error("ROUTE_BASELINE_MISSING");
+      if (allStops.length === 1) {
+        const proposal = new WasteRouteProposal({
+          routeId,
+          stops: allStops,
+          geometry: {
+            type: "LineString",
+            coordinates: [[candidateStop.longitude, candidateStop.latitude], [candidateStop.longitude, candidateStop.latitude]],
+          },
+          distanceMeters: 0,
+          durationSeconds: 0,
+        });
+        return this.routeRepository.saveProposal(proposal);
+      }
+      const optimized = await this.routeOptimizer.optimize(allStops, { returnToStart: true });
+      const stopsById = new Map(allStops.map((stop) => [stop.id, stop]));
+      const proposal = new WasteRouteProposal({
+        routeId,
+        stops: optimized.orderedStopIds.map((stopId) => stopsById.get(stopId)).filter(Boolean),
+        geometry: optimized.geometry,
+        distanceMeters: optimized.distanceMeters,
+        durationSeconds: optimized.durationSeconds,
+      });
+      return this.routeRepository.saveProposal(proposal);
     }
 
     const insertionPlan = this.routeAssignmentService.planStopInsertion(serviceUser, route.routeGeojson);

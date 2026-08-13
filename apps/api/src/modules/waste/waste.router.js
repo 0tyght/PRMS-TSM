@@ -7,6 +7,7 @@ import { authenticate, requireRole } from "../../core/middleware.js";
 import { WasteOperationPlan } from "../../domain/waste/entities/WasteOperationPlan.js";
 import { HttpError } from "../../presentation/http/HttpError.js";
 import { RouteAssignmentService } from "./domain/RouteAssignmentService.js";
+import { WasteRouteLifecycleService } from "./domain/WasteRouteLifecycleService.js";
 import { WastePlanNumberService } from "./application/WastePlanNumberService.js";
 import { WasteTrackingTokenService } from "./application/WasteTrackingTokenService.js";
 
@@ -14,6 +15,7 @@ const router = Router();
 const planNumberService = new WastePlanNumberService();
 const trackingTokenService = new WasteTrackingTokenService({ secret: config.jwtSecret });
 const routeAssignmentService = new RouteAssignmentService();
+const routeLifecycleService = new WasteRouteLifecycleService();
 const THA_PHO_BOUNDS = Object.freeze({ minLatitude: 16.70, maxLatitude: 16.805, minLongitude: 100.15, maxLongitude: 100.27 });
 
 const dateSchema = z.string().date();
@@ -264,12 +266,35 @@ async function syncServiceUserStop(db, serviceUserId) {
   );
 }
 
+async function markRoutesForRecalculation(db, routeIds, reason) {
+  for (const routeId of new Set(routeIds.filter(Boolean))) {
+    const [rows] = await db.execute(
+      `SELECT CAST(route_geojson AS CHAR) AS routeGeojson FROM waste_routes WHERE id = ? FOR UPDATE`,
+      [routeId],
+    );
+    if (!rows[0]?.routeGeojson) continue;
+    const routeGeojson = routeLifecycleService.markForRecalculation(JSON.parse(rows[0].routeGeojson), reason);
+    await db.execute(`UPDATE waste_routes SET route_geojson = ? WHERE id = ?`, [JSON.stringify(routeGeojson), routeId]);
+  }
+}
+
 async function assertPlanAssignment(db, input, excludePlanId = null) {
-  const [route] = await db.execute(`SELECT id, is_active AS isActive FROM waste_routes WHERE id = ?`, [input.routeId]);
+  const [route] = await db.execute(
+    `SELECT r.id, r.is_active AS isActive, CAST(r.route_geojson AS CHAR) AS routeGeojson,
+            COUNT(CASE WHEN s.is_active = 1 THEN 1 END) AS activeStopCount
+     FROM waste_routes r LEFT JOIN waste_route_stops s ON s.route_id = r.id
+     WHERE r.id = ? GROUP BY r.id, r.is_active, r.route_geojson`,
+    [input.routeId],
+  );
   const [vehicle] = await db.execute(`SELECT id, status FROM waste_vehicles WHERE id = ?`, [input.vehicleId]);
   const [driver] = await db.execute(`SELECT id, is_active AS isActive FROM waste_drivers WHERE id = ?`, [input.driverId]);
 
   if (!route[0] || !toBoolean(route[0].isActive)) throw httpError(422, "เส้นทางที่เลือกถูกปิดใช้งานหรือไม่มีอยู่ในระบบ");
+  const routeReadiness = routeLifecycleService.readiness(
+    route[0].routeGeojson ? JSON.parse(route[0].routeGeojson) : null,
+    route[0].activeStopCount,
+  );
+  if (!routeReadiness.ready) throw httpError(422, routeReadiness.reason);
   if (!vehicle[0]) throw httpError(422, "ไม่พบรถเก็บขยะที่เลือก");
   if (["MAINTENANCE", "OUT_OF_SERVICE"].includes(vehicle[0].status)) throw httpError(422, "รถเก็บขยะที่เลือกอยู่ระหว่างซ่อมบำรุงหรือหยุดใช้งาน");
   if (!driver[0] || !toBoolean(driver[0].isActive)) throw httpError(422, "คนขับรถเก็บขยะที่เลือกถูกปิดใช้งานหรือไม่มีอยู่ในระบบ");
@@ -673,6 +698,17 @@ router.patch("/routes/:id", requireRole("ADMIN", "OFFICER"), async (req, res, ne
   try {
     const input = routeSchema.partial().parse(req.body);
     if (!Object.keys(input).length) throw httpError(422, "กรุณาระบุข้อมูลเส้นทางเก็บขยะที่ต้องการปรับปรุง");
+    if (input.routeGeojson !== undefined) throw httpError(422, "แนวถนนแก้ไขด้วยมือไม่ได้ กรุณาใช้คำสั่งคำนวณและยืนยันเส้นทางจากจุดรับบริการ");
+    if (input.isActive === false) {
+      const [[usage]] = await pool.execute(
+        `SELECT (SELECT COUNT(*) FROM waste_operation_plans WHERE route_id = ? AND status IN ('SCHEDULED','IN_PROGRESS','INTERRUPTED')) AS activePlanCount,
+                (SELECT COUNT(*) FROM waste_service_users WHERE route_id = ? AND is_active = 1) AS activeUserCount`,
+        [req.params.id, req.params.id],
+      );
+      if (Number(usage.activePlanCount || 0) || Number(usage.activeUserCount || 0)) {
+        throw httpError(409, "เส้นทางยังมีแผนงานหรือจุดรับบริการที่เปิดใช้งาน กรุณาย้ายข้อมูลออกก่อนปิดเส้นทาง");
+      }
+    }
     const fields = { routeCode: "route_code", routeName: "route_name", description: "description", routeGeojson: "route_geojson", isActive: "is_active" };
     const values = [];
     const sets = Object.entries(input).map(([key, value]) => { values.push(key === "routeGeojson" && value ? JSON.stringify(value) : value); return `${fields[key]} = ?`; });
@@ -965,7 +1001,7 @@ router.post("/service-users", requireRole("ADMIN", "OFFICER"), async (req, res, 
     const input = serviceUserSchema.parse(req.body);
     const id = crypto.randomUUID();
     await withTransaction(async (db) => {
-      await db.execute(`INSERT INTO waste_service_users (id, service_no, full_name, phone, house_no, village_id, address_detail, line_user_id, route_id, route_assignment_status, route_assigned_at, route_assigned_by, latitude, longitude, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, input.serviceNo, input.fullName, input.phone, input.houseNo, input.villageId, input.addressDetail, input.lineUserId, input.routeId, input.routeId ? "CONFIRMED" : "UNASSIGNED", input.routeId ? new Date() : null, input.routeId ? req.user.sub : null, input.latitude, input.longitude, input.isActive]);
+      await db.execute(`INSERT INTO waste_service_users (id, service_no, full_name, phone, house_no, village_id, address_detail, line_user_id, route_id, route_assignment_status, route_assigned_at, route_assigned_by, latitude, longitude, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'UNASSIGNED', NULL, NULL, ?, ?, ?)`, [id, input.serviceNo, input.fullName, input.phone, input.houseNo, input.villageId, input.addressDetail, input.lineUserId, input.latitude, input.longitude, input.isActive]);
       await syncServiceUserStop(db, id);
     });
     await audit(req.user.sub, "CREATE_WASTE_SERVICE_USER", "WASTE_SERVICE_USER", id, input, req.ip);
@@ -984,9 +1020,25 @@ router.patch("/service-users/:id", requireRole("ADMIN", "OFFICER"), async (req, 
     const sets = Object.entries(input).map(([key, value]) => { values.push(value); return `${fields[key]} = ?`; });
     values.push(req.params.id);
     await withTransaction(async (db) => {
+      const [beforeRows] = await db.execute(
+        `SELECT route_id AS routeId, latitude, longitude, is_active AS isActive FROM waste_service_users WHERE id = ? FOR UPDATE`,
+        [req.params.id],
+      );
+      if (!beforeRows[0]) throw httpError(404, "ไม่พบผู้ใช้บริการเก็บขยะ");
+      const before = beforeRows[0];
       const [result] = await db.execute(`UPDATE waste_service_users SET ${sets.join(", ")} WHERE id = ?`, values);
       if (!result.affectedRows) throw httpError(404, "ไม่พบผู้ใช้บริการเก็บขยะ");
       await syncServiceUserStop(db, req.params.id);
+      const [afterRows] = await db.execute(
+        `SELECT route_id AS routeId, latitude, longitude, is_active AS isActive FROM waste_service_users WHERE id = ?`,
+        [req.params.id],
+      );
+      const after = afterRows[0];
+      const locationChanged = Number(before.latitude) !== Number(after.latitude) || Number(before.longitude) !== Number(after.longitude);
+      const activeChanged = toBoolean(before.isActive) !== toBoolean(after.isActive);
+      if ((locationChanged || activeChanged) && before.routeId) {
+        await markRoutesForRecalculation(db, [before.routeId], locationChanged ? "SERVICE_LOCATION_CHANGED" : "SERVICE_STATUS_CHANGED");
+      }
     });
     await audit(req.user.sub, "UPDATE_WASTE_SERVICE_USER", "WASTE_SERVICE_USER", req.params.id, input, req.ip);
     return res.json({ data: { id: req.params.id, ...input } });
@@ -997,15 +1049,52 @@ router.get("/service-users/:id/route-suggestions", requireRole("ADMIN", "OFFICER
   try {
     const [[user], [routes]] = await Promise.all([
       pool.execute(`SELECT id, latitude, longitude FROM waste_service_users WHERE id = ? AND is_active = 1`, [req.params.id]),
-      pool.execute(`SELECT id, route_code AS routeCode, route_name AS routeName, CAST(route_geojson AS CHAR) AS routeGeojson FROM waste_routes WHERE is_active = 1 AND route_geojson IS NOT NULL ORDER BY route_code`),
+      pool.execute(`SELECT id, route_code AS routeCode, route_name AS routeName, CAST(route_geojson AS CHAR) AS routeGeojson FROM waste_routes WHERE is_active = 1 ORDER BY route_code`),
     ]);
     if (!user[0]) throw httpError(404, "ไม่พบผู้ใช้บริการเก็บขยะ");
     if (user[0].latitude == null || user[0].longitude == null) throw httpError(422, "กรุณาปักตำแหน่งจุดรับบริการก่อนค้นหาเส้นทางใกล้เคียง");
     const suggestions = routeAssignmentService.suggest(
       { latitude: Number(user[0].latitude), longitude: Number(user[0].longitude) },
-      routes.map((route) => ({ ...route, routeGeojson: JSON.parse(route.routeGeojson) })),
+      routes.filter((route) => route.routeGeojson).map((route) => ({ ...route, routeGeojson: JSON.parse(route.routeGeojson) })),
+      routes.length,
     ).map(({ routeGeojson, ...suggestion }) => suggestion);
+    const suggestedIds = new Set(suggestions.map((route) => route.id));
+    for (const route of routes) {
+      if (!suggestedIds.has(route.id)) suggestions.push({
+        id: route.id,
+        routeCode: route.routeCode,
+        routeName: route.routeName,
+        distanceMeters: null,
+        eligible: true,
+        recommended: false,
+        requiresInitialSetup: true,
+      });
+    }
     return res.json({ data: suggestions });
+  } catch (error) { next(error); }
+});
+
+router.delete("/service-users/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
+  try {
+    await withTransaction(async (db) => {
+      const [rows] = await db.execute(
+        `SELECT route_id AS routeId,
+                (SELECT COUNT(*) FROM waste_service_charges WHERE service_user_id = u.id) AS chargeCount,
+                (SELECT COUNT(*) FROM waste_stop_confirmations c INNER JOIN waste_route_stops s ON s.id = c.stop_id WHERE s.service_user_id = u.id) AS confirmationCount
+         FROM waste_service_users u WHERE u.id = ? FOR UPDATE`,
+        [req.params.id],
+      );
+      const current = rows[0];
+      if (!current) throw httpError(404, "ไม่พบผู้ใช้บริการเก็บขยะ");
+      if (Number(current.chargeCount || 0) || Number(current.confirmationCount || 0)) {
+        throw httpError(409, "ผู้ใช้บริการรายนี้มีประวัติค่าบริการหรือการจัดเก็บแล้ว กรุณาเปลี่ยนสถานะเป็นปิดบริการแทนการลบ");
+      }
+      await db.execute(`DELETE FROM waste_route_stops WHERE service_user_id = ?`, [req.params.id]);
+      await db.execute(`DELETE FROM waste_service_users WHERE id = ?`, [req.params.id]);
+      await markRoutesForRecalculation(db, [current.routeId], "SERVICE_USER_DELETED");
+    });
+    await audit(req.user.sub, "DELETE_WASTE_SERVICE_USER", "WASTE_SERVICE_USER", req.params.id, null, req.ip);
+    return res.status(204).end();
   } catch (error) { next(error); }
 });
 

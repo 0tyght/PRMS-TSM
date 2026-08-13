@@ -32,10 +32,14 @@ export class ConfirmWasteServiceUserRouteAssignmentUseCase {
     });
     if (stopsChanged) throw new Error("ROUTE_STOPS_CHANGED");
 
+    const inheritedProperties = route.routeGeojson?.properties || {};
+    const routeGeojson = proposal.toGeoJson(inheritedProperties);
+    routeGeojson.properties.geometryStatus = proposal.stops.length < 2 ? "RECALCULATION_REQUIRED" : "CONFIRMED_OSRM_OPTIMIZED";
+    if (proposal.stops.length < 2) routeGeojson.properties.recalculationReason = "ROUTE_REQUIRES_SECOND_SERVICE_POINT";
     await this.routeRepository.confirmServiceUserAssignment({
       proposal,
       serviceUser,
-      routeGeojson: proposal.toGeoJson(route.routeGeojson?.properties || {}),
+      routeGeojson,
       confirmedBy,
       ipAddress,
     });

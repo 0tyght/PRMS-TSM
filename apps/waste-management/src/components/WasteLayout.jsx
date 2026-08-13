@@ -1,5 +1,5 @@
 const MENU = Object.freeze([
-  ["dashboard", "ภาพรวม", "▦"], ["plans", "แผนปฏิบัติงาน", "◷"], ["route-planning", "จัดเส้นทางเก็บขยะ", "⌁"], ["resources", "รถ คนขับ และข้อมูลเส้นทาง", "▤"], ["tracking", "ติดตามรถเก็บขยะ", "⌖"], ["service-users", "ผู้ใช้บริการ", "⌂"], ["billing", "ค่าบริการ", "฿"], ["incidents", "เหตุระหว่างปฏิบัติงาน", "!"], ["reports", "รายงาน", "≡"],
+  ["dashboard", "ภาพรวม", "▦"], ["plans", "แผนปฏิบัติงาน", "◷"], ["resources", "รถ คนขับ และเส้นทาง", "▤"], ["tracking", "ติดตามรถเก็บขยะ", "⌖"], ["service-users", "จุดรับบริการ", "⌂"], ["billing", "ค่าบริการ", "฿"], ["incidents", "เหตุระหว่างปฏิบัติงาน", "!"], ["reports", "รายงาน", "≡"],
 ]);
 
 function initials(name) { return String(name || "เจ้าหน้าที่").trim().slice(0, 2) || "จน"; }

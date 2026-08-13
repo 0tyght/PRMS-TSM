@@ -38,6 +38,8 @@ export default function RouteOptimizationManager({ api, route, onClose, onSaved 
       if (!active) return;
       setStops(nextStops);
       setStartStopId(nextStops[0]?.id || "");
+      setEndStopId("");
+      setSelectionMode("START");
     }).catch((requestError) => {
       if (active) setError(requestError.message);
     }).finally(() => {
@@ -111,16 +113,16 @@ export default function RouteOptimizationManager({ api, route, onClose, onSaved 
   const comparison = useMemo(() => routeComparisonPolicy.compare({ currentRouteGeojson: route.routeGeojson, proposal }), [proposal, route.routeGeojson]);
 
   return <>
-    <div className="waste-route-steps" aria-label="ขั้นตอนจัดเส้นทาง"><b>1</b><span>เลือกต้นทางและปลายทาง</span><b>2</b><span>ตรวจเส้นทางที่ระบบคำนวณ</span><b>3</b><span>ยืนยันใช้งาน</span></div>
-    <p className="waste-modal-intro">จุดแวะเก็บขยะทั้งหมดดึงจากผู้ใช้บริการใน <strong>{route.routeName}</strong> อัตโนมัติ เจ้าหน้าที่เลือกเฉพาะจุดเริ่มต้นและจุดสิ้นสุด</p>
+    <div className="waste-route-steps" aria-label="ขั้นตอนจัดเส้นทาง"><b>1</b><span>ตรวจจุดรับบริการที่ระบบดึงมา</span><b>2</b><span>เลือกจุดเริ่มและจุดจบถ้าต้องการ</span><b>3</b><span>คำนวณ ตรวจแผนที่ และยืนยัน</span></div>
+    <p className="waste-modal-intro">ระบบดึงเฉพาะจุดรับบริการที่เปิดใช้งานและยืนยันอยู่ใน <strong>{route.routeName}</strong> แล้วจัดลำดับและคำนวณแนวถนนให้อัตโนมัติ หากไม่เลือกจุดสิ้นสุด รถจะกลับมาที่จุดเริ่มต้น</p>
     <ErrorNotice error={error} />
     {loading ? <LoadingState label="กำลังโหลดจุดเก็บขยะ" /> : !stops.length ? <EmptyState title="เส้นทางนี้ยังไม่มีจุดเก็บ" detail="ไปที่เมนูผู้ใช้บริการ แล้วกำหนดเส้นทางและตำแหน่งให้แต่ละรายก่อน" /> : <>
       <div className="waste-route-endpoints">
-        <label><span>จุดเริ่มต้น</span><select value={startStopId} onChange={(event) => changeStart(event.target.value)}>{stops.map((stop) => <option key={stop.id} value={stop.id}>{stopLabel(stop)}</option>)}</select></label>
-        <label><span>จุดสิ้นสุด</span><select value={endStopId} onChange={(event) => changeEnd(event.target.value)}><option value="">กลับมาที่จุดเริ่มต้น</option>{stops.filter((stop) => stop.id !== startStopId).map((stop) => <option key={stop.id} value={stop.id}>{stopLabel(stop)}</option>)}</select></label>
+        <label><span>จุดเริ่มต้นของรอบวิ่ง</span><select value={startStopId} onChange={(event) => changeStart(event.target.value)}>{stops.map((stop) => <option key={stop.id} value={stop.id}>{stopLabel(stop)}</option>)}</select></label>
+        <label><span>จุดจบรอบวิ่ง (ไม่บังคับ)</span><select value={endStopId} onChange={(event) => changeEnd(event.target.value)}><option value="">กลับมาที่จุดเริ่มต้น</option>{stops.filter((stop) => stop.id !== startStopId).map((stop) => <option key={stop.id} value={stop.id}>{stopLabel(stop)}</option>)}</select></label>
       </div>
       {!proposal ? <div className="waste-route-map-picker"><strong>หรือเลือกบนแผนที่</strong><div><button type="button" className={selectionMode === "START" ? "is-active" : ""} onClick={() => setSelectionMode("START")}>1. เลือกจุดเริ่มต้น</button><button type="button" className={selectionMode === "END" ? "is-active" : ""} onClick={() => setSelectionMode("END")}>2. เลือกจุดสิ้นสุด</button><button type="button" onClick={() => { setEndStopId(""); setProposal(null); }}>กลับจุดเริ่มต้น</button></div><span>กดปุ่มที่ต้องการ แล้วคลิกจุดเก็บบนแผนที่</span></div> : null}
-      <div className="waste-route-privacy-note"><strong>ทำงานอัตโนมัติ</strong><span>ระบบเรียงจุดแวะที่เหลือและคำนวณแนวเส้นตามถนน โดยส่งเฉพาะพิกัดไปยังบริการแผนที่</span></div>
+      <div className="waste-route-privacy-note"><strong>ข้อมูลต้นทางของเส้นทาง</strong><span>ระบบใช้พิกัดจุดรับบริการจากทะเบียนเท่านั้น ไม่ใช้เส้นวาดมือ และส่งเฉพาะพิกัดไปยังบริการคำนวณเส้นทาง OpenStreetMap/OSRM</span></div>
       {proposal ? <>
         <section className="waste-route-comparison"><header><div><p>BEFORE / AFTER</p><h3>{comparison.hasBaseline ? "เปรียบเทียบก่อนยืนยัน" : "ผลการคำนวณเส้นทางครั้งแรก"}</h3></div><span>{formatNumber(proposal.stops.length)} จุดเก็บ</span></header>{comparison.hasBaseline ? <div className="waste-route-comparison-table"><div className="is-heading"><span>รายการ</span><strong>เส้นทางเดิม</strong><strong>เส้นทางใหม่</strong><strong>ผลต่าง</strong></div><div><span>ระยะทาง</span><strong>{formatRouteDistance(comparison.currentDistanceMeters)}</strong><strong>{formatRouteDistance(comparison.proposedDistanceMeters)}</strong><strong className={comparison.distanceDeltaMeters > 0 ? "is-worse" : comparison.distanceDeltaMeters < 0 ? "is-better" : ""}>{formatDifference(comparison.distanceDeltaMeters, formatRouteDistance)}</strong></div><div><span>เวลาเดินรถ</span><strong>{formatRouteDuration(comparison.currentDurationSeconds)}</strong><strong>{formatRouteDuration(comparison.proposedDurationSeconds)}</strong><strong className={comparison.durationDeltaSeconds > 0 ? "is-worse" : comparison.durationDeltaSeconds < 0 ? "is-better" : ""}>{formatDifference(comparison.durationDeltaSeconds, formatRouteDuration)}</strong></div></div> : <div className="waste-route-proposal-summary"><article><span>จุดเก็บทั้งหมด</span><strong>{formatNumber(proposal.stops.length)} จุด</strong></article><article><span>ระยะทางประมาณ</span><strong>{formatRouteDistance(proposal.distanceMeters)}</strong></article><article><span>เวลาเดินรถประมาณ</span><strong>{formatRouteDuration(proposal.durationSeconds)}</strong></article></div>}</section>
         <div className="waste-route-proposal-map"><WasteMap previousRouteGeojson={comparison.hasBaseline ? route.routeGeojson : null} routeGeojson={proposal.routeGeojson} routeStops={mappedProposalStops} /></div>

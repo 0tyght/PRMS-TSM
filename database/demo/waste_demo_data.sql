@@ -5,8 +5,9 @@ SET @today = CURDATE();
 SET @month_start = DATE_FORMAT(CURDATE(), '%Y-%m-01');
 
 -- ชุดข้อมูลสาธิตระบบรถเก็บขยะ
--- ทุกระเบียนใช้รหัส DEMO และ UUID คงที่ เพื่อให้รันซ้ำได้โดยไม่สร้างข้อมูลซ้ำ
--- ไม่มี LINE User ID จริงและไม่มีการส่งข้อความออกไปยัง LINE
+-- จุดรับบริการ TEST-PT เป็นสถานที่สาธารณะที่ตรวจสอบพิกัดได้จาก OpenStreetMap
+-- ใช้ทดสอบระบบเท่านั้น ไม่ใช่ทะเบียนผู้ใช้บริการจริง และไม่มี LINE User ID จริง
+-- ต้องเรียกผ่าน scripts/database/seed-waste-demo.ps1 เพื่อคำนวณแนวถนนใหม่ด้วย OSRM หลังนำเข้าข้อมูลนี้
 
 INSERT INTO waste_vehicles
   (id, vehicle_code, registration_no, vehicle_type, capacity_kg, status, last_latitude, last_longitude, last_gps_at, note)
@@ -35,21 +36,24 @@ ON DUPLICATE KEY UPDATE full_name = VALUES(full_name), phone = VALUES(phone), li
 INSERT INTO waste_service_users
   (id, service_no, full_name, phone, house_no, village_id, address_detail, line_user_id, route_id, latitude, longitude, is_active)
 VALUES
-  ('a4000000-0000-4000-8000-000000000001','DEMO-S001','[ตัวอย่าง] ครัวเรือน 1','0990000101','12/1',(SELECT id FROM villages WHERE village_no=1 LIMIT 1),'ใกล้ศาลาประชาคม',NULL,'b1100000-0000-4000-8000-000000000001',16.7858000,100.2171000,1),
-  ('a4000000-0000-4000-8000-000000000002','DEMO-S002','[ตัวอย่าง] ครัวเรือน 2','0990000102','24',(SELECT id FROM villages WHERE village_no=2 LIMIT 1),'หน้าร้านชุมชน',NULL,'b1100000-0000-4000-8000-000000000001',16.7806000,100.2207000,1),
-  ('a4000000-0000-4000-8000-000000000003','DEMO-S003','[ตัวอย่าง] ครัวเรือน 3','0990000103','37/2',(SELECT id FROM villages WHERE village_no=3 LIMIT 1),'ถนนเลียบคลอง',NULL,'b1100000-0000-4000-8000-000000000001',16.7762000,100.2263000,1),
-  ('a4000000-0000-4000-8000-000000000004','DEMO-S004','[ตัวอย่าง] ครัวเรือน 4','0990000104','8',(SELECT id FROM villages WHERE village_no=4 LIMIT 1),'ต้นซอยเทศบาล 4',NULL,'b1100000-0000-4000-8000-000000000002',16.7734000,100.2260000,1),
-  ('a4000000-0000-4000-8000-000000000005','DEMO-S005','[ตัวอย่าง] ครัวเรือน 5','0990000105','19/3',(SELECT id FROM villages WHERE village_no=5 LIMIT 1),'ตรงข้ามร้านขายของชำ',NULL,'b1100000-0000-4000-8000-000000000002',16.7699000,100.2310000,1),
-  ('a4000000-0000-4000-8000-000000000006','DEMO-S006','[ตัวอย่าง] ครัวเรือน 6','0990000106','51',(SELECT id FROM villages WHERE village_no=6 LIMIT 1),'ปลายซอยชุมชน',NULL,'b1100000-0000-4000-8000-000000000002',16.7666000,100.2346000,1),
-  ('a4000000-0000-4000-8000-000000000007','DEMO-S007','[ตัวอย่าง] ครัวเรือน 7','0990000107','6/1',(SELECT id FROM villages WHERE village_no=7 LIMIT 1),'ใกล้ตลาดชุมชน',NULL,'b1100000-0000-4000-8000-000000000004',16.7794000,100.2206000,1),
-  ('a4000000-0000-4000-8000-000000000008','DEMO-S008','[ตัวอย่าง] ครัวเรือน 8','0990000108','28',(SELECT id FROM villages WHERE village_no=8 LIMIT 1),'ซอยแคบ รถเล็กเข้าถึง',NULL,'b1100000-0000-4000-8000-000000000004',16.7748000,100.2165000,1),
-  ('a4000000-0000-4000-8000-000000000009','DEMO-S009','[ตัวอย่าง] ครัวเรือน 9','0990000109','42/4',(SELECT id FROM villages WHERE village_no=9 LIMIT 1),'ใกล้จุดกลับรถ',NULL,'b1100000-0000-4000-8000-000000000004',16.7701000,100.2122000,1),
-  ('a4000000-0000-4000-8000-000000000010','DEMO-S010','[ตัวอย่าง] ครัวเรือน 10','0990000110','15',(SELECT id FROM villages WHERE village_no=10 LIMIT 1),'ข้างโรงเรียน',NULL,'b1100000-0000-4000-8000-000000000005',16.7719000,100.2242000,1),
-  ('a4000000-0000-4000-8000-000000000011','DEMO-S011','[ตัวอย่าง] ครัวเรือน 11','0990000111','33/1',(SELECT id FROM villages WHERE village_no=11 LIMIT 1),'ชุมชนตอนใต้',NULL,'b1100000-0000-4000-8000-000000000005',16.7659000,100.2210000,1),
-  ('a4000000-0000-4000-8000-000000000012','DEMO-S012','[ตัวอย่าง] ร้านค้าชุมชน','0990000112','59',(SELECT id FROM villages WHERE village_no=11 LIMIT 1),'จุดเก็บถังขยะขนาดใหญ่',NULL,'b1100000-0000-4000-8000-000000000005',16.7612000,100.2181000,1),
-  ('a4000000-0000-4000-8000-000000000013','DEMO-S013','[ตัวอย่าง] รอกำหนดเส้นทาง','0990000113','71',(SELECT id FROM villages WHERE village_no=5 LIMIT 1),'มีพิกัดแล้ว รอจัดเส้นทาง',NULL,NULL,16.7713000,100.2292000,1),
-  ('a4000000-0000-4000-8000-000000000014','DEMO-S014','[ตัวอย่าง] รอระบุตำแหน่ง','0990000114','88',(SELECT id FROM villages WHERE village_no=8 LIMIT 1),'ลงทะเบียนแล้ว รอระบุตำแหน่ง',NULL,NULL,NULL,NULL,1),
-  ('a4000000-0000-4000-8000-000000000015','DEMO-S015','[ตัวอย่าง] ยกเลิกบริการ','0990000115','99',(SELECT id FROM villages WHERE village_no=2 LIMIT 1),'ข้อมูลตัวอย่างผู้ใช้ที่ปิดบริการ',NULL,NULL,16.7812000,100.2199000,0)
+  ('a4000000-0000-4000-8000-000000000001','TEST-PT001','[จุดทดสอบ] NU Plaza','0991000001','จุด 001',(SELECT id FROM villages WHERE village_no=3 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000001',16.7523122,100.1964895,1),
+  ('a4000000-0000-4000-8000-000000000002','TEST-PT002','[จุดทดสอบ] KFC NU Plaza','0991000002','จุด 002',(SELECT id FROM villages WHERE village_no=3 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000001',16.7524901,100.1966076,1),
+  ('a4000000-0000-4000-8000-000000000003','TEST-PT003','[จุดทดสอบ] Mini Big C','0991000003','จุด 003',(SELECT id FROM villages WHERE village_no=3 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000001',16.7538191,100.1966309,1),
+  ('a4000000-0000-4000-8000-000000000004','TEST-PT004','[จุดทดสอบ] วัดยางเอน','0991000004','จุด 004',(SELECT id FROM villages WHERE village_no=6 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000002',16.7664083,100.2053897,1),
+  ('a4000000-0000-4000-8000-000000000005','TEST-PT005','[จุดทดสอบ] โรงเรียนวัดยางเอน','0991000005','จุด 005',(SELECT id FROM villages WHERE village_no=6 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000002',16.7677050,100.2060960,1),
+  ('a4000000-0000-4000-8000-000000000006','TEST-PT006','[จุดทดสอบ] Palm Place 4','0991000006','จุด 006',(SELECT id FROM villages WHERE village_no=4 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000002',16.7696774,100.1986194,1),
+  ('a4000000-0000-4000-8000-000000000007','TEST-PT007','[จุดทดสอบ] 7-Eleven ใกล้มหาวิทยาลัยนเรศวร','0991000007','จุด 007',(SELECT id FROM villages WHERE village_no=3 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000003',16.7527953,100.1958045,1),
+  ('a4000000-0000-4000-8000-000000000008','TEST-PT008','[จุดทดสอบ] วัดสะกัดน้ำมัน','0991000008','จุด 008',(SELECT id FROM villages WHERE village_no=3 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000003',16.7580059,100.2090336,1),
+  ('a4000000-0000-4000-8000-000000000009','TEST-PT009','[จุดทดสอบ] โรงเรียนชุมชน 1 วัดสะกัดน้ำมัน','0991000009','จุด 009',(SELECT id FROM villages WHERE village_no=3 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000003',16.7589599,100.2103441,1),
+  ('a4000000-0000-4000-8000-000000000010','TEST-PT010','[จุดทดสอบ] ศูนย์พัฒนาเด็กเล็กบ้านวังส้มซ่า','0991000010','จุด 010',(SELECT id FROM villages WHERE village_no=4 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000004',16.7600722,100.2115076,1),
+  ('a4000000-0000-4000-8000-000000000011','TEST-PT011','[จุดทดสอบ] สถานีบริการน้ำมัน PTT','0991000011','จุด 011',(SELECT id FROM villages WHERE village_no=4 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000004',16.7600451,100.2211993,1),
+  ('a4000000-0000-4000-8000-000000000012','TEST-PT012','[จุดทดสอบ] 7-Eleven สาขา PTT','0991000012','จุด 012',(SELECT id FROM villages WHERE village_no=4 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000004',16.7599445,100.2217447,1),
+  ('a4000000-0000-4000-8000-000000000013','TEST-PT013','[จุดทดสอบ] สถานีบริการน้ำมัน PT','0991000013','จุด 013',(SELECT id FROM villages WHERE village_no=7 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000005',16.7606521,100.1923585,1),
+  ('a4000000-0000-4000-8000-000000000014','TEST-PT014','[จุดทดสอบ] หมู่บ้านบุญธาริก','0991000014','จุด 014',(SELECT id FROM villages WHERE village_no=8 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000005',16.7699367,100.1953093,1),
+  ('a4000000-0000-4000-8000-000000000015','TEST-PT015','[จุดทดสอบ] สถานีบริการน้ำมัน Caltex','0991000015','จุด 015',(SELECT id FROM villages WHERE village_no=8 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000005',16.7764094,100.1980368,1),
+  ('a4000000-0000-4000-8000-000000000016','TEST-PT016','[จุดทดสอบ] วัดจุฬามณี','0991000016','จุด 016',(SELECT id FROM villages WHERE village_no=9 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000006',16.7878408,100.2163920,1),
+  ('a4000000-0000-4000-8000-000000000017','TEST-PT017','[จุดทดสอบ] Lotus''s Go Fresh','0991000017','จุด 017',(SELECT id FROM villages WHERE village_no=9 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000006',16.7891995,100.2205707,1),
+  ('a4000000-0000-4000-8000-000000000018','TEST-PT018','[จุดทดสอบ] วัดสว่างอารมณ์','0991000018','จุด 018',(SELECT id FROM villages WHERE village_no=9 LIMIT 1),'สถานที่สาธารณะจาก OpenStreetMap ใช้ทดสอบระบบเท่านั้น',NULL,'b1100000-0000-4000-8000-000000000006',16.7946911,100.2203579,1)
 ON DUPLICATE KEY UPDATE full_name=VALUES(full_name), phone=VALUES(phone), house_no=VALUES(house_no), village_id=VALUES(village_id),
   address_detail=VALUES(address_detail), line_user_id=NULL, route_id=VALUES(route_id), latitude=VALUES(latitude), longitude=VALUES(longitude), is_active=VALUES(is_active),
   route_assignment_status=IF(VALUES(route_id) IS NULL,'UNASSIGNED','CONFIRMED'),
@@ -57,19 +61,14 @@ ON DUPLICATE KEY UPDATE full_name=VALUES(full_name), phone=VALUES(phone), house_
   route_assigned_at=IF(VALUES(route_id) IS NULL,NULL,route_assigned_at),
   route_assigned_by=IF(VALUES(route_id) IS NULL,NULL,route_assigned_by);
 
-DELETE FROM waste_route_stops
-WHERE service_user_id IN (
-  'a4000000-0000-4000-8000-000000000013',
-  'a4000000-0000-4000-8000-000000000014',
-  'a4000000-0000-4000-8000-000000000015'
-);
+DELETE FROM waste_service_users WHERE service_no LIKE 'DEMO-S%';
 
 INSERT INTO waste_route_stops (id, route_id, service_user_id, sequence_no, stop_name, latitude, longitude, is_active)
-SELECT CONCAT('a5000000-0000-4000-8000-', LPAD(SUBSTRING(service_no, 7), 12, '0')),
+SELECT CONCAT('a5000000-0000-4000-8000-', LPAD(SUBSTRING(service_no, 8), 12, '0')),
        route_id, id, ROW_NUMBER() OVER (PARTITION BY route_id ORDER BY service_no),
-       CONCAT('บ้าน ', house_no, ' · ', full_name), latitude, longitude, 1
+       CONCAT('จุดทดสอบ · ', REPLACE(full_name, '[จุดทดสอบ] ', '')), latitude, longitude, 1
 FROM waste_service_users
-WHERE service_no BETWEEN 'DEMO-S001' AND 'DEMO-S012'
+WHERE service_no BETWEEN 'TEST-PT001' AND 'TEST-PT018'
 ON DUPLICATE KEY UPDATE route_id=VALUES(route_id), service_user_id=VALUES(service_user_id), sequence_no=VALUES(sequence_no),
   stop_name=VALUES(stop_name), latitude=VALUES(latitude), longitude=VALUES(longitude), is_active=1;
 

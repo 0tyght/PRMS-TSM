@@ -161,7 +161,9 @@ export class MariaDbWasteRouteRepository {
       for (const [index, stop] of proposal.stops.entries()) {
         await db.execute(`UPDATE waste_route_stops SET sequence_no = ? WHERE id = ? AND route_id = ?`, [index + 1, stop.assignmentCandidate ? actualStopId : stop.id, proposal.routeId]);
       }
-      routeGeojson.properties.geometryStatus = "CONFIRMED_OSRM_OPTIMIZED";
+      routeGeojson.properties.geometryStatus = proposal.stops.length < 2 ? "RECALCULATION_REQUIRED" : "CONFIRMED_OSRM_OPTIMIZED";
+      if (proposal.stops.length < 2) routeGeojson.properties.recalculationReason = "ROUTE_REQUIRES_SECOND_SERVICE_POINT";
+      else delete routeGeojson.properties.recalculationReason;
       routeGeojson.properties.confirmedAt = new Date().toISOString();
       routeGeojson.properties.confirmedBy = confirmedBy;
       routeGeojson.properties.routingWaypoints = routeGeojson.properties.routingWaypoints.map((stop) => (
