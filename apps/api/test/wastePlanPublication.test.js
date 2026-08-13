@@ -19,6 +19,7 @@ test("publishing one operational plan queues LINE notices only for its route", a
   const repository = {
     transaction: (work) => work({}),
     findPublicationContext: async () => record(),
+    countRecipients: async () => 3,
     markPublished: async (_db, input) => calls.push(["published", input]),
     enqueueRouteNotices: async (_db, input) => { calls.push(["notices", input]); return 3; },
   };
