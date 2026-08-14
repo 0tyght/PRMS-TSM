@@ -10,7 +10,31 @@ export function EmptyState({ title, detail, actionLabel, onAction }) {
 
 export function ErrorNotice({ error, onRetry }) {
   if (!error) return null;
-  return <div className="waste-error" role="alert"><div><strong>ไม่สามารถโหลดข้อมูลได้</strong><p>{error}</p></div>{onRetry ? <button type="button" onClick={onRetry}>ลองอีกครั้ง</button> : null}</div>;
+
+  return (
+    <div
+      className="waste-error"
+      role="alert"
+    >
+      <div>
+        <strong>
+          {onRetry
+            ? "ไม่สามารถโหลดข้อมูลได้"
+            : "ไม่สามารถดำเนินการได้"}
+        </strong>
+        <p>{error}</p>
+      </div>
+
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+        >
+          ลองอีกครั้ง
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 const STATUS_LABELS = Object.freeze({
@@ -58,5 +82,57 @@ export function Modal({ title, children, onClose }) {
 
 export function formatNumber(value) { return Number(value || 0).toLocaleString("th-TH"); }
 export function formatMoney(value) { return new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB", maximumFractionDigits: 2 }).format(Number(value || 0)); }
-export function formatDate(value, options = { dateStyle: "medium" }) { if (!value) return "-"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "-" : new Intl.DateTimeFormat("th-TH", options).format(date); }
-export function toDateInput(value = new Date()) { return new Date(value).toISOString().slice(0, 10); }
+export function formatDate(value, options = { dateStyle: "medium" }) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? "-"
+    : new Intl.DateTimeFormat(
+        "th-TH",
+        {
+          timeZone:
+            "Asia/Bangkok",
+          ...options,
+        },
+      ).format(date);
+}
+export function toDateInput(value = new Date()) {
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const parts =
+    Object.fromEntries(
+      new Intl.DateTimeFormat(
+        "en-US",
+        {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          timeZone:
+            "Asia/Bangkok",
+        },
+      )
+        .formatToParts(date)
+        .filter(
+          (part) =>
+            part.type !==
+            "literal",
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ],
+        ),
+    );
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}

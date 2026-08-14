@@ -677,11 +677,11 @@ function routeOptimizationError(error) {
     END_STOP_NOT_FOUND: [422, "ไม่พบจุดสิ้นสุดในเส้นทางนี้"],
     START_END_STOP_MUST_DIFFER: [422, "จุดเริ่มต้นและจุดสิ้นสุดต้องเป็นคนละจุด หรือเลือกกลับจุดเริ่มต้น"],
     SERVICE_USER_NOT_FOUND: [404, "ไม่พบผู้ใช้บริการเก็บขยะที่เปิดใช้งาน"],
-    SERVICE_USER_MISSING_LOCATION: [422, "กรุณาระบุตำแหน่งจุดเก็บขยะก่อนกำหนดเส้นทาง"],
-    SERVICE_LOCATION_OUTSIDE_ROUTE: [422, "จุดเก็บขยะอยู่ห่างจากเส้นทางเกินระยะที่กำหนด กรุณาตรวจพิกัดหรือเลือกเส้นทางที่อยู่ในระยะ"],
+    SERVICE_USER_MISSING_LOCATION: [422, "กรุณาระบุตำแหน่งสถานที่รับบริการก่อนกำหนดเส้นทาง"],
+    SERVICE_LOCATION_OUTSIDE_ROUTE: [422, "สถานที่รับบริการอยู่ห่างจากเส้นทางเกินระยะที่กำหนด กรุณาตรวจพิกัดหรือเลือกเส้นทางที่อยู่ในระยะ"],
     ASSIGNMENT_PROPOSAL_MISMATCH: [422, "ผลคำนวณนี้ไม่ตรงกับผู้ใช้บริการที่กำลังกำหนดเส้นทาง"],
     SERVICE_USER_ROUTE_CHANGED: [409, "เส้นทางของผู้ใช้บริการมีการเปลี่ยนแปลง กรุณาคำนวณใหม่"],
-    SERVICE_USER_LOCATION_CHANGED: [409, "ตำแหน่งจุดเก็บขยะมีการเปลี่ยนแปลง กรุณาคำนวณใหม่"],
+    SERVICE_USER_LOCATION_CHANGED: [409, "ตำแหน่งสถานที่รับบริการมีการเปลี่ยนแปลง กรุณาคำนวณใหม่"],
   };
   const [status, message] = errors[error.message] || [500, "ไม่สามารถจัดเส้นทางเก็บขยะได้"];
   return httpError(status, message);

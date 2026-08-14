@@ -21,6 +21,7 @@ const sourceRoots = [
   "apps/waste-management/src",
   "apps/portal/src",
   "apps/api/src/modules/waste",
+  "apps/api/src/domain/waste",
   "apps/api/src/modules/line",
 ];
 
