@@ -39,9 +39,9 @@ export class WasteLineShortcutCatalog {
   menu(actors = {}) {
     const actions = actors.citizen
       ? [
-          this.postback("กำหนดเก็บขยะ", "waste=citizen_schedule", "ดูกำหนดเก็บขยะ"),
+          this.postback("ตารางกำหนดการ", "waste=citizen_schedule", "ตารางกำหนดการเก็บขยะประจำพื้นที่"),
           this.postback("ตำแหน่งรถ", "waste=citizen_location", "ดูตำแหน่งรถเก็บขยะ"),
-          this.postback("ค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการขยะ"),
+          this.postback("ค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการเก็บขยะ"),
         ]
       : [this.postback("ลงทะเบียนบริการ", "waste=register", "ลงทะเบียนบริการเก็บขยะ")];
     actions.push(this.smartThaPhoHome());
@@ -50,15 +50,15 @@ export class WasteLineShortcutCatalog {
 
   driverGuest() {
     return this.normalize([
-      this.postback("เชื่อมบัญชีคนขับ", "waste=driver_link", "เชื่อมบัญชีคนขับรถเก็บขยะ"),
+      this.postback("ยืนยันตัวตน", "waste=driver_link", "ยืนยันตัวตนพนักงานประจำรถขยะ"),
     ]);
   }
 
   citizen() {
     return this.normalize([
-      this.postback("กำหนดเก็บขยะ", "waste=citizen_schedule", "ดูกำหนดเก็บขยะ"),
+      this.postback("ตารางกำหนดการ", "waste=citizen_schedule", "ตารางกำหนดการเก็บขยะประจำพื้นที่"),
       this.postback("ตำแหน่งรถ", "waste=citizen_location", "ดูตำแหน่งรถเก็บขยะ"),
-      this.postback("ค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการขยะ"),
+      this.postback("ค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการเก็บขยะ"),
       this.postback("เมนูขยะ", "waste=menu", "กลับเมนูบริการเก็บขยะ"),
       this.smartThaPhoHome(),
     ]);
@@ -85,8 +85,8 @@ export class WasteLineShortcutCatalog {
 
   driverMenu() {
     return this.normalize([
-      this.postback("งานของฉัน", "waste=driver_jobs", "ดูงานเก็บขยะของฉัน"),
-      this.postback("เมนูคนขับ", "waste=menu", "กลับเมนูคนขับรถเก็บขยะ"),
+      this.postback("งานของฉัน", "waste=driver_jobs", "ดูแผนปฏิบัติงานเก็บขยะที่ได้รับมอบหมาย"),
+      this.postback("เมนูพนักงาน", "waste=menu", "กลับเมนูพนักงานประจำรถขยะ"),
     ]);
   }
 
@@ -98,7 +98,7 @@ export class WasteLineShortcutCatalog {
     return this.normalize([
       this.postback("เปิด GPS ต่อเนื่อง", `waste=driver_gps&planId=${plan.id}`, `เปิด GPS ${plan.planNo}`),
       this.postback("ส่งตำแหน่งครั้งเดียว", `waste=driver_location&planId=${plan.id}`, `ส่งตำแหน่งรถ ${plan.planNo}`),
-      this.postback("ยืนยันจุดเก็บ", `waste=driver_stops&planId=${plan.id}`, `ยืนยันจุดเก็บ ${plan.planNo}`),
+      this.postback("ยืนยันการเก็บขยะ", `waste=driver_stops&planId=${plan.id}`, `ยืนยันการเก็บขยะ ${plan.planNo}`),
       this.postback("แจ้งเหตุ", `waste=driver_incident&planId=${plan.id}`, `แจ้งเหตุ ${plan.planNo}`),
       this.postback("เสร็จสิ้น", `waste=driver_complete&planId=${plan.id}`, `เสร็จสิ้น ${plan.planNo}`),
       ...this.driverMenu(),

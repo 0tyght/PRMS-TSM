@@ -44,7 +44,7 @@ export default function DriverTrackingPage({ trackingToken }) {
   useEffect(() => {
     let mounted = true;
     if (!trackingToken) {
-      setError("ไม่พบสิทธิ์ติดตาม กรุณาเปิดลิงก์จากเมนูงานคนขับใน LINE");
+      setError("ไม่พบสิทธิ์ติดตาม กรุณาเปิดลิงก์จากเมนูงานพนักงานประจำรถขยะใน LINE");
       setLoading(false);
       return undefined;
     }
@@ -107,18 +107,18 @@ export default function DriverTrackingPage({ trackingToken }) {
     }, { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 });
   }, [api, session, stopTracking]);
 
-  if (loading) return <main className="waste-driver-tracking"><section className="waste-driver-card"><p>กำลังตรวจสอบแผนปฏิบัติงาน…</p></section></main>;
+  if (loading) return <main className="waste-driver-tracking"><section className="waste-driver-card"><p>กำลังตรวจสอบแผนปฏิบัติงานเก็บขยะ…</p></section></main>;
 
   return <main className="waste-driver-tracking">
     <section className="waste-driver-card">
-      <header><span className="waste-driver-card__mark">ขย</span><div><small>SMART THA PHO · งานคนขับ</small><h1>ติดตาม GPS รถเก็บขยะ</h1></div></header>
+      <header><span className="waste-driver-card__mark">ขย</span><div><small>SMART THA PHO · งานพนักงานประจำรถขยะ</small><h1>ติดตาม GPS รถเก็บขยะ</h1></div></header>
       {session ? <>
         <div className="waste-driver-card__status" data-active={active}><i />{active ? "กำลังส่งตำแหน่งต่อเนื่อง" : STATUS_LABELS[session.status] || session.status}</div>
         <dl>
-          <div><dt>แผนงาน</dt><dd>{session.planNo}</dd></div>
+          <div><dt>แผนปฏิบัติงานเก็บขยะ</dt><dd>{session.planNo}</dd></div>
           <div><dt>เส้นทาง</dt><dd>{session.routeCode} · {session.routeName}</dd></div>
           <div><dt>รถเก็บขยะ</dt><dd>{session.vehicleCode} · {session.registrationNo}</dd></div>
-          <div><dt>คนขับ</dt><dd>{session.driverName}</dd></div>
+          <div><dt>พนักงานประจำรถขยะ</dt><dd>{session.driverName}</dd></div>
         </dl>
         <section className="waste-driver-card__telemetry">
           <div><small>ส่งสำเร็จ</small><strong>{sentCount} ครั้ง</strong></div>

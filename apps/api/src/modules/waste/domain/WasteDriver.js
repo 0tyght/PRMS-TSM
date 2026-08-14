@@ -59,7 +59,7 @@ export class WasteDriver {
     if (Number(usageCount || 0) > 0) {
       throw new DomainRuleViolation(
         "WASTE_DRIVER_HAS_HISTORY",
-        "คนขับรายนี้มีประวัติการปฏิบัติงานแล้ว กรุณาปิดการใช้งานแทนการลบ",
+        "พนักงานประจำรถขยะรายนี้มีประวัติการปฏิบัติงานแล้ว กรุณายกเลิกการใช้งานแทนการลบ",
         { status: 409 },
       );
     }

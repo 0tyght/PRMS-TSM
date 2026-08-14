@@ -51,7 +51,7 @@ export default function WasteMap({ plans = [], routeGeojson = null, previousRout
       const line = segment.map((point) => [Number(point.latitude), Number(point.longitude)]).filter((point) => point.every(Number.isFinite));
       if (line.length > 1) L.polyline(line, { color: "#2476a8", weight: 4, opacity: 0.82 }).addTo(layer);
     });
-    plans.forEach((plan) => { const latitude = Number(plan.latitude); const longitude = Number(plan.longitude); if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return; const marker = L.circleMarker([latitude, longitude], { radius: 10, weight: 3, color: "#fff", fillColor: plan.status === "IN_PROGRESS" ? "#176323" : "#8dcc1c", fillOpacity: 1 }).addTo(layer); marker.bindPopup(`<strong>${plan.vehicleCode || "รถเก็บขยะ"}</strong><br>${plan.routeName || "ไม่ระบุเส้นทาง"}<br>${plan.driverName || "ไม่ระบุคนขับ"}`); points.push([latitude, longitude]); });
+    plans.forEach((plan) => { const latitude = Number(plan.latitude); const longitude = Number(plan.longitude); if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return; const marker = L.circleMarker([latitude, longitude], { radius: 10, weight: 3, color: "#fff", fillColor: plan.status === "IN_PROGRESS" ? "#176323" : "#8dcc1c", fillOpacity: 1 }).addTo(layer); marker.bindPopup(`<strong>${plan.vehicleCode || "รถเก็บขยะ"}</strong><br>${plan.routeName || "ไม่ระบุเส้นทาง"}<br>${plan.driverName || "ไม่ระบุพนักงานประจำรถขยะ"}`); points.push([latitude, longitude]); });
     if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [34, 34], maxZoom: 16 });
     return () => layer.remove();
   }, [plans, previousRouteGeojson, routeGeojson, routeStops, history, historySegments, onStopClick]);

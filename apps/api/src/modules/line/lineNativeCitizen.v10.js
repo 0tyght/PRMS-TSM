@@ -1,4 +1,4 @@
-﻿import crypto from "node:crypto";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -2303,7 +2303,7 @@ export function buildStatusMenuActions(pet) {
       postbackAction(
         "แจ้งย้ายออก",
         `action=status_set&petId=${petId}&value=MOVED_OUT`,
-        `แจ้ง ${pet?.petName || "สัตว์เลี้ยง"} ย้ายออกจากพื้นที่เทศบาลท่าโพธ์`,
+        `แจ้ง ${pet?.petName || "สัตว์เลี้ยง"} ย้ายออกจากพื้นที่เทศบาลเมืองท่าโพธิ์`,
       ),
     );
   }

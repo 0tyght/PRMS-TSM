@@ -1,8 +1,8 @@
 const STATUS_LABELS = Object.freeze({
-  SCHEDULED: "ตามแผน",
-  IN_PROGRESS: "กำลังเก็บขยะ",
+  SCHEDULED: "ยังไม่เริ่มปฏิบัติงาน",
+  IN_PROGRESS: "กำลังปฏิบัติงาน",
   INTERRUPTED: "หยุดชะงักชั่วคราว",
-  COMPLETED: "ดำเนินการแล้ว",
+  COMPLETED: "ปฏิบัติงานเสร็จสิ้น",
 });
 
 function formatThaiDate(value, withTime = false) {
@@ -45,13 +45,13 @@ export class WasteCitizenScheduleService {
 
   toLineText(result) {
     if (result.state === "UNREGISTERED") {
-      return "ยังไม่พบทะเบียนผู้ใช้บริการ กรุณาลงทะเบียนก่อน";
+      return "ยังไม่พบทะเบียนผู้ใช้บริการเก็บขยะ กรุณาลงทะเบียนก่อน";
     }
     if (result.state === "UNASSIGNED") {
-      return "เทศบาลยังไม่ได้กำหนดเส้นทางรับผิดชอบให้ทะเบียนนี้ กรุณาติดต่อเจ้าหน้าที่เทศบาลท่าโพธ์";
+      return "เทศบาลเมืองท่าโพธิ์ยังไม่ได้กำหนดเส้นทางเก็บขยะให้สถานที่รับบริการนี้ กรุณาติดต่อเจ้าหน้าที่";
     }
     if (result.state === "EMPTY") {
-      return "ยังไม่มีกำหนดการเก็บขยะรอบถัดไปสำหรับพื้นที่ของคุณ";
+      return "ยังไม่มีตารางกำหนดการเก็บขยะประจำพื้นที่รอบถัดไปสำหรับสถานที่รับบริการของคุณ";
     }
 
     const lines = result.schedules.map((row, index) => {
@@ -61,6 +61,6 @@ export class WasteCitizenScheduleService {
       const status = STATUS_LABELS[row.status] || row.status;
       return `${index + 1}. ${formatThaiDate(row.scheduledDate)} · ${start}\n   ${row.routeCode} ${row.routeName}\n   สถานะ: ${status}`;
     });
-    return `กำหนดเก็บขยะประจำพื้นที่ของคุณ\n${lines.join("\n")}`;
+    return `ตารางกำหนดการเก็บขยะประจำพื้นที่ของคุณ\n${lines.join("\n")}`;
   }
 }

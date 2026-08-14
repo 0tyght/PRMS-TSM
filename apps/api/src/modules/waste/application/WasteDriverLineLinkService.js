@@ -59,7 +59,7 @@ export class WasteDriverLineLinkService {
     if (!driver) {
       throw new DomainRuleViolation(
         "WASTE_DRIVER_NOT_FOUND",
-        "ไม่พบข้อมูลคนขับรถเก็บขยะ",
+        "ไม่พบข้อมูลพนักงานประจำรถขยะ",
         { status: 404 },
       );
     }

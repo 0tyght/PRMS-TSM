@@ -11,13 +11,13 @@ export class WasteRouteLifecycleService {
 
   readiness(routeGeojson, activeStopCount) {
     if (Number(activeStopCount) < 2) {
-      return { ready: false, reason: "เส้นทางต้องมีจุดรับบริการอย่างน้อย 2 จุด" };
+      return { ready: false, reason: "เส้นทางต้องมีจุดเก็บขยะอย่างน้อย 2 จุด" };
     }
     if (!routeGeojson || routeGeojson.type !== "Feature" || routeGeojson.geometry?.type !== "LineString" || routeGeojson.geometry.coordinates?.length < 2) {
-      return { ready: false, reason: "เส้นทางนี้ยังไม่ได้คำนวณแนวถนนจากจุดรับบริการ" };
+      return { ready: false, reason: "เส้นทางนี้ยังไม่ได้คำนวณแนวถนนจากจุดเก็บขยะ" };
     }
     if (routeGeojson.properties?.geometryStatus === "RECALCULATION_REQUIRED") {
-      return { ready: false, reason: "ข้อมูลจุดรับบริการเปลี่ยนแปลง กรุณาคำนวณและยืนยันเส้นทางใหม่" };
+      return { ready: false, reason: "ข้อมูลจุดเก็บขยะเปลี่ยนแปลง กรุณาคำนวณและยืนยันเส้นทางใหม่" };
     }
     return { ready: true, reason: null };
   }

@@ -452,7 +452,7 @@ export class WasteServiceUserService {
     ) {
       throw new DomainRuleViolation(
         "WASTE_SERVICE_USER_LOCATION_REQUIRED",
-        "กรุณาปักตำแหน่งจุดรับบริการก่อนค้นหาเส้นทางใกล้เคียง",
+        "กรุณาปักตำแหน่งสถานที่รับบริการก่อนค้นหาเส้นทางใกล้เคียง",
         { status: 422 },
       );
     }

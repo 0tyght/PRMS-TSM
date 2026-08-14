@@ -30,7 +30,7 @@ VALUES
   ('b2000000-0000-4000-8000-000000000002','b1000000-0000-4000-8000-000000000002','[ข้อมูลสาธิต] มาลี รักสัตว์',NULL,'1002','0981000002',NULL,NOW(),1,NULL),
   ('b2000000-0000-4000-8000-000000000003','b1000000-0000-4000-8000-000000000003','[ข้อมูลสาธิต] สมชาย พร้อมดูแล',NULL,'1003','0981000003',NULL,NOW(),1,NULL),
   ('b2000000-0000-4000-8000-000000000004','b1000000-0000-4000-8000-000000000004','[ข้อมูลสาธิต] อรทัย มีเมตตา',NULL,'1004','0981000004',NULL,NOW(),1,NULL),
-  ('b2000000-0000-4000-8000-000000000005','b1000000-0000-4000-8000-000000000005','[ข้อมูลสาธิต] วิชัย ท่าโพธ์',NULL,'1005','0981000005',NULL,NOW(),1,NULL),
+  ('b2000000-0000-4000-8000-000000000005','b1000000-0000-4000-8000-000000000005','[ข้อมูลสาธิต] วิชัย ท่าโพธิ์',NULL,'1005','0981000005',NULL,NOW(),1,NULL),
   ('b2000000-0000-4000-8000-000000000006','b1000000-0000-4000-8000-000000000006','[ข้อมูลสาธิต] นฤมล อุ่นใจ',NULL,'1006','0981000006',NULL,NOW(),1,NULL),
   ('b2000000-0000-4000-8000-000000000007','b1000000-0000-4000-8000-000000000007','[ข้อมูลสาธิต] ประเสริฐ ร่วมใจ',NULL,'1007','0981000007',NULL,NOW(),1,NULL),
   ('b2000000-0000-4000-8000-000000000008','b1000000-0000-4000-8000-000000000008','[ข้อมูลสาธิต] สายใจ พักการใช้งาน',NULL,'1008','0981000008',NULL,NOW(),0,NULL)
@@ -72,7 +72,7 @@ VALUES
   ('b4000000-0000-4000-8000-000000000009','TP-DEMO-REG-009','b2000000-0000-4000-8000-000000000002','b3000000-0000-4000-8000-000000000009','SUBMITTED',NULL,NULL,DATE_SUB(NOW(),INTERVAL 5 HOUR),NULL),
   ('b4000000-0000-4000-8000-000000000010','TP-DEMO-REG-010','b2000000-0000-4000-8000-000000000003','b3000000-0000-4000-8000-000000000010','NEED_MORE_INFO','กรุณาส่งภาพสัตว์ให้เห็นสีและลักษณะชัดเจน',@demo_user_id,DATE_SUB(NOW(),INTERVAL 3 DAY),DATE_SUB(NOW(),INTERVAL 1 DAY)),
   ('b4000000-0000-4000-8000-000000000011','TP-DEMO-REG-011','b2000000-0000-4000-8000-000000000004','b3000000-0000-4000-8000-000000000011','UNDER_REVIEW',NULL,@demo_user_id,DATE_SUB(NOW(),INTERVAL 1 DAY),NULL),
-  ('b4000000-0000-4000-8000-000000000012','TP-DEMO-REG-012','b2000000-0000-4000-8000-000000000005','b3000000-0000-4000-8000-000000000012','REJECTED','ที่อยู่ไม่อยู่ในเขตเทศบาลท่าโพธ์',@demo_user_id,DATE_SUB(NOW(),INTERVAL 7 DAY),DATE_SUB(NOW(),INTERVAL 5 DAY))
+  ('b4000000-0000-4000-8000-000000000012','TP-DEMO-REG-012','b2000000-0000-4000-8000-000000000005','b3000000-0000-4000-8000-000000000012','REJECTED','ที่อยู่ไม่อยู่ในเขตเทศบาลเมืองท่าโพธิ์',@demo_user_id,DATE_SUB(NOW(),INTERVAL 7 DAY),DATE_SUB(NOW(),INTERVAL 5 DAY))
 ON DUPLICATE KEY UPDATE
   owner_id=VALUES(owner_id), pet_id=VALUES(pet_id), status=VALUES(status), review_note=VALUES(review_note),
   reviewed_by=VALUES(reviewed_by), submitted_at=VALUES(submitted_at), reviewed_at=VALUES(reviewed_at);
@@ -80,20 +80,20 @@ ON DUPLICATE KEY UPDATE
 INSERT INTO vaccination_records
   (id, pet_id, vaccine_name, lot_no, vaccinated_at, next_due_at, provider_name, recorded_by)
 VALUES
-  ('b5000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000001','วัคซีนป้องกันโรคพิษสุนัขบ้า','DEMO-L001',DATE_SUB(CURDATE(),INTERVAL 2 MONTH),DATE_ADD(CURDATE(),INTERVAL 10 MONTH),'เทศบาลท่าโพธ์',@demo_user_id),
+  ('b5000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000001','วัคซีนป้องกันโรคพิษสุนัขบ้า','DEMO-L001',DATE_SUB(CURDATE(),INTERVAL 2 MONTH),DATE_ADD(CURDATE(),INTERVAL 10 MONTH),'เทศบาลเมืองท่าโพธิ์',@demo_user_id),
   ('b5000000-0000-4000-8000-000000000002','b3000000-0000-4000-8000-000000000002','วัคซีนป้องกันโรคพิษสุนัขบ้า','DEMO-L002',DATE_SUB(CURDATE(),INTERVAL 11 MONTH),DATE_ADD(CURDATE(),INTERVAL 12 DAY),'คลินิกสัตวแพทย์ตัวอย่าง',@demo_user_id),
-  ('b5000000-0000-4000-8000-000000000003','b3000000-0000-4000-8000-000000000003','วัคซีนป้องกันโรคพิษสุนัขบ้า','DEMO-L003',DATE_SUB(CURDATE(),INTERVAL 14 MONTH),DATE_SUB(CURDATE(),INTERVAL 2 MONTH),'เทศบาลท่าโพธ์',@demo_user_id),
+  ('b5000000-0000-4000-8000-000000000003','b3000000-0000-4000-8000-000000000003','วัคซีนป้องกันโรคพิษสุนัขบ้า','DEMO-L003',DATE_SUB(CURDATE(),INTERVAL 14 MONTH),DATE_SUB(CURDATE(),INTERVAL 2 MONTH),'เทศบาลเมืองท่าโพธิ์',@demo_user_id),
   ('b5000000-0000-4000-8000-000000000004','b3000000-0000-4000-8000-000000000007','วัคซีนรวมสุนัข','DEMO-L004',DATE_SUB(CURDATE(),INTERVAL 4 MONTH),NULL,'คลินิกสัตวแพทย์ตัวอย่าง',@demo_user_id),
-  ('b5000000-0000-4000-8000-000000000005','b3000000-0000-4000-8000-000000000008','วัคซีนป้องกันโรคพิษสุนัขบ้า','DEMO-L005',DATE_SUB(CURDATE(),INTERVAL 15 MONTH),DATE_SUB(CURDATE(),INTERVAL 3 MONTH),'เทศบาลท่าโพธ์',@demo_user_id)
+  ('b5000000-0000-4000-8000-000000000005','b3000000-0000-4000-8000-000000000008','วัคซีนป้องกันโรคพิษสุนัขบ้า','DEMO-L005',DATE_SUB(CURDATE(),INTERVAL 15 MONTH),DATE_SUB(CURDATE(),INTERVAL 3 MONTH),'เทศบาลเมืองท่าโพธิ์',@demo_user_id)
 ON DUPLICATE KEY UPDATE vaccine_name=VALUES(vaccine_name), lot_no=VALUES(lot_no), vaccinated_at=VALUES(vaccinated_at),
   next_due_at=VALUES(next_due_at), provider_name=VALUES(provider_name), recorded_by=VALUES(recorded_by);
 
 INSERT INTO sterilization_records
   (id, pet_id, sterilized_at, provider_name, note, recorded_by)
 VALUES
-  ('b6000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000001',DATE_SUB(CURDATE(),INTERVAL 18 MONTH),'เทศบาลท่าโพธ์','โครงการทำหมันสัตว์เลี้ยง',@demo_user_id),
+  ('b6000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000001',DATE_SUB(CURDATE(),INTERVAL 18 MONTH),'เทศบาลเมืองท่าโพธิ์','โครงการทำหมันสัตว์เลี้ยง',@demo_user_id),
   ('b6000000-0000-4000-8000-000000000002','b3000000-0000-4000-8000-000000000006',DATE_SUB(CURDATE(),INTERVAL 6 MONTH),'คลินิกสัตวแพทย์ตัวอย่าง','เจ้าของนำสัตว์เข้ารับบริการ',@demo_user_id),
-  ('b6000000-0000-4000-8000-000000000003','b3000000-0000-4000-8000-000000000008',DATE_SUB(CURDATE(),INTERVAL 3 YEAR),'เทศบาลท่าโพธ์','ข้อมูลสาธิต',@demo_user_id)
+  ('b6000000-0000-4000-8000-000000000003','b3000000-0000-4000-8000-000000000008',DATE_SUB(CURDATE(),INTERVAL 3 YEAR),'เทศบาลเมืองท่าโพธิ์','ข้อมูลสาธิต',@demo_user_id)
 ON DUPLICATE KEY UPDATE sterilized_at=VALUES(sterilized_at), provider_name=VALUES(provider_name), note=VALUES(note), recorded_by=VALUES(recorded_by);
 
 INSERT INTO pet_status_history
@@ -101,7 +101,7 @@ INSERT INTO pet_status_history
 VALUES
   ('b7000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000001',NULL,'ACTIVE',DATE_SUB(NOW(),INTERVAL 2 YEAR),'ขึ้นทะเบียนครั้งแรก',@demo_user_id),
   ('b7000000-0000-4000-8000-000000000002','b3000000-0000-4000-8000-000000000003','ACTIVE','MISSING',DATE_SUB(NOW(),INTERVAL 4 DAY),'เจ้าของแจ้งว่าสูญหายบริเวณหมู่ 2',@demo_user_id),
-  ('b7000000-0000-4000-8000-000000000003','b3000000-0000-4000-8000-000000000004','ACTIVE','MOVED_OUT',DATE_SUB(NOW(),INTERVAL 2 MONTH),'ย้ายออกนอกเขตเทศบาลท่าโพธ์',@demo_user_id),
+  ('b7000000-0000-4000-8000-000000000003','b3000000-0000-4000-8000-000000000004','ACTIVE','MOVED_OUT',DATE_SUB(NOW(),INTERVAL 2 MONTH),'ย้ายออกนอกเขตเทศบาลเมืองท่าโพธิ์',@demo_user_id),
   ('b7000000-0000-4000-8000-000000000004','b3000000-0000-4000-8000-000000000005','ACTIVE','DECEASED',DATE_SUB(NOW(),INTERVAL 3 MONTH),'เสียชีวิตตามธรรมชาติ',@demo_user_id)
 ON DUPLICATE KEY UPDATE old_status=VALUES(old_status), new_status=VALUES(new_status), effective_at=VALUES(effective_at), note=VALUES(note), recorded_by=VALUES(recorded_by);
 
@@ -117,7 +117,7 @@ INSERT INTO citizen_submissions
   (id, reference_no, owner_id, pet_id, subject_type, current_payload, proposed_payload, status, review_note, reviewed_by, version, submitted_at, reviewed_at)
 VALUES
   ('b9000000-0000-4000-8000-000000000001','TP-DEMO-DATA-001','b2000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000001','PET_UPDATE',JSON_OBJECT('color','น้ำตาล'),JSON_OBJECT('petName','เจ้าตาล','species','DOG','sex','MALE','breed','ไทยผสม','color','น้ำตาลเข้ม','birthDate',DATE_FORMAT(DATE_SUB(CURDATE(),INTERVAL 3 YEAR),'%Y-%m-%d'),'microchipNo','900000000000001','reason','ปรับปรุงสีและลักษณะให้ชัดเจน'),'SUBMITTED',NULL,NULL,1,DATE_SUB(NOW(),INTERVAL 6 HOUR),NULL),
-  ('b9000000-0000-4000-8000-000000000002','TP-DEMO-DATA-002','b2000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000002','VACCINATION',JSON_OBJECT('vaccineName','วัคซีนป้องกันโรคพิษสุนัขบ้า'),JSON_OBJECT('vaccineName','วัคซีนป้องกันโรคพิษสุนัขบ้า','vaccinatedAt',DATE_FORMAT(CURDATE(),'%Y-%m-%d'),'nextDueAt',DATE_FORMAT(DATE_ADD(CURDATE(),INTERVAL 1 YEAR),'%Y-%m-%d'),'lotNo','DEMO-NEW','providerName','เทศบาลท่าโพธ์'),'UNDER_REVIEW',NULL,@demo_user_id,1,DATE_SUB(NOW(),INTERVAL 1 DAY),NULL),
+  ('b9000000-0000-4000-8000-000000000002','TP-DEMO-DATA-002','b2000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000002','VACCINATION',JSON_OBJECT('vaccineName','วัคซีนป้องกันโรคพิษสุนัขบ้า'),JSON_OBJECT('vaccineName','วัคซีนป้องกันโรคพิษสุนัขบ้า','vaccinatedAt',DATE_FORMAT(CURDATE(),'%Y-%m-%d'),'nextDueAt',DATE_FORMAT(DATE_ADD(CURDATE(),INTERVAL 1 YEAR),'%Y-%m-%d'),'lotNo','DEMO-NEW','providerName','เทศบาลเมืองท่าโพธิ์'),'UNDER_REVIEW',NULL,@demo_user_id,1,DATE_SUB(NOW(),INTERVAL 1 DAY),NULL),
   ('b9000000-0000-4000-8000-000000000003','TP-DEMO-DATA-003','b2000000-0000-4000-8000-000000000005','b3000000-0000-4000-8000-000000000006','STERILIZATION',NULL,JSON_OBJECT('sterilizedAt',DATE_FORMAT(DATE_SUB(CURDATE(),INTERVAL 7 DAY),'%Y-%m-%d'),'providerName','คลินิกสัตวแพทย์ตัวอย่าง','note','แนบข้อมูลไม่ครบ'),'NEED_MORE_INFO','กรุณาส่งวันที่และภาพหลักฐานการทำหมันให้ชัดเจน',@demo_user_id,2,DATE_SUB(NOW(),INTERVAL 3 DAY),DATE_SUB(NOW(),INTERVAL 1 DAY)),
   ('b9000000-0000-4000-8000-000000000004','TP-DEMO-DATA-004','b2000000-0000-4000-8000-000000000002','b3000000-0000-4000-8000-000000000003','PET_STATUS',JSON_OBJECT('status','ACTIVE'),JSON_OBJECT('status','MISSING','effectiveAt',DATE_FORMAT(DATE_SUB(CURDATE(),INTERVAL 4 DAY),'%Y-%m-%d'),'reason','สูญหายบริเวณหมู่ 2'),'APPROVED','ตรวจสอบข้อมูลแล้ว',@demo_user_id,1,DATE_SUB(NOW(),INTERVAL 5 DAY),DATE_SUB(NOW(),INTERVAL 4 DAY)),
   ('b9000000-0000-4000-8000-000000000005','TP-DEMO-DATA-005','b2000000-0000-4000-8000-000000000006','b3000000-0000-4000-8000-000000000007','OWNER_TRANSFER',JSON_OBJECT('ownerId','b2000000-0000-4000-8000-000000000006'),JSON_OBJECT('newOwnerName','ผู้รับโอนตัวอย่าง','newOwnerPhone','0981999999','newHouseNo','99','newVillageId',7,'newVillageNo',7,'newAddressDetail','ข้อมูลสาธิต','newLatitude',16.7791,'newLongitude',100.2175,'transferredAt',DATE_FORMAT(CURDATE(),'%Y-%m-%d'),'reason','ข้อมูลยืนยันผู้รับโอนไม่ครบ'),'REJECTED','ไม่พบหลักฐานยืนยันจากผู้รับโอน',@demo_user_id,1,DATE_SUB(NOW(),INTERVAL 8 DAY),DATE_SUB(NOW(),INTERVAL 6 DAY))

@@ -78,7 +78,7 @@ export class WasteIncidentService {
     if (!current) {
       throw new DomainRuleViolation(
         "WASTE_INCIDENT_NOT_FOUND",
-        "ไม่พบเหตุระหว่างปฏิบัติงาน",
+        "ไม่พบเหตุระหว่างการปฏิบัติงานเก็บขยะ",
         { status: 404 },
       );
     }
@@ -99,7 +99,7 @@ export class WasteIncidentService {
     if (!saved) {
       throw new DomainRuleViolation(
         "WASTE_INCIDENT_NOT_FOUND",
-        "ไม่พบเหตุระหว่างปฏิบัติงาน",
+        "ไม่พบเหตุระหว่างการปฏิบัติงานเก็บขยะ",
         { status: 404 },
       );
     }

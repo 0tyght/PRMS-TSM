@@ -21,7 +21,7 @@ test("creates a PDF with an embedded Thai font", async () => {
 });
 
 test("creates reusable operational XLSX and PDF reports", async () => {
-  const report = { title: "รายงานคุณภาพข้อมูล เทศบาลท่าโพธ์", sheetName: "คุณภาพข้อมูล", headers: ["เลขทะเบียน", "ประเด็น"], rows: [["PET-001", "MISSING_COORDINATES"]] };
+  const report = { title: "รายงานคุณภาพข้อมูล เทศบาลเมืองท่าโพธิ์", sheetName: "คุณภาพข้อมูล", headers: ["เลขทะเบียน", "ประเด็น"], rows: [["PET-001", "MISSING_COORDINATES"]] };
   const metadata = { cutoffLabel: "20 กรกฎาคม 2569" };
   const xlsx = createTabularReportXlsx(report, metadata);
   assert.equal(xlsx.subarray(0, 2).toString(), "PK");

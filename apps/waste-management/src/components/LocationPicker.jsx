@@ -37,13 +37,13 @@ export default function LocationPicker({ latitude, longitude, onChange }) {
       weight: 3,
       fillColor: "#278432",
       fillOpacity: 1,
-    }).addTo(map).bindTooltip("จุดรับบริการ", { direction: "top" });
+    }).addTo(map).bindTooltip("สถานที่รับบริการ", { direction: "top" });
     map.panTo([latitude, longitude]);
   }, [latitude, longitude]);
 
   return <section className="waste-location-picker">
     <header>
-      <div><strong>ตำแหน่งจุดรับบริการ</strong><span>คลิกตำแหน่งบ้านหรือสถานที่บนแผนที่</span></div>
+      <div><strong>ตำแหน่งสถานที่รับบริการ</strong><span>คลิกตำแหน่งบ้านหรือสถานที่บนแผนที่</span></div>
       {Number.isFinite(latitude) && Number.isFinite(longitude) ? <button type="button" className="waste-button waste-button--quiet" onClick={() => onChange({ latitude: null, longitude: null })}>ล้างตำแหน่ง</button> : null}
     </header>
     <div ref={rootRef} className="waste-location-picker__map" aria-label="แผนที่เลือกตำแหน่งผู้ใช้บริการเก็บขยะ" />

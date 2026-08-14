@@ -61,7 +61,7 @@ export class WasteRoutePreviewPolicy {
       ) {
         throw new DomainRuleViolation(
           "WASTE_ROUTE_PREVIEW_OUTSIDE_SERVICE_AREA",
-          "จุดเส้นทางอยู่นอกเขตเทศบาลท่าโพธ์",
+          "จุดเส้นทางอยู่นอกเขตเทศบาลเมืองท่าโพธิ์",
           { status: 422 },
         );
       }

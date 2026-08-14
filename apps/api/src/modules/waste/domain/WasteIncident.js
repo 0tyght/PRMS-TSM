@@ -75,7 +75,7 @@ export class WasteIncident {
     ) {
       throw new DomainRuleViolation(
         "WASTE_INCIDENT_TYPE_INVALID",
-        "ประเภทเหตุระหว่างปฏิบัติงานไม่ถูกต้อง",
+        "ประเภทเหตุระหว่างการปฏิบัติงานเก็บขยะไม่ถูกต้อง",
         { status: 422 },
       );
     }
@@ -94,7 +94,7 @@ export class WasteIncident {
     ) {
       throw new DomainRuleViolation(
         "WASTE_INCIDENT_STATUS_INVALID",
-        "สถานะเหตุระหว่างปฏิบัติงานไม่ถูกต้อง",
+        "สถานะเหตุระหว่างการปฏิบัติงานเก็บขยะไม่ถูกต้อง",
         { status: 422 },
       );
     }

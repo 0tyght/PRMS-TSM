@@ -14,12 +14,12 @@ export function ErrorNotice({ error, onRetry }) {
 }
 
 const STATUS_LABELS = Object.freeze({
-  AVAILABLE: "พร้อมใช้งาน", IN_SERVICE: "กำลังใช้งาน", MAINTENANCE: "ซ่อมบำรุง", OUT_OF_SERVICE: "หยุดใช้งาน",
-  SCHEDULED: "ตามแผน", IN_PROGRESS: "กำลังปฏิบัติงาน", COMPLETED: "เสร็จสิ้น", CANCELLED: "ยกเลิก", INTERRUPTED: "หยุดชะงัก",
-  REPORTED: "รับแจ้งแล้ว", ACKNOWLEDGED: "กำลังดำเนินการ", RESOLVED: "แก้ไขแล้ว",
+  AVAILABLE: "พร้อมใช้งาน", IN_SERVICE: "กำลังใช้งาน", MAINTENANCE: "ซ่อมบำรุง", OUT_OF_SERVICE: "ยกเลิกการใช้งาน",
+  SCHEDULED: "ยังไม่เริ่มปฏิบัติงาน", IN_PROGRESS: "กำลังปฏิบัติงาน", COMPLETED: "ปฏิบัติงานเสร็จสิ้น", CANCELLED: "ยกเลิก", INTERRUPTED: "หยุดชะงัก",
+  REPORTED: "รอรับทราบ", ACKNOWLEDGED: "รับทราบแล้ว", RESOLVED: "ปิดเหตุแล้ว",
   PENDING: "รอชำระ", PAID: "ชำระแล้ว", OVERDUE: "ค้างชำระ", VOID: "ยกเลิก",
   COLLECTED: "เก็บแล้ว", SKIPPED: "ข้ามจุด",
-  ACTIVE: "เปิดใช้งาน", INACTIVE: "ปิดใช้งาน",
+  ACTIVE: "เยกเลิกการใช้งาน", INACTIVE: "ยกเลิกการใช้งาน",
 });
 
 export function StatusBadge({ value }) { return <span className={`waste-status waste-status--${String(value || "").toLowerCase()}`}>{STATUS_LABELS[value] || value || "-"}</span>; }

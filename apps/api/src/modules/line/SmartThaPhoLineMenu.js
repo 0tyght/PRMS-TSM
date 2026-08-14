@@ -2,7 +2,7 @@ import { pool } from "../../core/db.js";
 
 const SYSTEMS = Object.freeze([
   { key: "pet", label: "ทะเบียนสัตว์เลี้ยง", displayText: "เปิดระบบทะเบียนสัตว์เลี้ยง" },
-  { key: "waste", label: "รถเก็บขยะ", displayText: "เปิดระบบรถเก็บขยะ" },
+  { key: "waste", label: "รถเก็บขยะ", displayText: "เปิดระบบบริหารจัดการการเก็บขยะ" },
   { key: "disaster", label: "บรรเทาสาธารณภัย", displayText: "เปิดระบบบรรเทาสาธารณภัย" },
   { key: "waterworks", label: "การประปา", displayText: "เปิดระบบการประปา" },
 ]);
@@ -24,7 +24,7 @@ export class SmartThaPhoLineMenu {
 
     if (event?.type === "message" && event.message?.type === "text") {
       const text = this.normalizeText(event.message.text);
-      if (["เมนู", "เมนูหลัก", "หน้าหลัก", "smart tha pho", "สมาร์ตท่าโพธ์"].includes(text)) {
+      if (["เมนู", "เมนูหลัก", "หน้าหลัก", "smart tha pho", "สมาร์ตท่าโพธิ์"].includes(text)) {
         return { action: "menu" };
       }
     }

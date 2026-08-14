@@ -31,7 +31,7 @@ test("publishing one operational plan queues LINE notices only for its route", a
   const result = await useCase.execute({ planId: "plan-1", officerId: "officer-1", publicNote: "วางขยะก่อนเวลา" });
   assert.deepEqual(result, { publicationStatus: "PUBLISHED", publicationVersion: 1, recipientCount: 3 });
   assert.equal(calls[1][1].type, "SCHEDULE_PUBLISHED");
-  assert.match(calls[1][1].message, /เทศบาลท่าโพธ์ แจ้งกำหนดการเก็บขยะประจำพื้นที่/);
+  assert.match(calls[1][1].message, /เทศบาลเมืองท่าโพธิ์ แจ้งตารางกำหนดการเก็บขยะประจำพื้นที่/);
   assert.equal(calls[1][1].plan.routeId, "route-1");
 });
 

@@ -58,7 +58,7 @@ export class WasteTrackingPolicy {
     ) {
       throw new DomainRuleViolation(
         "WASTE_TRACKING_OUTSIDE_SERVICE_AREA",
-        "ตำแหน่งอยู่นอกเขตเทศบาลท่าโพธ์ กรุณาตรวจสอบ GPS ของอุปกรณ์",
+        "ตำแหน่งอยู่นอกเขตเทศบาลเมืองท่าโพธิ์ กรุณาตรวจสอบ GPS ของอุปกรณ์",
         { status: 422 },
       );
     }

@@ -42,7 +42,7 @@ export class WasteRoute {
     if (Object.hasOwn(changes, "routeGeojson")) {
       throw new DomainRuleViolation(
         "WASTE_ROUTE_GEOMETRY_MANUAL_UPDATE_NOT_ALLOWED",
-        "แนวถนนแก้ไขด้วยมือไม่ได้ กรุณาใช้คำสั่งคำนวณและยืนยันเส้นทางจากจุดรับบริการ",
+        "แนวถนนแก้ไขด้วยมือไม่ได้ กรุณาใช้คำสั่งคำนวณและยืนยันเส้นทางจากจุดเก็บขยะ",
         { status: 422 },
       );
     }
@@ -60,7 +60,7 @@ export class WasteRoute {
     ) {
       throw new DomainRuleViolation(
         "WASTE_ROUTE_HAS_ACTIVE_DEPENDENCIES",
-        "เส้นทางยังมีแผนงานหรือจุดรับบริการที่เปิดใช้งาน กรุณาย้ายข้อมูลออกก่อนปิดเส้นทาง",
+        "เส้นทางยังมีแผนปฏิบัติงานเก็บขยะหรือจุดเก็บขยะที่เยกเลิกการใช้งาน กรุณาย้ายข้อมูลออกก่อนปิดเส้นทาง",
         { status: 409 },
       );
     }
@@ -78,7 +78,7 @@ export class WasteRoute {
     ) {
       throw new DomainRuleViolation(
         "WASTE_ROUTE_HAS_HISTORY",
-        "เส้นทางนี้ผูกกับแผนงานหรือผู้ใช้บริการแล้ว กรุณาปิดการใช้งานแทนการลบ",
+        "เส้นทางนี้ผูกกับแผนปฏิบัติงานเก็บขยะหรือผู้ใช้บริการแล้ว กรุณายกเลิกการใช้งานแทนการลบ",
         { status: 409 },
       );
     }

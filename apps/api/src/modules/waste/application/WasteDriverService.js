@@ -62,7 +62,7 @@ export class WasteDriverService {
     if (!current) {
       throw new DomainRuleViolation(
         "WASTE_DRIVER_NOT_FOUND",
-        "ไม่พบข้อมูลคนขับรถเก็บขยะ",
+        "ไม่พบข้อมูลพนักงานประจำรถขยะ",
         { status: 404 },
       );
     }
@@ -78,7 +78,7 @@ export class WasteDriverService {
     if (!saved) {
       throw new DomainRuleViolation(
         "WASTE_DRIVER_NOT_FOUND",
-        "ไม่พบข้อมูลคนขับรถเก็บขยะ",
+        "ไม่พบข้อมูลพนักงานประจำรถขยะ",
         { status: 404 },
       );
     }
@@ -102,7 +102,7 @@ export class WasteDriverService {
     if (!current) {
       throw new DomainRuleViolation(
         "WASTE_DRIVER_NOT_FOUND",
-        "ไม่พบข้อมูลคนขับรถเก็บขยะ",
+        "ไม่พบข้อมูลพนักงานประจำรถขยะ",
         { status: 404 },
       );
     }
@@ -119,7 +119,7 @@ export class WasteDriverService {
     if (!removed) {
       throw new DomainRuleViolation(
         "WASTE_DRIVER_NOT_FOUND",
-        "ไม่พบข้อมูลคนขับรถเก็บขยะ",
+        "ไม่พบข้อมูลพนักงานประจำรถขยะ",
         { status: 404 },
       );
     }

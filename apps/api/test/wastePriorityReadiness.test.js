@@ -41,7 +41,7 @@ test("loads only the registered citizen route and returns a clear LINE schedule"
   assert.equal(result.state, "READY");
   assert.match(query, /publication_status = 'PUBLISHED'/);
   assert.match(service.toLineText(result), /R-01 หมู่ 1–3/);
-  assert.match(service.toLineText(result), /สถานะ: ตามแผน/);
+  assert.match(service.toLineText(result), /สถานะ: ยังไม่เริ่มปฏิบัติงาน/);
 });
 
 test("issues short-lived driver tracking tokens scoped to one driver and plan", () => {

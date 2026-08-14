@@ -10,7 +10,7 @@ export class WastePlanExecutionPolicy {
     if (!vehicle) {
       throw new DomainRuleViolation(
         "WASTE_PLAN_VEHICLE_NOT_FOUND",
-        "ไม่พบรถเก็บขยะของแผนงาน",
+        "ไม่พบรถเก็บขยะของแผนปฏิบัติงานเก็บขยะ",
         { status: 409 },
       );
     }
@@ -49,7 +49,7 @@ export class WastePlanExecutionPolicy {
     ) {
       throw new DomainRuleViolation(
         "WASTE_PLAN_DRIVER_NOT_READY",
-        "คนขับรถเก็บขยะถูกปิดใช้งาน จึงยังเริ่มแผนนี้ไม่ได้",
+        "พนักงานประจำรถขยะถูกยกเลิกการใช้งาน จึงยังเริ่มแผนนี้ไม่ได้",
         { status: 409 },
       );
     }
@@ -68,7 +68,7 @@ export class WastePlanExecutionPolicy {
       conflict.conflictType ===
       "VEHICLE"
         ? "รถเก็บขยะ"
-        : "คนขับรถเก็บขยะ";
+        : "พนักงานประจำรถขยะ";
 
     throw new DomainRuleViolation(
       "WASTE_PLAN_ACTIVE_RESOURCE_CONFLICT",

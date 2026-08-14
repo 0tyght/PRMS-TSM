@@ -16,7 +16,7 @@
 
 ถ้าต้องการ URL คงที่สำหรับใช้งานจริง ควรตั้งค่า Cloudflare Named Tunnel และโดเมนของเทศบาล เช่น `api.smartthapho.go.th` แล้ว URL Webhook จะคงเดิมหลัง restart เหลือเพียงเปิด Tunnel ให้เชื่อมต่อกลับมาเท่านั้น
 
-## เงื่อนไขก่อนเปิดใช้งาน
+## เงื่อนไขก่อนเยกเลิกการใช้งาน
 
 - XAMPP MySQL ต้องเปิดอยู่
 - `.env` ต้องมี `LINE_CHANNEL_SECRET` และ `LINE_CHANNEL_ACCESS_TOKEN`

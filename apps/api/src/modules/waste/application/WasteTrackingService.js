@@ -33,7 +33,7 @@ export class WasteTrackingService {
     if (!plan) {
       throw new DomainRuleViolation(
         "WASTE_TRACKING_PLAN_ACCESS_DENIED",
-        "ลิงก์นี้ไม่ตรงกับคนขับหรือแผนปฏิบัติงาน",
+        "ลิงก์นี้ไม่ตรงกับพนักงานประจำรถขยะหรือแผนปฏิบัติงานเก็บขยะ",
         { status: 403 },
       );
     }

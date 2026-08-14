@@ -11,8 +11,8 @@ const WORKSPACES = Object.freeze({
   waste: Object.freeze({
     accent: "orange",
     mark: "ขย",
-    integrationLabel: "รอเชื่อมฐานข้อมูลระบบรถเก็บขยะ",
-    groups: ["แผนการเก็บขยะ", "รถและพนักงาน", "เส้นทางปฏิบัติงาน", "แจ้งเตือนผ่าน LINE"],
+    integrationLabel: "รอเชื่อมฐานข้อมูลระบบบริหารจัดการการเก็บขยะ",
+    groups: ["แผนปฏิบัติงานเก็บขยะ", "รถและพนักงาน", "เส้นทางปฏิบัติงาน", "แจ้งเตือนผ่าน LINE"],
   }),
   disaster: Object.freeze({
     accent: "red",

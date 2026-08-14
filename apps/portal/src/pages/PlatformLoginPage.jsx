@@ -48,7 +48,7 @@ export default function PlatformLoginPage({ onLogin }) {
         </div>
         <div className="platform-login-page__copy">
           <p>Municipal Service Platform</p>
-          <h1>ศูนย์กลางระบบงาน<br />เทศบาลท่าโพธ์</h1>
+          <h1>ศูนย์กลางระบบงาน<br />เทศบาลเมืองท่าโพธิ์</h1>
           <span>ใช้บัญชีเจ้าหน้าที่เดียว เพื่อเข้าสู่ระบบงานที่ได้รับสิทธิ์</span>
         </div>
         <footer>Smart Tha Pho · Staff Portal</footer>

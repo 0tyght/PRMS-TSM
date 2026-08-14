@@ -19,7 +19,7 @@ test("marks a confirmed route for recalculation without mutating the source", ()
 test("rejects routes with too few service points", () => {
   assert.deepEqual(service.readiness(validRoute, 1), {
     ready: false,
-    reason: "เส้นทางต้องมีจุดรับบริการอย่างน้อย 2 จุด",
+    reason: "เส้นทางต้องมีจุดเก็บขยะอย่างน้อย 2 จุด",
   });
 });
 

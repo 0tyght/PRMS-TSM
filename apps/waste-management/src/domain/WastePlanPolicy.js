@@ -17,9 +17,9 @@ export class WastePlanPolicy {
 
   readiness(plan) {
     const checks = [
-      { key: "route", label: "เส้นทางมีจุดรับบริการ", ready: Number(plan.stopTotal || 0) > 0 },
+      { key: "route", label: "เส้นทางมีสถานที่รับบริการ", ready: Number(plan.stopTotal || 0) > 0 },
       { key: "schedule", label: "กำหนดวันและเวลาครบ", ready: Boolean(plan.scheduledDate && plan.scheduledStartAt && plan.scheduledEndAt) },
-      { key: "resources", label: "กำหนดรถและคนขับแล้ว", ready: Boolean(plan.vehicleId && plan.driverId) },
+      { key: "resources", label: "กำหนดรถและพนักงานประจำรถขยะแล้ว", ready: Boolean(plan.vehicleId && plan.driverId) },
       {
         key: "line",
         label: "มีผู้รับ LINE อย่างน้อย 1 ราย",

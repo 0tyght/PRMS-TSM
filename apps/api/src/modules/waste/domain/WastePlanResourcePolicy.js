@@ -33,7 +33,7 @@ export class WastePlanResourcePolicy {
     if (!route || !Boolean(Number(route.isActive))) {
       throw new DomainRuleViolation(
         "WASTE_ROUTE_NOT_AVAILABLE",
-        "เส้นทางที่เลือกถูกปิดใช้งานหรือไม่มีอยู่ในระบบ",
+        "เส้นทางที่เลือกถูกยกเลิกการใช้งานหรือไม่มีอยู่ในระบบ",
         { status: 422 },
       );
     }
@@ -81,7 +81,7 @@ export class WastePlanResourcePolicy {
     if (!driver || !Boolean(Number(driver.isActive))) {
       throw new DomainRuleViolation(
         "WASTE_DRIVER_NOT_AVAILABLE",
-        "คนขับรถเก็บขยะที่เลือกถูกปิดใช้งานหรือไม่มีอยู่ในระบบ",
+        "พนักงานประจำรถขยะที่เลือกถูกยกเลิกการใช้งานหรือไม่มีอยู่ในระบบ",
         { status: 422 },
       );
     }
@@ -95,7 +95,7 @@ export class WastePlanResourcePolicy {
     const resource =
       conflict.conflictType === "VEHICLE"
         ? "รถเก็บขยะ"
-        : "คนขับรถเก็บขยะ";
+        : "พนักงานประจำรถขยะ";
 
     throw new DomainRuleViolation(
       "WASTE_PLAN_RESOURCE_CONFLICT",
@@ -157,7 +157,7 @@ export class WastePlanResourcePolicy {
       return {
         ...driver,
         available: false,
-        reason: "ถูกปิดการใช้งาน",
+        reason: "ถูกยกเลิกการใช้งาน",
       };
     }
 

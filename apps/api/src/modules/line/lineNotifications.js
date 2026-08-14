@@ -86,7 +86,7 @@ export function buildHouseholdVaccinationMessage(group) {
   if (group?.villageNo) addressParts.push(`หมู่ ${group.villageNo}`);
 
   const lines = [
-    "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง เทศบาลท่าโพธ์",
+    "ระบบบริหารจัดการทะเบียนสัตว์เลี้ยง เทศบาลเมืองท่าโพธิ์",
     "แจ้งเตือนวัคซีนสัตว์เลี้ยง",
   ];
 
@@ -117,7 +117,7 @@ export function buildHouseholdVaccinationMessage(group) {
   const omitted = Math.max(0, items.length - included);
   if (omitted > 0) lines.push(`• และอีก ${omitted} ตัว กรุณาเปิดเมนูสุขภาพสัตว์เพื่อตรวจสอบ`);
 
-  lines.push("\nกรุณาติดต่อเทศบาลท่าโพธ์ หรือบันทึกข้อมูลวัคซีนล่าสุดผ่าน LINE");
+  lines.push("\nกรุณาติดต่อเทศบาลเมืองท่าโพธิ์ หรือบันทึกข้อมูลวัคซีนล่าสุดผ่าน LINE");
 
   const message = lines.join("\n");
   return message.length <= LINE_TEXT_LIMIT
