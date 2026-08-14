@@ -22,6 +22,11 @@ import { WasteRouteService } from "./application/WasteRouteService.js";
 import { MariaDbWasteRouteAdminRepository } from "./infrastructure/MariaDbWasteRouteAdminRepository.js";
 import { WasteServiceUserService } from "./application/WasteServiceUserService.js";
 import { MariaDbWasteServiceUserRepository } from "./infrastructure/MariaDbWasteServiceUserRepository.js";
+import { WasteTrackingPolicy } from "./domain/WasteTrackingPolicy.js";
+import { WasteTrackingService } from "./application/WasteTrackingService.js";
+import { MariaDbWasteTrackingRepository } from "./infrastructure/MariaDbWasteTrackingRepository.js";
+import { WasteIncidentService } from "./application/WasteIncidentService.js";
+import { MariaDbWasteIncidentRepository } from "./infrastructure/MariaDbWasteIncidentRepository.js";
 
 const router = Router();
 const planNumberService = new WastePlanNumberService();
@@ -86,7 +91,26 @@ const wasteServiceUserService =
     routeAssignmentService,
   });
 
-const THA_PHO_BOUNDS = Object.freeze({ minLatitude: 16.70, maxLatitude: 16.805, minLongitude: 100.15, maxLongitude: 100.27 });
+
+const wasteTrackingService =
+  new WasteTrackingService({
+    repository:
+      new MariaDbWasteTrackingRepository({
+        database: pool,
+      }),
+    policy:
+      new WasteTrackingPolicy(),
+  });
+
+const wasteIncidentService =
+  new WasteIncidentService({
+    repository:
+      new MariaDbWasteIncidentRepository({
+        database: pool,
+      }),
+    auditLog:
+      auditLogRepository,
+  });
 
 const dateSchema = z.string().date();
 const nullableText = (max) => z.string().trim().max(max).optional().nullable().transform((value) => value || null);
@@ -239,11 +263,6 @@ function asDateOnly(value) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date(value));
 }
 
-function isInsideThaPho(latitude, longitude) {
-  return latitude >= THA_PHO_BOUNDS.minLatitude && latitude <= THA_PHO_BOUNDS.maxLatitude
-    && longitude >= THA_PHO_BOUNDS.minLongitude && longitude <= THA_PHO_BOUNDS.maxLongitude;
-}
-
 function readTrackingToken(req) {
   const authorization = String(req.headers.authorization || "");
   if (!authorization.startsWith("Bearer ")) throw httpError(401, "ไม่พบสิทธิ์ติดตามตำแหน่งรถเก็บขยะ");
@@ -294,82 +313,56 @@ async function assertPlanAssignment(
     .assertAssignment(input, { excludePlanId });
 }
 
-async function findTrackingPlan(db, claims, lock = false) {
-  const [rows] = await db.execute(
-    `SELECT p.id, p.plan_no AS planNo, p.status, p.vehicle_id AS vehicleId,
-            p.driver_id AS driverId, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate,
-            p.scheduled_start_at AS scheduledStartAt, p.scheduled_end_at AS scheduledEndAt,
-            r.route_code AS routeCode, r.route_name AS routeName,
-            CAST(r.route_geojson AS CHAR) AS routeGeojson,
-            v.vehicle_code AS vehicleCode, v.registration_no AS registrationNo,
-            v.last_latitude AS lastLatitude, v.last_longitude AS lastLongitude, v.last_gps_at AS lastGpsAt,
-            d.full_name AS driverName
-     FROM waste_operation_plans p
-     INNER JOIN waste_routes r ON r.id = p.route_id
-     INNER JOIN waste_vehicles v ON v.id = p.vehicle_id
-     INNER JOIN waste_drivers d ON d.id = p.driver_id
-     WHERE p.id = ? AND p.driver_id = ? AND d.line_user_id = ?
-     LIMIT 1${lock ? " FOR UPDATE" : ""}`,
-    [claims.planId, claims.driverId, claims.lineUserId],
-  );
-  if (!rows[0]) throw httpError(403, "ลิงก์นี้ไม่ตรงกับคนขับหรือแผนปฏิบัติงาน");
-  return rows[0];
-}
+router.get(
+  "/driver-tracking/session",
+  async (req, res, next) => {
+    try {
+      const claims =
+        readTrackingToken(req);
 
-router.get("/driver-tracking/session", async (req, res, next) => {
-  try {
-    const claims = readTrackingToken(req);
-    const plan = await findTrackingPlan(pool, claims);
-    return res.json({
-      data: {
-        ...plan,
-        routeGeojson: plan.routeGeojson ? JSON.parse(plan.routeGeojson) : null,
-        canTrack: ["IN_PROGRESS", "INTERRUPTED"].includes(plan.status),
-      },
-    });
-  } catch (error) { next(error); }
-});
+      const data =
+        await wasteTrackingService
+          .getDriverSession(
+            claims,
+          );
 
-router.post("/driver-tracking/location", async (req, res, next) => {
-  try {
-    const claims = readTrackingToken(req);
-    const input = trackingLocationSchema.parse(req.body);
-    if (!isInsideThaPho(input.latitude, input.longitude)) {
-      throw httpError(422, "ตำแหน่งอยู่นอกเขตเทศบาลท่าโพธ์ กรุณาตรวจสอบ GPS ของอุปกรณ์");
+      return res.json({ data });
+    } catch (error) {
+      next(error);
     }
+  },
+);
 
-    const result = await withTransaction(async (db) => {
-      const plan = await findTrackingPlan(db, claims, true);
-      if (!["IN_PROGRESS", "INTERRUPTED"].includes(plan.status)) {
-        throw httpError(409, "ส่งตำแหน่งได้เฉพาะแผนที่กำลังปฏิบัติงาน");
-      }
-      const [recent] = await db.execute(
-        `SELECT recorded_at AS recordedAt FROM waste_location_logs
-         WHERE plan_id = ? ORDER BY recorded_at DESC LIMIT 1`,
-        [plan.id],
-      );
-      if (recent[0] && Date.now() - new Date(recent[0].recordedAt).getTime() < 7_000) {
-        return { accepted: false, reason: "TOO_FREQUENT", plan };
-      }
-      const recordedAt = input.recordedAt ? new Date(input.recordedAt) : new Date();
-      await db.execute(
-        `INSERT INTO waste_location_logs
-          (plan_id, latitude, longitude, accuracy_m, speed_kph, recorded_at, source)
-         VALUES (?, ?, ?, ?, ?, ?, 'LINE')`,
-        [plan.id, input.latitude, input.longitude, input.accuracyM ?? null, input.speedKph ?? null, recordedAt],
-      );
-      await db.execute(
-        `UPDATE waste_vehicles SET last_latitude = ?, last_longitude = ?, last_gps_at = ? WHERE id = ?`,
-        [input.latitude, input.longitude, recordedAt, plan.vehicleId],
-      );
-      return { accepted: true, plan };
-    });
-    return res.status(result.accepted ? 201 : 202).json({
-      data: { accepted: result.accepted, reason: result.reason || null, serverTime: new Date().toISOString() },
-    });
-  } catch (error) { next(error); }
-});
+router.post(
+  "/driver-tracking/location",
+  async (req, res, next) => {
+    try {
+      const claims =
+        readTrackingToken(req);
 
+      const input =
+        trackingLocationSchema
+          .parse(req.body);
+
+      const data =
+        await wasteTrackingService
+          .recordLocation(
+            claims,
+            input,
+          );
+
+      return res
+        .status(
+          data.accepted
+            ? 201
+            : 202,
+        )
+        .json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.use(authenticate);
 
 router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
@@ -1104,18 +1097,27 @@ router.patch("/plans/:id/status", requireRole("ADMIN", "OFFICER"), async (req, r
   } catch (error) { next(error); }
 });
 
-router.get("/plans/:id/track", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const [[plan], [locations], [stops]] = await Promise.all([
-      pool.execute(`SELECT p.id, p.plan_no AS planNo, p.status, r.route_name AS routeName, CAST(r.route_geojson AS CHAR) AS routeGeojson, v.vehicle_code AS vehicleCode, v.last_latitude AS latitude, v.last_longitude AS longitude, v.last_gps_at AS lastGpsAt FROM waste_operation_plans p INNER JOIN waste_routes r ON r.id = p.route_id INNER JOIN waste_vehicles v ON v.id = p.vehicle_id WHERE p.id = ?`, [req.params.id]),
-      pool.execute(`SELECT latitude, longitude, accuracy_m AS accuracyM, speed_kph AS speedKph, recorded_at AS recordedAt, source FROM waste_location_logs WHERE plan_id = ? ORDER BY recorded_at DESC LIMIT 500`, [req.params.id]),
-      pool.execute(`SELECT s.id, s.sequence_no AS sequenceNo, s.stop_name AS stopName, s.latitude, s.longitude, c.status AS confirmationStatus, c.confirmed_at AS confirmedAt FROM waste_route_stops s INNER JOIN waste_operation_plans p ON p.route_id = s.route_id LEFT JOIN waste_stop_confirmations c ON c.stop_id = s.id AND c.plan_id = p.id WHERE p.id = ? AND s.is_active = 1 ORDER BY s.sequence_no`, [req.params.id]),
-    ]);
-    if (!plan[0]) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
-    return res.json({ data: { ...plan[0], routeGeojson: plan[0].routeGeojson ? JSON.parse(plan[0].routeGeojson) : null, locations: locations.reverse(), stops } });
-  } catch (error) { next(error); }
-});
+router.get(
+  "/plans/:id/track",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+    "VIEWER",
+  ),
+  async (req, res, next) => {
+    try {
+      const data =
+        await wasteTrackingService
+          .getPlanTracking(
+            req.params.id,
+          );
 
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.get(
   "/service-users",
   requireRole("ADMIN", "OFFICER", "VIEWER"),
@@ -1432,34 +1434,102 @@ router.post("/charges/:id/notice", requireRole("ADMIN", "OFFICER"), async (req, 
   } catch (error) { next(error); }
 });
 
-router.get("/incidents", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const { status } = z.object({ status: z.enum(["REPORTED", "ACKNOWLEDGED", "RESOLVED"]).optional() }).parse(req.query);
-    const [rows] = await pool.execute(`SELECT i.id, i.plan_id AS planId, p.plan_no AS planNo, i.vehicle_id AS vehicleId, v.vehicle_code AS vehicleCode, i.replacement_vehicle_id AS replacementVehicleId, rv.vehicle_code AS replacementVehicleCode, i.driver_id AS driverId, d.full_name AS driverName, i.incident_type AS incidentType, i.status, i.description, i.happened_at AS happenedAt, i.resolved_at AS resolvedAt, i.resolution_note AS resolutionNote FROM waste_incidents i LEFT JOIN waste_operation_plans p ON p.id = i.plan_id LEFT JOIN waste_vehicles v ON v.id = i.vehicle_id LEFT JOIN waste_vehicles rv ON rv.id = i.replacement_vehicle_id LEFT JOIN waste_drivers d ON d.id = i.driver_id ${status ? "WHERE i.status = ?" : ""} ORDER BY i.happened_at DESC`, status ? [status] : []);
-    return res.json({ data: rows });
-  } catch (error) { next(error); }
-});
+router.get(
+  "/incidents",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+    "VIEWER",
+  ),
+  async (req, res, next) => {
+    try {
+      const query =
+        z.object({
+          status:
+            z.enum([
+              "REPORTED",
+              "ACKNOWLEDGED",
+              "RESOLVED",
+            ])
+            .optional(),
+        }).parse(req.query);
 
-router.post("/incidents", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = incidentSchema.parse(req.body);
-    const id = crypto.randomUUID();
-    await pool.execute(`INSERT INTO waste_incidents (id, plan_id, vehicle_id, driver_id, incident_type, description, happened_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, [id, input.planId, input.vehicleId, input.driverId, input.incidentType, input.description, asDateTime(input.happenedAt)]);
-    await audit(req.user.sub, "CREATE_WASTE_INCIDENT", "WASTE_INCIDENT", id, input, req.ip);
-    return res.status(201).json({ data: { id, ...input, status: "REPORTED" } });
-  } catch (error) { next(error); }
-});
+      return res.json({
+        data:
+          await wasteIncidentService
+            .list(query),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
-router.patch("/incidents/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = incidentUpdateSchema.parse(req.body);
-    const [result] = await pool.execute(`UPDATE waste_incidents SET status = ?, replacement_vehicle_id = ?, resolution_note = ?, resolved_at = CASE WHEN ? = 'RESOLVED' THEN NOW() ELSE resolved_at END WHERE id = ?`, [input.status, input.replacementVehicleId, input.resolutionNote, input.status, req.params.id]);
-    if (!result.affectedRows) throw httpError(404, "ไม่พบเหตุระหว่างปฏิบัติงาน");
-    await audit(req.user.sub, "UPDATE_WASTE_INCIDENT", "WASTE_INCIDENT", req.params.id, input, req.ip);
-    return res.json({ data: { id: req.params.id, ...input } });
-  } catch (error) { next(error); }
-});
+router.post(
+  "/incidents",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        incidentSchema.parse(
+          req.body,
+        );
 
+      const data =
+        await wasteIncidentService
+          .create(
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
+
+      return res
+        .status(201)
+        .json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  "/incidents/:id",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        incidentUpdateSchema
+          .parse(req.body);
+
+      const data =
+        await wasteIncidentService
+          .update(
+            req.params.id,
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.get("/reports/operations", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
   try {
     const { from, to } = z.object({ from: dateSchema.optional(), to: dateSchema.optional() }).parse(req.query);
