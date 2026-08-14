@@ -1,211 +1,68 @@
 import { Router } from "express";
 import { z } from "zod";
-import { config } from "../../core/config.js";
-import { pool } from "../../core/db.js";
 import { authenticate, requireRole } from "../../core/middleware.js";
 import { HttpError } from "../../presentation/http/HttpError.js";
-import { RouteAssignmentService } from "./domain/RouteAssignmentService.js";
-import { WasteRouteLifecycleService } from "./domain/WasteRouteLifecycleService.js";
-import { WastePlanNumberService } from "./application/WastePlanNumberService.js";
-import { WasteTrackingTokenService } from "./application/WasteTrackingTokenService.js";
-import { WastePlanResourceService } from "./application/WastePlanResourceService.js";
-import { WastePlanResourcePolicy } from "./domain/WastePlanResourcePolicy.js";
-import { MariaDbWastePlanResourceRepository } from "./infrastructure/MariaDbWastePlanResourceRepository.js";
-import { WasteVehicleService } from "./application/WasteVehicleService.js";
-import { WasteDriverService } from "./application/WasteDriverService.js";
-import { MariaDbWasteVehicleRepository } from "./infrastructure/MariaDbWasteVehicleRepository.js";
-import { MariaDbWasteDriverRepository } from "./infrastructure/MariaDbWasteDriverRepository.js";
-import { MariaDbAuditLogRepository } from "../../infrastructure/audit/MariaDbAuditLogRepository.js";
-import { WasteRouteService } from "./application/WasteRouteService.js";
-import { MariaDbWasteRouteAdminRepository } from "./infrastructure/MariaDbWasteRouteAdminRepository.js";
-import { WasteServiceUserService } from "./application/WasteServiceUserService.js";
-import { MariaDbWasteServiceUserRepository } from "./infrastructure/MariaDbWasteServiceUserRepository.js";
-import { WasteTrackingPolicy } from "./domain/WasteTrackingPolicy.js";
-import { WasteTrackingService } from "./application/WasteTrackingService.js";
-import { MariaDbWasteTrackingRepository } from "./infrastructure/MariaDbWasteTrackingRepository.js";
-import { WasteIncidentService } from "./application/WasteIncidentService.js";
-import { MariaDbWasteIncidentRepository } from "./infrastructure/MariaDbWasteIncidentRepository.js";
-import { WastePlanExecutionPolicy } from "./domain/WastePlanExecutionPolicy.js";
-import { WastePlanService } from "./application/WastePlanService.js";
-import { WastePlanStatusService } from "./application/WastePlanStatusService.js";
-import { MariaDbWastePlanAdminRepository } from "./infrastructure/MariaDbWastePlanAdminRepository.js";
-import { WasteDashboardQueryService } from "./application/WasteDashboardQueryService.js";
-import { MariaDbWasteDashboardRepository } from "./infrastructure/MariaDbWasteDashboardRepository.js";
-import { WasteBillingService } from "./application/WasteBillingService.js";
-import { WasteChargeNoticeFactory } from "./domain/WasteChargeNoticeFactory.js";
-import { MariaDbWasteBillingRepository } from "./infrastructure/MariaDbWasteBillingRepository.js";
-import { WasteReportQueryService } from "./application/WasteReportQueryService.js";
-import { MariaDbWasteReportRepository } from "./infrastructure/MariaDbWasteReportRepository.js";
-import { WasteDriverLineLinkService } from "./application/WasteDriverLineLinkService.js";
-import { MariaDbWasteDriverLinkRepository } from "./infrastructure/MariaDbWasteDriverLinkRepository.js";
-import { DriverLinkCodeSecurity } from "./infrastructure/DriverLinkCodeSecurity.js";
-import { WasteRoutePreviewPolicy } from "./domain/WasteRoutePreviewPolicy.js";
-import { WasteRoutePreviewService } from "./application/WasteRoutePreviewService.js";
-import { OsrmRoutePreviewProvider } from "./infrastructure/OsrmRoutePreviewProvider.js";
 
-const router = Router();
-const planNumberService = new WastePlanNumberService();
-const trackingTokenService = new WasteTrackingTokenService({ secret: config.jwtSecret });
-const routeAssignmentService = new RouteAssignmentService();
-const routeLifecycleService = new WasteRouteLifecycleService();
+export function createWasteRouter(
+  services,
+) {
+  if (!services) {
+    throw new TypeError(
+      "createWasteRouter requires waste application services",
+    );
+  }
 
-const wastePlanResourcePolicy = new WastePlanResourcePolicy();
+  const requiredServices = [
+    "trackingTokenService",
+    "wastePlanResourceService",
+    "wasteVehicleService",
+    "wasteDriverService",
+    "wasteRouteService",
+    "wasteServiceUserService",
+    "wasteTrackingService",
+    "wasteIncidentService",
+    "wastePlanService",
+    "wastePlanStatusService",
+    "wasteDashboardQueryService",
+    "wasteBillingService",
+    "wasteReportQueryService",
+    "wasteDriverLineLinkService",
+    "wasteRoutePreviewService",
+    "wasteRouteOptimization",
+    "wastePlanPublicationService",
+  ];
 
-function createWastePlanResourceService(database) {
-  return new WastePlanResourceService({
-    repository: new MariaDbWastePlanResourceRepository({
-      database,
-    }),
-    policy: wastePlanResourcePolicy,
-    routeLifecycleService,
-  });
-}
+  for (
+    const serviceName of requiredServices
+  ) {
+    if (!services[serviceName]) {
+      throw new TypeError(
+        `Missing waste service: ${serviceName}`,
+      );
+    }
+  }
 
-const wastePlanResourceService =
-  createWastePlanResourceService(pool);
+  const {
+    trackingTokenService,
+    wastePlanResourceService,
+    wasteVehicleService,
+    wasteDriverService,
+    wasteRouteService,
+    wasteServiceUserService,
+    wasteTrackingService,
+    wasteIncidentService,
+    wastePlanService,
+    wastePlanStatusService,
+    wasteDashboardQueryService,
+    wasteBillingService,
+    wasteReportQueryService,
+    wasteDriverLineLinkService,
+    wasteRoutePreviewService,
+    wasteRouteOptimization,
+    wastePlanPublicationService,
+  } = services;
 
-const auditLogRepository =
-  new MariaDbAuditLogRepository({
-    database: pool,
-  });
-
-const wasteVehicleService =
-  new WasteVehicleService({
-    repository:
-      new MariaDbWasteVehicleRepository({
-        database: pool,
-      }),
-    auditLog: auditLogRepository,
-  });
-
-const wasteDriverService =
-  new WasteDriverService({
-    repository:
-      new MariaDbWasteDriverRepository({
-        database: pool,
-      }),
-    auditLog: auditLogRepository,
-  });
-const wasteRouteService =
-  new WasteRouteService({
-    repository:
-      new MariaDbWasteRouteAdminRepository({
-        database: pool,
-      }),
-    auditLog: auditLogRepository,
-  });
-
-const wasteServiceUserService =
-  new WasteServiceUserService({
-    repository:
-      new MariaDbWasteServiceUserRepository({
-        database: pool,
-      }),
-    auditLog: auditLogRepository,
-    routeLifecycleService,
-    routeAssignmentService,
-  });
-
-
-const wasteTrackingService =
-  new WasteTrackingService({
-    repository:
-      new MariaDbWasteTrackingRepository({
-        database: pool,
-      }),
-    policy:
-      new WasteTrackingPolicy(),
-  });
-
-const wasteIncidentService =
-  new WasteIncidentService({
-    repository:
-      new MariaDbWasteIncidentRepository({
-        database: pool,
-      }),
-    auditLog:
-      auditLogRepository,
-  });
-
-const wastePlanAdminRepository =
-  new MariaDbWastePlanAdminRepository({
-    database: pool,
-  });
-
-const wastePlanExecutionPolicy =
-  new WastePlanExecutionPolicy();
-
-const wastePlanService =
-  new WastePlanService({
-    repository:
-      wastePlanAdminRepository,
-    auditLog:
-      auditLogRepository,
-    planNumberService,
-    resourceServiceFactory:
-      createWastePlanResourceService,
-  });
-
-const wastePlanStatusService =
-  new WastePlanStatusService({
-    repository:
-      wastePlanAdminRepository,
-    policy:
-      wastePlanExecutionPolicy,
-    auditLog:
-      auditLogRepository,
-  });
-
-const wasteDashboardQueryService =
-  new WasteDashboardQueryService({
-    repository:
-      new MariaDbWasteDashboardRepository({
-        database: pool,
-      }),
-  });
-
-const wasteBillingService =
-  new WasteBillingService({
-    repository:
-      new MariaDbWasteBillingRepository({
-        database: pool,
-      }),
-    auditLog:
-      auditLogRepository,
-    noticeFactory:
-      new WasteChargeNoticeFactory(),
-  });
-
-const wasteReportQueryService =
-  new WasteReportQueryService({
-    repository:
-      new MariaDbWasteReportRepository({
-        database: pool,
-      }),
-  });
-
-const wasteDriverLineLinkService =
-  new WasteDriverLineLinkService({
-    repository:
-      new MariaDbWasteDriverLinkRepository({
-        database: pool,
-      }),
-    auditLog:
-      auditLogRepository,
-    codeSecurity:
-      new DriverLinkCodeSecurity(),
-  });
-
-const wasteRoutePreviewService =
-  new WasteRoutePreviewService({
-    policy:
-      new WasteRoutePreviewPolicy(),
-    provider:
-      new OsrmRoutePreviewProvider({
-        baseUrl:
-          config.routingApiBaseUrl,
-      }),
-  });
+  const router = Router();
 
 const dateSchema = z.string().date();
 const nullableText = (max) => z.string().trim().max(max).optional().nullable().transform((value) => value || null);
@@ -346,19 +203,6 @@ function httpError(status, message) {
   return new HttpError(status, message);
 }
 
-function toBoolean(value) {
-  return Boolean(Number(value));
-}
-
-function asDateTime(value) {
-  return value ? new Date(value) : null;
-}
-
-function asDateOnly(value) {
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date(value));
-}
-
 function readTrackingToken(req) {
   const authorization = String(req.headers.authorization || "");
   if (!authorization.startsWith("Bearer ")) throw httpError(401, "ไม่พบสิทธิ์ติดตามตำแหน่งรถเก็บขยะ");
@@ -367,37 +211,6 @@ function readTrackingToken(req) {
   } catch {
     throw httpError(401, "ลิงก์ติดตามตำแหน่งหมดอายุหรือไม่ถูกต้อง กรุณาเปิดจากเมนู LINE อีกครั้ง");
   }
-}
-
-function mapRoute(row) {
-  return {
-    id: row.id,
-    routeCode: row.routeCode,
-    routeName: row.routeName,
-    description: row.description,
-    routeGeojson: row.routeGeojson ? JSON.parse(row.routeGeojson) : null,
-    isActive: toBoolean(row.isActive),
-    stopCount: Number(row.stopCount || 0),
-    serviceUserCount: Number(row.serviceUserCount || 0),
-  };
-}
-
-async function audit(
-  userId,
-  action,
-  entityType,
-  entityId,
-  nextValue,
-  ipAddress,
-) {
-  return auditLogRepository.record({
-    userId,
-    action,
-    entityType,
-    entityId,
-    nextValue,
-    ipAddress,
-  });
 }
 
 router.get(
@@ -877,7 +690,7 @@ function routeOptimizationError(error) {
 router.post("/routes/:id/optimization-proposals", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
   try {
     const input = routeOptimizationSchema.parse(req.body);
-    const proposal = await req.app.locals.wasteRouteOptimization.propose.execute({ routeId: req.params.id, ...input });
+    const proposal = await wasteRouteOptimization.propose.execute({ routeId: req.params.id, ...input });
     return res.status(201).json({
       data: {
         proposalId: proposal.id,
@@ -897,7 +710,7 @@ router.post("/routes/:id/optimization-proposals", requireRole("ADMIN", "OFFICER"
 router.post("/routes/:id/optimization-confirmations", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
   try {
     const input = routeProposalSchema.parse(req.body);
-    const proposal = await req.app.locals.wasteRouteOptimization.confirm.execute({
+    const proposal = await wasteRouteOptimization.confirm.execute({
       routeId: req.params.id,
       proposalId: input.proposalId,
       confirmedBy: req.user.sub,
@@ -1217,38 +1030,95 @@ router.get(
     }
   },
 );
-router.post("/plans/:id/publish", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = planPublicationSchema.parse(req.body || {});
-    const useCase = req.app.locals.wastePlanPublication?.publish;
-    if (!useCase) throw httpError(503, "ระบบประกาศตารางยังไม่พร้อมใช้งาน");
-    const result = await useCase.execute({ planId: req.params.id, officerId: req.user.sub, publicNote: input.publicNote });
-    if (!result) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
-    await audit(req.user.sub, "PUBLISH_WASTE_PLAN", "WASTE_PLAN", req.params.id, result, req.ip);
-    return res.json({ data: { id: req.params.id, ...result } });
-  } catch (error) { next(error); }
-});
+router.post(
+  "/plans/:id/publish",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        planPublicationSchema
+          .parse(
+            req.body || {},
+          );
 
-router.post("/plans/:id/withdraw", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = planWithdrawalSchema.parse(req.body || {});
-    const useCase = req.app.locals.wastePlanPublication?.withdraw;
-    if (!useCase) throw httpError(503, "ระบบถอนประกาศตารางยังไม่พร้อมใช้งาน");
-    const result = await useCase.execute({ planId: req.params.id, officerId: req.user.sub, reason: input.reason });
-    if (!result) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
-    await audit(req.user.sub, "WITHDRAW_WASTE_PLAN", "WASTE_PLAN", req.params.id, { ...result, reason: input.reason }, req.ip);
-    return res.json({ data: { id: req.params.id, ...result } });
-  } catch (error) { next(error); }
-});
+      const data =
+        await wastePlanPublicationService
+          .publish(
+            req.params.id,
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
 
-router.get("/plans/:id/notifications", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const repository = req.app.locals.wastePlanPublication?.repository;
-    if (!repository) throw httpError(503, "ระบบตรวจสอบการแจ้งเตือนยังไม่พร้อมใช้งาน");
-    return res.json({ data: await repository.publicationDeliverySummary(req.params.id) });
-  } catch (error) { next(error); }
-});
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
+router.post(
+  "/plans/:id/withdraw",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        planWithdrawalSchema
+          .parse(
+            req.body || {},
+          );
+
+      const data =
+        await wastePlanPublicationService
+          .withdraw(
+            req.params.id,
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get(
+  "/plans/:id/notifications",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+    "VIEWER",
+  ),
+  async (req, res, next) => {
+    try {
+      const data =
+        await wastePlanPublicationService
+          .deliverySummary(
+            req.params.id,
+          );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.post(
   "/service-users/:id/unlink-line",
   requireRole("ADMIN", "OFFICER"),
@@ -1291,7 +1161,7 @@ router.delete(
 router.post("/service-users/:id/route-assignment-proposals", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
   try {
     const input = routeAssignmentProposalSchema.parse(req.body);
-    const proposal = await req.app.locals.wasteRouteOptimization.proposeAssignment.execute({
+    const proposal = await wasteRouteOptimization.proposeAssignment.execute({
       serviceUserId: req.params.id,
       routeId: input.routeId,
     });
@@ -1312,7 +1182,7 @@ router.post("/service-users/:id/route-assignment-proposals", requireRole("ADMIN"
 router.post("/service-users/:id/route-assignment-confirmations", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
   try {
     const input = routeAssignmentConfirmationSchema.parse(req.body);
-    const proposal = await req.app.locals.wasteRouteOptimization.confirmAssignment.execute({
+    const proposal = await wasteRouteOptimization.confirmAssignment.execute({
       serviceUserId: req.params.id,
       proposalId: input.proposalId,
       confirmedBy: req.user.sub,
@@ -1701,15 +1571,27 @@ router.get(
     }
   },
 );
+  return router;
+}
+
 export class WasteHttpModule {
-  constructor(expressRouter) {
-    this.router = expressRouter;
+  constructor({ services }) {
+    if (!services) {
+      throw new TypeError(
+        "WasteHttpModule requires services",
+      );
+    }
+
+    this.services =
+      services;
+
+    this.router =
+      createWasteRouter(
+        services,
+      );
   }
 
   getRouter() {
     return this.router;
   }
 }
-
-export const wasteHttpModule = new WasteHttpModule(router);
-export const wasteRouter = wasteHttpModule.getRouter();

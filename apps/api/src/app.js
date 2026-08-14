@@ -16,7 +16,6 @@ import { config } from "./core/config.js";
 import { pool, withTransaction } from "./core/db.js";
 import { authenticate, errorHandler, requestContext, requireRole } from "./core/middleware.js";
 import { openApiDocument } from "./contracts/openapi.js";
-import { wasteRouter } from "./modules/waste/waste.router.js";
 import { HttpError } from "./presentation/http/HttpError.js";
 import { Pet } from "./domain/pets/entities/Pet.js";
 import { Registration } from "./domain/registrations/entities/Registration.js";
@@ -977,7 +976,7 @@ export class SmartThaPhoApiApplication {
   }
 
   create() {
-  const { lineNotifications, nativeCitizen, citizenSubmissionApproval, lineBot, reportExports, mfa, wasteRouteOptimization, wastePlanPublication } = this.services;
+  const { lineNotifications, nativeCitizen, citizenSubmissionApproval, lineBot, reportExports, mfa, wasteHttpModule } = this.services;
   const handleCitizenLineWebhook = (req, res) => lineBot.handleCitizenWebhook(req, res);
   const handleDriverLineWebhook = (req, res) => lineBot.handleDriverWebhook(req, res);
   const deliverLineNotification = (id) => lineNotifications.deliver(id);
@@ -995,8 +994,6 @@ export class SmartThaPhoApiApplication {
   const encryptMfaSecret = (secret) => mfa.encryptSecret(secret);
   const verifyTotp = (secret, code, options) => mfa.verify(secret, code, options);
   const app = this.expressFactory();
-  app.locals.wasteRouteOptimization = wasteRouteOptimization;
-  app.locals.wastePlanPublication = wastePlanPublication;
   app.set("trust proxy", 1);
 
   app.use((req, res, next) => {
@@ -3790,7 +3787,7 @@ export class SmartThaPhoApiApplication {
     },
   );
 
-  app.use("/api/waste", wasteRouter);
+  app.use("/api/waste", wasteHttpModule.getRouter());
 
   // Development deployments expose the staff portal and API through one
   // origin. This avoids cross-origin and local-network browser restrictions
