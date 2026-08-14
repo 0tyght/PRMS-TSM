@@ -24,6 +24,17 @@ function PlanForm({ api, resources, date, initial = null, onCancel, onSubmit, sa
   const [startTime, setStartTime] = useState(initialTimes.start);
   const [endTime, setEndTime] = useState(initialTimes.end);
 
+  const minimumDate =
+    toDateInput();
+
+  const minimumStartTime =
+    scheduledDate ===
+    minimumDate
+      ? toTimeInput(
+          new Date(),
+        )
+      : "";
+
   const [vehicleId, setVehicleId] =
     useState(initial?.vehicleId || "");
 
@@ -173,7 +184,29 @@ function PlanForm({ api, resources, date, initial = null, onCancel, onSubmit, sa
     <ErrorNotice error={error} />
     <div className="waste-form__summary"><strong>ขั้นที่ 1 · บันทึกแผนร่าง</strong><p>เลือกวัน เส้นทาง รถ และพนักงานประจำรถขยะ ระบบช่วยเติมเวลาจากประกาศของเทศบาลตามวันจริง จากนั้นตรวจสอบก่อนประกาศผ่าน LINE</p></div>
     <label>เลขที่แผนปฏิบัติงานเก็บขยะ<input value={initial?.planNo || "ระบบออกเลขให้อัตโนมัติเมื่อบันทึก"} readOnly aria-readonly="true" /></label>
-    <label>วันที่ปฏิบัติงาน<input type="date" value={scheduledDate} onChange={(event) => { const value = event.target.value; setScheduledDate(value); window.requestAnimationFrame(() => applyOfficialTime(routeId, value)); }} required /></label>
+    <label>
+      วันที่ปฏิบัติงาน
+      <input
+        type="date"
+        value={scheduledDate}
+        min={minimumDate}
+        onChange={(event) => {
+          const value =
+            event.target.value;
+
+          setScheduledDate(value);
+
+          window.requestAnimationFrame(
+            () =>
+              applyOfficialTime(
+                routeId,
+                value,
+              ),
+          );
+        }}
+        required
+      />
+    </label>
     <label>
       เส้นทางเก็บขยะ
       <select
@@ -251,6 +284,10 @@ function PlanForm({ api, resources, date, initial = null, onCancel, onSubmit, sa
       <input
         type="time"
         value={startTime}
+        min={
+          minimumStartTime ||
+          undefined
+        }
         onChange={(event) => {
           setStartTime(event.target.value);
           setVehicleId("");
@@ -265,6 +302,10 @@ function PlanForm({ api, resources, date, initial = null, onCancel, onSubmit, sa
       <input
         type="time"
         value={endTime}
+        min={
+          startTime ||
+          undefined
+        }
         onChange={(event) => {
           setEndTime(event.target.value);
           setVehicleId("");

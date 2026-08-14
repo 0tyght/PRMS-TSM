@@ -35,6 +35,63 @@ test("WastePlanResourcePolicy rejects invalid schedule window", () => {
   );
 });
 
+test("WastePlanResourcePolicy rejects a past operation date", () => {
+  const policy =
+    new WastePlanResourcePolicy();
+
+  assert.throws(
+    () =>
+      policy.assertNotPast(
+        "2026-08-13",
+        new Date(
+          "2026-08-13T09:00:00+07:00",
+        ),
+        new Date(
+          "2026-08-14T10:00:00+07:00",
+        ),
+      ),
+    {
+      code:
+        "WASTE_PLAN_DATE_IN_PAST",
+    },
+  );
+});
+
+test("WastePlanResourcePolicy rejects a start time that already passed", () => {
+  const policy =
+    new WastePlanResourcePolicy();
+
+  assert.throws(
+    () =>
+      policy.assertNotPast(
+        "2026-08-14",
+        new Date(
+          "2026-08-14T09:30:00+07:00",
+        ),
+        new Date(
+          "2026-08-14T10:00:00+07:00",
+        ),
+      ),
+    {
+      code:
+        "WASTE_PLAN_START_IN_PAST",
+    },
+  );
+
+  assert.doesNotThrow(
+    () =>
+      policy.assertNotPast(
+        "2026-08-14",
+        new Date(
+          "2026-08-14T10:30:00+07:00",
+        ),
+        new Date(
+          "2026-08-14T10:00:00+07:00",
+        ),
+      ),
+  );
+});
+
 test("WastePlanResourcePolicy exposes vehicle availability consistently", () => {
   const policy = new WastePlanResourcePolicy();
 

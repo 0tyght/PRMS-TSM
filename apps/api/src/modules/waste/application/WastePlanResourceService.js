@@ -3,6 +3,8 @@ export class WastePlanResourceService {
     repository,
     policy,
     routeLifecycleService,
+    now =
+      () => new Date(),
   }) {
     if (!repository) {
       throw new TypeError(
@@ -22,9 +24,19 @@ export class WastePlanResourceService {
       );
     }
 
+    if (
+      typeof now !==
+      "function"
+    ) {
+      throw new TypeError(
+        "WastePlanResourceService requires now function",
+      );
+    }
+
     this.repository = repository;
     this.policy = policy;
     this.routeLifecycleService = routeLifecycleService;
+    this.now = now;
   }
 
   toDateTime(value) {
@@ -38,7 +50,16 @@ export class WastePlanResourceService {
     const startAt = this.toDateTime(input.scheduledStartAt);
     const endAt = this.toDateTime(input.scheduledEndAt);
 
-    this.policy.assertScheduleWindow(startAt, endAt);
+    this.policy
+      .assertNotPast(
+        input.scheduledDate,
+        startAt,
+        this.now(),
+      )
+      .assertScheduleWindow(
+        startAt,
+        endAt,
+      );
 
     const [route, vehicle, driver] = await Promise.all([
       this.repository.findRouteContext(input.routeId),
@@ -82,7 +103,16 @@ export class WastePlanResourceService {
     const startAt = this.toDateTime(input.scheduledStartAt);
     const endAt = this.toDateTime(input.scheduledEndAt);
 
-    this.policy.assertScheduleWindow(startAt, endAt);
+    this.policy
+      .assertNotPast(
+        input.scheduledDate,
+        startAt,
+        this.now(),
+      )
+      .assertScheduleWindow(
+        startAt,
+        endAt,
+      );
 
     const [vehicles, drivers, conflicts] =
       await Promise.all([

@@ -1,5 +1,48 @@
 import { DomainRuleViolation } from "../../../domain/common/errors/DomainRuleViolation.js";
 
+function bangkokDateOnly(value) {
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return null;
+  }
+
+  const parts =
+    Object.fromEntries(
+      new Intl.DateTimeFormat(
+        "en-US",
+        {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          timeZone:
+            "Asia/Bangkok",
+        },
+      )
+        .formatToParts(date)
+        .filter(
+          (part) =>
+            part.type !==
+            "literal",
+        )
+        .map(
+          (part) => [
+            part.type,
+            part.value,
+          ],
+        ),
+    );
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 export class WastePlanResourcePolicy {
   #resourceOccupyingStatuses;
 
@@ -15,6 +58,70 @@ export class WastePlanResourcePolicy {
 
   get resourceOccupyingStatuses() {
     return [...this.#resourceOccupyingStatuses];
+  }
+
+  assertNotPast(
+    scheduledDate,
+    startAt,
+    now = new Date(),
+  ) {
+    const currentDate =
+      now instanceof Date
+        ? now
+        : new Date(now);
+
+    if (
+      Number.isNaN(
+        currentDate.getTime(),
+      )
+    ) {
+      throw new TypeError(
+        "WastePlanResourcePolicy requires a valid current time",
+      );
+    }
+
+    const today =
+      bangkokDateOnly(
+        currentDate,
+      );
+
+    if (
+      scheduledDate &&
+      scheduledDate < today
+    ) {
+      throw new DomainRuleViolation(
+        "WASTE_PLAN_DATE_IN_PAST",
+        "ไม่สามารถสร้างหรือแก้ไขแผนปฏิบัติงานเก็บขยะย้อนหลังได้ กรุณาเลือกวันที่ปัจจุบันหรืออนาคต",
+        { status: 422 },
+      );
+    }
+
+    if (startAt) {
+      if (
+        Number.isNaN(
+          startAt.getTime(),
+        )
+      ) {
+        throw new DomainRuleViolation(
+          "WASTE_PLAN_START_TIME_INVALID",
+          "เวลาเริ่มตามแผนไม่ถูกต้อง",
+          { status: 422 },
+        );
+      }
+
+      if (
+        startAt.getTime() <=
+        currentDate.getTime()
+      ) {
+        throw new DomainRuleViolation(
+          "WASTE_PLAN_START_IN_PAST",
+          "เวลาเริ่มตามแผนต้องอยู่หลังเวลาปัจจุบัน",
+          { status: 422 },
+        );
+      }
+    }
+
+    return this;
   }
 
   assertScheduleWindow(startAt, endAt) {

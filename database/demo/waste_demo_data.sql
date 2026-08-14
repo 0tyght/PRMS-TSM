@@ -12,7 +12,7 @@ SET @month_start = DATE_FORMAT(CURDATE(), '%Y-%m-01');
 INSERT INTO waste_vehicles
   (id, vehicle_code, registration_no, vehicle_type, capacity_kg, status, last_latitude, last_longitude, last_gps_at, note)
 VALUES
-  ('a2000000-0000-4000-8000-000000000001', 'DEMO-W01', '81-9001 พิษณุโลก', 'รถบรรทุกอัดท้าย 6 ล้อ', 7000, 'IN_SERVICE', 16.7789000, 100.2203000, NOW(), 'ข้อมูลตัวอย่าง: รถประจำเส้นทางตอนเหนือ'),
+  ('a2000000-0000-4000-8000-000000000001', 'DEMO-W01', '81-9001 พิษณุโลก', 'รถบรรทุกอัดท้าย 6 ล้อ', 7000, 'AVAILABLE', 16.7789000, 100.2203000, NOW(), 'ข้อมูลตัวอย่าง: รถประจำเส้นทางตอนเหนือ'),
   ('a2000000-0000-4000-8000-000000000002', 'DEMO-W02', '81-9002 พิษณุโลก', 'รถบรรทุกอัดท้าย 6 ล้อ', 7000, 'AVAILABLE', 16.7688000, 100.2296000, DATE_SUB(NOW(), INTERVAL 2 HOUR), 'ข้อมูลตัวอย่าง: รถสำรองพร้อมใช้งาน'),
   ('a2000000-0000-4000-8000-000000000003', 'DEMO-W03', '81-9003 พิษณุโลก', 'รถบรรทุกเปิดข้าง 4 ล้อ', 3500, 'AVAILABLE', 16.7724000, 100.2147000, DATE_SUB(NOW(), INTERVAL 1 HOUR), 'ข้อมูลตัวอย่าง: รถสำหรับซอยแคบ'),
   ('a2000000-0000-4000-8000-000000000004', 'DEMO-W04', '81-9004 พิษณุโลก', 'รถบรรทุกอัดท้าย 6 ล้อ', 7000, 'MAINTENANCE', 16.7649000, 100.2189000, DATE_SUB(NOW(), INTERVAL 3 HOUR), 'ข้อมูลตัวอย่าง: ตรวจระบบไฮดรอลิก'),
@@ -72,52 +72,8 @@ WHERE service_no BETWEEN 'TEST-PT001' AND 'TEST-PT018'
 ON DUPLICATE KEY UPDATE route_id=VALUES(route_id), service_user_id=VALUES(service_user_id), sequence_no=VALUES(sequence_no),
   stop_name=VALUES(stop_name), latitude=VALUES(latitude), longitude=VALUES(longitude), is_active=1;
 
-INSERT INTO waste_operation_plans
-  (id, plan_no, scheduled_date, route_id, vehicle_id, driver_id, scheduled_start_at, scheduled_end_at, actual_start_at, actual_end_at, status, note, created_by)
-VALUES
-  ('a6000000-0000-4000-8000-000000000001','DEMO-TODAY-01',@today,'b1100000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001',TIMESTAMP(@today,'06:00:00'),TIMESTAMP(@today,'10:00:00'),TIMESTAMP(@today,'06:04:00'),NULL,'IN_PROGRESS','ข้อมูลตัวอย่าง: กำลังเก็บขยะและส่งตำแหน่ง GPS',NULL),
-  ('a6000000-0000-4000-8000-000000000002','DEMO-TODAY-02',@today,'b1100000-0000-4000-8000-000000000002','a2000000-0000-4000-8000-000000000002','a3000000-0000-4000-8000-000000000002',TIMESTAMP(@today,'13:00:00'),TIMESTAMP(@today,'16:30:00'),NULL,NULL,'SCHEDULED','ข้อมูลตัวอย่าง: แผนรอเริ่มช่วงบ่าย',NULL),
-  ('a6000000-0000-4000-8000-000000000003','DEMO-TODAY-03',@today,'b1100000-0000-4000-8000-000000000004','a2000000-0000-4000-8000-000000000003','a3000000-0000-4000-8000-000000000003',TIMESTAMP(@today,'05:30:00'),TIMESTAMP(@today,'09:00:00'),TIMESTAMP(@today,'05:33:00'),TIMESTAMP(@today,'08:47:00'),'COMPLETED','ข้อมูลตัวอย่าง: ปฏิบัติงานครบทุกจุด',NULL),
-  ('a6000000-0000-4000-8000-000000000004','DEMO-TODAY-04',@today,'b1100000-0000-4000-8000-000000000005','a2000000-0000-4000-8000-000000000004','a3000000-0000-4000-8000-000000000004',TIMESTAMP(@today,'07:00:00'),TIMESTAMP(@today,'11:00:00'),TIMESTAMP(@today,'07:05:00'),NULL,'INTERRUPTED','ข้อมูลตัวอย่าง: หยุดชั่วคราวเพื่อตรวจระบบไฮดรอลิก',NULL),
-  ('a6000000-0000-4000-8000-000000000005','DEMO-YESTERDAY-01',DATE_SUB(@today,INTERVAL 1 DAY),'b1100000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000006','a3000000-0000-4000-8000-000000000005',TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'06:00:00'),TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'10:00:00'),TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'06:02:00'),TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'09:41:00'),'COMPLETED','ข้อมูลตัวอย่างสำหรับรายงานย้อนหลัง',NULL),
-  ('a6000000-0000-4000-8000-000000000006','DEMO-YESTERDAY-02',DATE_SUB(@today,INTERVAL 1 DAY),'b1100000-0000-4000-8000-000000000002','a2000000-0000-4000-8000-000000000002','a3000000-0000-4000-8000-000000000002',TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'13:00:00'),TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'16:00:00'),NULL,NULL,'CANCELLED','ข้อมูลตัวอย่าง: ยกเลิกเนื่องจากฝนตกหนัก',NULL)
-ON DUPLICATE KEY UPDATE scheduled_date=VALUES(scheduled_date), route_id=VALUES(route_id), vehicle_id=VALUES(vehicle_id), driver_id=VALUES(driver_id),
-  scheduled_start_at=VALUES(scheduled_start_at), scheduled_end_at=VALUES(scheduled_end_at), actual_start_at=VALUES(actual_start_at), actual_end_at=VALUES(actual_end_at), status=VALUES(status), note=VALUES(note);
-
-DELETE FROM waste_location_logs
-WHERE plan_id IN ('a6000000-0000-4000-8000-000000000001','a6000000-0000-4000-8000-000000000003','a6000000-0000-4000-8000-000000000004','a6000000-0000-4000-8000-000000000005');
-
-INSERT INTO waste_location_logs (plan_id, latitude, longitude, accuracy_m, speed_kph, recorded_at, source)
-VALUES
- ('a6000000-0000-4000-8000-000000000001',16.7858000,100.2171000,8.5,12.0,TIMESTAMP(@today,'06:10:00'),'DEVICE'),
- ('a6000000-0000-4000-8000-000000000001',16.7834000,100.2192000,7.2,18.0,TIMESTAMP(@today,'06:25:00'),'DEVICE'),
- ('a6000000-0000-4000-8000-000000000001',16.7806000,100.2207000,6.8,9.0,TIMESTAMP(@today,'06:42:00'),'LINE'),
- ('a6000000-0000-4000-8000-000000000001',16.7789000,100.2203000,9.1,14.0,TIMESTAMP(@today,'06:55:00'),'DEVICE'),
- ('a6000000-0000-4000-8000-000000000003',16.7794000,100.2206000,8.0,10.0,TIMESTAMP(@today,'05:45:00'),'DEVICE'),
- ('a6000000-0000-4000-8000-000000000003',16.7748000,100.2165000,7.0,16.0,TIMESTAMP(@today,'07:02:00'),'DEVICE'),
- ('a6000000-0000-4000-8000-000000000003',16.7701000,100.2122000,6.5,0.0,TIMESTAMP(@today,'08:42:00'),'LINE'),
- ('a6000000-0000-4000-8000-000000000004',16.7719000,100.2242000,12.0,7.0,TIMESTAMP(@today,'07:18:00'),'LINE'),
- ('a6000000-0000-4000-8000-000000000004',16.7649000,100.2189000,11.0,0.0,TIMESTAMP(@today,'08:02:00'),'LINE'),
- ('a6000000-0000-4000-8000-000000000005',16.7858000,100.2171000,7.0,11.0,TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'06:15:00'),'DEVICE'),
- ('a6000000-0000-4000-8000-000000000005',16.7762000,100.2263000,8.0,0.0,TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'09:38:00'),'DEVICE');
-
-INSERT INTO waste_stop_confirmations (id, plan_id, stop_id, status, confirmed_at, latitude, longitude, note)
-VALUES
- ('a5100000-0000-4000-8000-000000000001','a6000000-0000-4000-8000-000000000001','a5000000-0000-4000-8000-000000000001','COLLECTED',TIMESTAMP(@today,'06:12:00'),16.7858000,100.2171000,'ข้อมูลตัวอย่าง'),
- ('a5100000-0000-4000-8000-000000000002','a6000000-0000-4000-8000-000000000001','a5000000-0000-4000-8000-000000000002','COLLECTED',TIMESTAMP(@today,'06:43:00'),16.7806000,100.2207000,'ข้อมูลตัวอย่าง'),
- ('a5100000-0000-4000-8000-000000000003','a6000000-0000-4000-8000-000000000003','a5000000-0000-4000-8000-000000000007','COLLECTED',TIMESTAMP(@today,'05:47:00'),16.7794000,100.2206000,'ข้อมูลตัวอย่าง'),
- ('a5100000-0000-4000-8000-000000000004','a6000000-0000-4000-8000-000000000003','a5000000-0000-4000-8000-000000000008','COLLECTED',TIMESTAMP(@today,'07:05:00'),16.7748000,100.2165000,'ข้อมูลตัวอย่าง'),
- ('a5100000-0000-4000-8000-000000000005','a6000000-0000-4000-8000-000000000003','a5000000-0000-4000-8000-000000000009','COLLECTED',TIMESTAMP(@today,'08:44:00'),16.7701000,100.2122000,'ข้อมูลตัวอย่าง')
-ON DUPLICATE KEY UPDATE status=VALUES(status), confirmed_at=VALUES(confirmed_at), latitude=VALUES(latitude), longitude=VALUES(longitude), note=VALUES(note);
-
-INSERT INTO waste_incidents
-  (id, plan_id, vehicle_id, replacement_vehicle_id, driver_id, incident_type, status, description, happened_at, resolved_at, resolution_note)
-VALUES
- ('a7000000-0000-4000-8000-000000000001','a6000000-0000-4000-8000-000000000004','a2000000-0000-4000-8000-000000000004','a2000000-0000-4000-8000-000000000006','a3000000-0000-4000-8000-000000000004','VEHICLE_BREAKDOWN','REPORTED','ข้อมูลตัวอย่าง: ระบบไฮดรอลิกมีแรงดันผิดปกติ รถจอดในจุดปลอดภัยแล้ว',TIMESTAMP(@today,'08:05:00'),NULL,NULL),
- ('a7000000-0000-4000-8000-000000000002','a6000000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001',NULL,'a3000000-0000-4000-8000-000000000001','ACCESS_BLOCKED','ACKNOWLEDGED','ข้อมูลตัวอย่าง: มีรถจอดขวางทางเข้าซอย เจ้าหน้าที่กำลังประสานเจ้าของรถ',TIMESTAMP(@today,'06:48:00'),NULL,'ประสานผู้นำชุมชนแล้ว'),
- ('a7000000-0000-4000-8000-000000000003','a6000000-0000-4000-8000-000000000005','a2000000-0000-4000-8000-000000000006',NULL,'a3000000-0000-4000-8000-000000000005','ROAD_CLOSED','RESOLVED','ข้อมูลตัวอย่าง: ปิดถนนชั่วคราวจากการซ่อมผิวทาง',TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'07:10:00'),TIMESTAMP(DATE_SUB(@today,INTERVAL 1 DAY),'07:42:00'),'เปลี่ยนไปใช้เส้นทางเลี่ยงและเก็บครบทุกจุด')
-ON DUPLICATE KEY UPDATE plan_id=VALUES(plan_id), vehicle_id=VALUES(vehicle_id), replacement_vehicle_id=VALUES(replacement_vehicle_id), driver_id=VALUES(driver_id),
-  incident_type=VALUES(incident_type), status=VALUES(status), description=VALUES(description), happened_at=VALUES(happened_at), resolved_at=VALUES(resolved_at), resolution_note=VALUES(resolution_note);
+-- ไม่สร้างข้อมูลตัวอย่างแผนปฏิบัติงานเก็บขยะ
+-- แผนใหม่ต้องสร้างผ่านระบบด้วยวันที่และเวลาในอนาคต
 
 INSERT INTO waste_fee_rates (id, rate_name, amount, billing_cycle, is_active)
 VALUES
