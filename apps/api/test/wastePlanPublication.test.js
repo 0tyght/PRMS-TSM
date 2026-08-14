@@ -23,7 +23,11 @@ test("publishing one operational plan queues LINE notices only for its route", a
     markPublished: async (_db, input) => calls.push(["published", input]),
     enqueueRouteNotices: async (_db, input) => { calls.push(["notices", input]); return 3; },
   };
-  const useCase = new PublishWasteOperationPlanUseCase({ repository, noticeFactory: new WastePlanNoticeFactory() });
+  const useCase = new PublishWasteOperationPlanUseCase({
+    repository,
+    noticeFactory: new WastePlanNoticeFactory(),
+    now: () => new Date("2026-08-14T00:00:00.000Z"),
+  });
   const result = await useCase.execute({ planId: "plan-1", officerId: "officer-1", publicNote: "วางขยะก่อนเวลา" });
   assert.deepEqual(result, { publicationStatus: "PUBLISHED", publicationVersion: 1, recipientCount: 3 });
   assert.equal(calls[1][1].type, "SCHEDULE_PUBLISHED");

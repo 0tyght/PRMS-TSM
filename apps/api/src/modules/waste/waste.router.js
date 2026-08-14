@@ -10,12 +10,30 @@ import { RouteAssignmentService } from "./domain/RouteAssignmentService.js";
 import { WasteRouteLifecycleService } from "./domain/WasteRouteLifecycleService.js";
 import { WastePlanNumberService } from "./application/WastePlanNumberService.js";
 import { WasteTrackingTokenService } from "./application/WasteTrackingTokenService.js";
+import { WastePlanResourceService } from "./application/WastePlanResourceService.js";
+import { WastePlanResourcePolicy } from "./domain/WastePlanResourcePolicy.js";
+import { MariaDbWastePlanResourceRepository } from "./infrastructure/MariaDbWastePlanResourceRepository.js";
 
 const router = Router();
 const planNumberService = new WastePlanNumberService();
 const trackingTokenService = new WasteTrackingTokenService({ secret: config.jwtSecret });
 const routeAssignmentService = new RouteAssignmentService();
 const routeLifecycleService = new WasteRouteLifecycleService();
+
+const wastePlanResourcePolicy = new WastePlanResourcePolicy();
+
+function createWastePlanResourceService(database) {
+  return new WastePlanResourceService({
+    repository: new MariaDbWastePlanResourceRepository({
+      database,
+    }),
+    policy: wastePlanResourcePolicy,
+    routeLifecycleService,
+  });
+}
+
+const wastePlanResourceService =
+  createWastePlanResourceService(pool);
 const THA_PHO_BOUNDS = Object.freeze({ minLatitude: 16.70, maxLatitude: 16.805, minLongitude: 100.15, maxLongitude: 100.27 });
 
 const dateSchema = z.string().date();
@@ -295,54 +313,13 @@ async function markRoutesForRecalculation(db, routeIds, reason) {
   }
 }
 
-async function assertPlanAssignment(db, input, excludePlanId = null) {
-  const [route] = await db.execute(
-    `SELECT r.id, r.is_active AS isActive, CAST(r.route_geojson AS CHAR) AS routeGeojson,
-            COUNT(CASE WHEN s.is_active = 1 THEN 1 END) AS activeStopCount
-     FROM waste_routes r LEFT JOIN waste_route_stops s ON s.route_id = r.id
-     WHERE r.id = ? GROUP BY r.id, r.is_active, r.route_geojson`,
-    [input.routeId],
-  );
-  const [vehicle] = await db.execute(`SELECT id, status FROM waste_vehicles WHERE id = ?`, [input.vehicleId]);
-  const [driver] = await db.execute(`SELECT id, is_active AS isActive FROM waste_drivers WHERE id = ?`, [input.driverId]);
-
-  if (!route[0] || !toBoolean(route[0].isActive)) throw httpError(422, "เส้นทางที่เลือกถูกปิดใช้งานหรือไม่มีอยู่ในระบบ");
-  const routeReadiness = routeLifecycleService.readiness(
-    route[0].routeGeojson ? JSON.parse(route[0].routeGeojson) : null,
-    route[0].activeStopCount,
-  );
-  if (!routeReadiness.ready) throw httpError(422, routeReadiness.reason);
-  if (!vehicle[0]) throw httpError(422, "ไม่พบรถเก็บขยะที่เลือก");
-  if (["MAINTENANCE", "OUT_OF_SERVICE"].includes(vehicle[0].status)) throw httpError(422, "รถเก็บขยะที่เลือกอยู่ระหว่างซ่อมบำรุงหรือหยุดใช้งาน");
-  if (!driver[0] || !toBoolean(driver[0].isActive)) throw httpError(422, "คนขับรถเก็บขยะที่เลือกถูกปิดใช้งานหรือไม่มีอยู่ในระบบ");
-
-  const startAt = asDateTime(input.scheduledStartAt);
-  const endAt = asDateTime(input.scheduledEndAt);
-  if (startAt && endAt && endAt <= startAt) throw httpError(422, "เวลาสิ้นสุดตามแผนต้องอยู่หลังเวลาเริ่ม");
-
-  const [conflicts] = await db.execute(
-    `SELECT p.id, p.plan_no AS planNo,
-            CASE WHEN p.vehicle_id = ? THEN 'VEHICLE' ELSE 'DRIVER' END AS conflictType
-     FROM waste_operation_plans p
-     WHERE p.scheduled_date = ?
-       AND p.status IN ('SCHEDULED', 'IN_PROGRESS', 'INTERRUPTED')
-       AND (? IS NULL OR p.id <> ?)
-       AND (p.vehicle_id = ? OR p.driver_id = ?)
-       AND (
-         ? IS NULL OR ? IS NULL OR p.scheduled_start_at IS NULL OR p.scheduled_end_at IS NULL
-         OR (? < p.scheduled_end_at AND ? > p.scheduled_start_at)
-       )
-     LIMIT 1`,
-    [
-      input.vehicleId, input.scheduledDate, excludePlanId, excludePlanId,
-      input.vehicleId, input.driverId,
-      startAt, endAt, startAt, endAt,
-    ],
-  );
-  if (conflicts[0]) {
-    const resource = conflicts[0].conflictType === "VEHICLE" ? "รถเก็บขยะ" : "คนขับรถเก็บขยะ";
-    throw httpError(409, `${resource}ถูกมอบหมายในแผน ${conflicts[0].planNo} ช่วงเวลาเดียวกันแล้ว`);
-  }
+async function assertPlanAssignment(
+  db,
+  input,
+  excludePlanId = null,
+) {
+  return createWastePlanResourceService(db)
+    .assertAssignment(input, { excludePlanId });
 }
 
 async function findTrackingPlan(db, claims, lock = false) {
@@ -891,165 +868,24 @@ router.put("/routes/:id/stops", requireRole("ADMIN", "OFFICER"), async (req, res
   } catch (error) { next(error); }
 });
 
-router.get("/plans/resource-availability", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const input = resourceAvailabilityQuerySchema.parse(req.query);
+router.get(
+  "/plans/resource-availability",
+  requireRole("ADMIN", "OFFICER", "VIEWER"),
+  async (req, res, next) => {
+    try {
+      const input =
+        resourceAvailabilityQuerySchema.parse(req.query);
 
-    const startAt = asDateTime(input.scheduledStartAt);
-    const endAt = asDateTime(input.scheduledEndAt);
+      const data =
+        await wastePlanResourceService.getAvailability(input);
 
-    if (startAt && endAt && endAt <= startAt) {
-      throw httpError(422, "เวลาสิ้นสุดตามแผนต้องอยู่หลังเวลาเริ่ม");
+      return res.json({ data });
+    } catch (error) {
+      next(error);
     }
+  },
+);
 
-    const [[vehicles], [drivers], [conflicts]] = await Promise.all([
-      pool.execute(
-        `SELECT id,
-                vehicle_code AS vehicleCode,
-                registration_no AS registrationNo,
-                vehicle_type AS vehicleType,
-                status
-         FROM waste_vehicles
-         ORDER BY vehicle_code`,
-      ),
-
-      pool.execute(
-        `SELECT id,
-                full_name AS fullName,
-                is_active AS isActive
-         FROM waste_drivers
-         ORDER BY is_active DESC, full_name`,
-      ),
-
-      pool.execute(
-        `SELECT p.id,
-                p.plan_no AS planNo,
-                p.vehicle_id AS vehicleId,
-                p.driver_id AS driverId,
-                DATE_FORMAT(p.scheduled_start_at, '%H:%i') AS startTime,
-                DATE_FORMAT(p.scheduled_end_at, '%H:%i') AS endTime
-         FROM waste_operation_plans p
-         WHERE p.scheduled_date = ?
-           AND p.status IN ('SCHEDULED', 'IN_PROGRESS', 'INTERRUPTED')
-           AND (? IS NULL OR p.id <> ?)
-           AND (
-             ? IS NULL
-             OR ? IS NULL
-             OR p.scheduled_start_at IS NULL
-             OR p.scheduled_end_at IS NULL
-             OR (? < p.scheduled_end_at AND ? > p.scheduled_start_at)
-           )
-         ORDER BY p.scheduled_start_at, p.plan_no`,
-        [
-          input.scheduledDate,
-          input.excludePlanId || null,
-          input.excludePlanId || null,
-          startAt,
-          endAt,
-          startAt,
-          endAt,
-        ],
-      ),
-    ]);
-
-    const vehicleConflicts = new Map();
-    const driverConflicts = new Map();
-
-    for (const conflict of conflicts) {
-      if (!vehicleConflicts.has(conflict.vehicleId)) {
-        vehicleConflicts.set(conflict.vehicleId, conflict);
-      }
-
-      if (!driverConflicts.has(conflict.driverId)) {
-        driverConflicts.set(conflict.driverId, conflict);
-      }
-    }
-
-    const reason = (conflict) => {
-      if (!conflict) return null;
-
-      const time =
-        conflict.startTime && conflict.endTime
-          ? ` เวลา ${conflict.startTime}–${conflict.endTime}`
-          : " ซึ่งยังระบุเวลาไม่ครบ";
-
-      return `ถูกใช้ในแผน ${conflict.planNo}${time}`;
-    };
-
-    return res.json({
-      data: {
-        vehicles: vehicles.map((vehicle) => {
-          const conflict = vehicleConflicts.get(vehicle.id);
-
-          if (vehicle.status === "MAINTENANCE") {
-            return {
-              ...vehicle,
-              available: false,
-              reason: "อยู่ระหว่างซ่อมบำรุง",
-            };
-          }
-
-          if (vehicle.status === "OUT_OF_SERVICE") {
-            return {
-              ...vehicle,
-              available: false,
-              reason: "ถูกหยุดใช้งาน",
-            };
-          }
-
-          if (conflict) {
-            return {
-              ...vehicle,
-              available: false,
-              reason: reason(conflict),
-              conflictPlanId: conflict.id,
-              conflictPlanNo: conflict.planNo,
-            };
-          }
-
-          return {
-            ...vehicle,
-            available: true,
-            reason:
-              vehicle.status === "IN_SERVICE"
-                ? "กำลังทำงานในช่วงอื่น แต่ช่วงเวลาที่เลือกยังว่าง"
-                : "ว่างในช่วงเวลาที่เลือก",
-          };
-        }),
-
-        drivers: drivers.map((driver) => {
-          const conflict = driverConflicts.get(driver.id);
-
-          if (!toBoolean(driver.isActive)) {
-            return {
-              ...driver,
-              available: false,
-              reason: "ถูกปิดการใช้งาน",
-            };
-          }
-
-          if (conflict) {
-            return {
-              ...driver,
-              available: false,
-              reason: reason(conflict),
-              conflictPlanId: conflict.id,
-              conflictPlanNo: conflict.planNo,
-            };
-          }
-
-          return {
-            ...driver,
-            available: true,
-            reason: "ว่างในช่วงเวลาที่เลือก",
-          };
-        }),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
 router.get("/plans", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
   try {
     const { date } = z.object({ date: dateSchema.optional() }).parse(req.query);

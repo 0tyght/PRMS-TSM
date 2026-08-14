@@ -1,9 +1,32 @@
 import { WasteOperationPlan } from "../../../domain/waste/entities/WasteOperationPlan.js";
 
 export class PublishWasteOperationPlanUseCase {
-  constructor({ repository, noticeFactory }) {
+  constructor({
+    repository,
+    noticeFactory,
+    now = () => new Date(),
+  }) {
+    if (!repository) {
+      throw new TypeError(
+        "PublishWasteOperationPlanUseCase requires repository",
+      );
+    }
+
+    if (!noticeFactory) {
+      throw new TypeError(
+        "PublishWasteOperationPlanUseCase requires noticeFactory",
+      );
+    }
+
+    if (typeof now !== "function") {
+      throw new TypeError(
+        "PublishWasteOperationPlanUseCase requires now function",
+      );
+    }
+
     this.repository = repository;
     this.noticeFactory = noticeFactory;
+    this.now = now;
   }
 
   async execute({ planId, officerId, publicNote = null }) {
@@ -24,7 +47,7 @@ export class PublishWasteOperationPlanUseCase {
         (
           !scheduledEndAt ||
           Number.isNaN(scheduledEndAt.getTime()) ||
-          scheduledEndAt.getTime() <= Date.now()
+          scheduledEndAt.getTime() <= this.now().getTime()
         )
       ) {
         const error = new Error(
