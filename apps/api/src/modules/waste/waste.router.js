@@ -32,6 +32,11 @@ import { WastePlanStatusService } from "./application/WastePlanStatusService.js"
 import { MariaDbWastePlanAdminRepository } from "./infrastructure/MariaDbWastePlanAdminRepository.js";
 import { WasteDashboardQueryService } from "./application/WasteDashboardQueryService.js";
 import { MariaDbWasteDashboardRepository } from "./infrastructure/MariaDbWasteDashboardRepository.js";
+import { WasteBillingService } from "./application/WasteBillingService.js";
+import { WasteChargeNoticeFactory } from "./domain/WasteChargeNoticeFactory.js";
+import { MariaDbWasteBillingRepository } from "./infrastructure/MariaDbWasteBillingRepository.js";
+import { WasteReportQueryService } from "./application/WasteReportQueryService.js";
+import { MariaDbWasteReportRepository } from "./infrastructure/MariaDbWasteReportRepository.js";
 
 const router = Router();
 const planNumberService = new WastePlanNumberService();
@@ -150,6 +155,26 @@ const wasteDashboardQueryService =
   new WasteDashboardQueryService({
     repository:
       new MariaDbWasteDashboardRepository({
+        database: pool,
+      }),
+  });
+
+const wasteBillingService =
+  new WasteBillingService({
+    repository:
+      new MariaDbWasteBillingRepository({
+        database: pool,
+      }),
+    auditLog:
+      auditLogRepository,
+    noticeFactory:
+      new WasteChargeNoticeFactory(),
+  });
+
+const wasteReportQueryService =
+  new WasteReportQueryService({
+    repository:
+      new MariaDbWasteReportRepository({
         database: pool,
       }),
   });
@@ -1302,105 +1327,230 @@ router.put("/service-users/:id/route-assignment", requireRole("ADMIN", "OFFICER"
   } catch (error) { next(error); }
 });
 
-router.get("/fee-rates", requireRole("ADMIN", "OFFICER", "VIEWER"), async (_req, res, next) => {
-  try {
-    const [rows] = await pool.execute(`SELECT id, rate_name AS rateName, amount, billing_cycle AS billingCycle, is_active AS isActive FROM waste_fee_rates ORDER BY is_active DESC, rate_name`);
-    return res.json({ data: rows.map((row) => ({ ...row, amount: Number(row.amount), isActive: toBoolean(row.isActive) })) });
-  } catch (error) { next(error); }
-});
+router.get(
+  "/fee-rates",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+    "VIEWER",
+  ),
+  async (_req, res, next) => {
+    try {
+      const data =
+        await wasteBillingService
+          .listFeeRates();
 
-router.post("/fee-rates", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = feeRateSchema.parse(req.body);
-    const id = crypto.randomUUID();
-    await pool.execute(`INSERT INTO waste_fee_rates (id, rate_name, amount, billing_cycle, is_active) VALUES (?, ?, ?, ?, ?)`, [id, input.rateName, input.amount, input.billingCycle, input.isActive]);
-    await audit(req.user.sub, "CREATE_WASTE_FEE_RATE", "WASTE_FEE_RATE", id, input, req.ip);
-    return res.status(201).json({ data: { id, ...input } });
-  } catch (error) { next(error); }
-});
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
-router.patch("/fee-rates/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = feeRateSchema.partial().parse(req.body);
-    if (!Object.keys(input).length) throw httpError(422, "กรุณาระบุอัตราค่าบริการที่ต้องการปรับปรุง");
-    const fields = { rateName: "rate_name", amount: "amount", billingCycle: "billing_cycle", isActive: "is_active" };
-    const values = [];
-    const sets = Object.entries(input).map(([key, value]) => { values.push(value); return `${fields[key]} = ?`; });
-    values.push(req.params.id);
-    const [result] = await pool.execute(`UPDATE waste_fee_rates SET ${sets.join(", ")} WHERE id = ?`, values);
-    if (!result.affectedRows) throw httpError(404, "ไม่พบอัตราค่าบริการเก็บขยะ");
-    await audit(req.user.sub, "UPDATE_WASTE_FEE_RATE", "WASTE_FEE_RATE", req.params.id, input, req.ip);
-    return res.json({ data: { id: req.params.id, ...input } });
-  } catch (error) { next(error); }
-});
+router.post(
+  "/fee-rates",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        feeRateSchema
+          .parse(req.body);
 
-router.get("/charges", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const { status, billingPeriod } = z.object({ status: z.enum(["PENDING", "PAID", "OVERDUE", "VOID"]).optional(), billingPeriod: dateSchema.optional() }).parse(req.query);
-    const terms = [];
-    const values = [];
-    if (status) { terms.push("c.status = ?"); values.push(status); }
-    if (billingPeriod) { terms.push("c.billing_period = ?"); values.push(billingPeriod); }
-    const [rows] = await pool.execute(`SELECT c.id, c.service_user_id AS serviceUserId, u.service_no AS serviceNo, u.full_name AS fullName, u.house_no AS houseNo, c.fee_rate_id AS feeRateId, f.rate_name AS rateName, DATE_FORMAT(c.billing_period, '%Y-%m-%d') AS billingPeriod, DATE_FORMAT(c.due_date, '%Y-%m-%d') AS dueDate, c.amount, c.status, c.paid_at AS paidAt, c.notice_requested_at AS noticeRequestedAt FROM waste_service_charges c INNER JOIN waste_service_users u ON u.id = c.service_user_id LEFT JOIN waste_fee_rates f ON f.id = c.fee_rate_id ${terms.length ? `WHERE ${terms.join(" AND ")}` : ""} ORDER BY c.due_date DESC, u.full_name`, values);
-    return res.json({ data: rows.map((row) => ({ ...row, amount: Number(row.amount) })) });
-  } catch (error) { next(error); }
-});
+      const data =
+        await wasteBillingService
+          .createFeeRate(
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
 
-router.post("/charges", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = chargeSchema.parse(req.body);
-    if (input.dueDate < input.billingPeriod) throw httpError(422, "กำหนดชำระต้องไม่ก่อนรอบค่าบริการ");
-    const id = crypto.randomUUID();
-    await pool.execute(`INSERT INTO waste_service_charges (id, service_user_id, fee_rate_id, billing_period, due_date, amount) VALUES (?, ?, ?, ?, ?, ?)`, [id, input.serviceUserId, input.feeRateId, input.billingPeriod, input.dueDate, input.amount]);
-    await audit(req.user.sub, "CREATE_WASTE_CHARGE", "WASTE_SERVICE_CHARGE", id, input, req.ip);
-    return res.status(201).json({ data: { id, ...input, status: "PENDING" } });
-  } catch (error) { next(error); }
-});
+      return res
+        .status(201)
+        .json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
-router.patch("/charges/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = chargeUpdateSchema.parse(req.body);
-    const paidAt = input.status === "PAID" ? new Date() : null;
-    const [result] = await pool.execute(`UPDATE waste_service_charges SET status = ?, paid_at = ? WHERE id = ?`, [input.status, paidAt, req.params.id]);
-    if (!result.affectedRows) throw httpError(404, "ไม่พบรายการค่าบริการ");
-    await audit(req.user.sub, "UPDATE_WASTE_CHARGE", "WASTE_SERVICE_CHARGE", req.params.id, input, req.ip);
-    return res.json({ data: { id: req.params.id, ...input, paidAt } });
-  } catch (error) { next(error); }
-});
+router.patch(
+  "/fee-rates/:id",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        feeRateSchema
+          .partial()
+          .parse(req.body);
 
-router.post("/charges/:id/notice", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const [rows] = await pool.execute(
-      `SELECT c.id, c.amount, c.due_date AS dueDate, c.status,
-              u.id AS serviceUserId, u.full_name AS fullName, u.line_user_id AS lineUserId
-       FROM waste_service_charges c
-       INNER JOIN waste_service_users u ON u.id = c.service_user_id
-       WHERE c.id = ?`,
-      [req.params.id],
-    );
-    const charge = rows[0];
-    if (!charge) throw httpError(404, "ไม่พบรายการค่าบริการ");
-    if (!["PENDING", "OVERDUE"].includes(charge.status)) throw httpError(409, "ส่งแจ้งเตือนได้เฉพาะรายการที่รอชำระหรือค้างชำระ");
-    if (!charge.lineUserId) throw httpError(422, "ผู้ใช้บริการรายนี้ยังไม่ได้เชื่อมบัญชี LINE");
+      if (
+        !Object.keys(input).length
+      ) {
+        throw httpError(
+          422,
+          "กรุณาระบุอัตราค่าบริการที่ต้องการปรับปรุง",
+        );
+      }
 
-    const notificationId = crypto.randomUUID();
-    const dueDate = new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeZone: "Asia/Bangkok" }).format(new Date(charge.dueDate));
-    const amount = Number(charge.amount).toLocaleString("th-TH", { style: "currency", currency: "THB" });
-    const message = `แจ้งค่าบริการเก็บขยะ\nคุณ${charge.fullName}\nยอดชำระ ${amount}\nกำหนดชำระ ${dueDate}\nตรวจสอบรายละเอียดได้โดยพิมพ์ “ค่าบริการขยะ”`;
-    await withTransaction(async (db) => {
-      await db.execute(
-        `INSERT INTO waste_line_notifications
-          (id, line_user_id, service_user_id, charge_id, notification_type, message_text)
-         VALUES (?, ?, ?, ?, 'CHARGE_NOTICE', ?)`,
-        [notificationId, charge.lineUserId, charge.serviceUserId, charge.id, message],
-      );
-      await db.execute(`UPDATE waste_service_charges SET notice_requested_at = NOW() WHERE id = ?`, [charge.id]);
-    });
-    await audit(req.user.sub, "QUEUE_WASTE_CHARGE_NOTICE", "WASTE_SERVICE_CHARGE", charge.id, { notificationId }, req.ip);
-    return res.status(202).json({ data: { notificationId, status: "PENDING" } });
-  } catch (error) { next(error); }
-});
+      const data =
+        await wasteBillingService
+          .updateFeeRate(
+            req.params.id,
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
 
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get(
+  "/charges",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+    "VIEWER",
+  ),
+  async (req, res, next) => {
+    try {
+      const query =
+        z.object({
+          status:
+            z.enum([
+              "PENDING",
+              "PAID",
+              "OVERDUE",
+              "VOID",
+            ])
+            .optional(),
+
+          billingPeriod:
+            dateSchema
+              .optional(),
+        }).parse(req.query);
+
+      const data =
+        await wasteBillingService
+          .listCharges(query);
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  "/charges",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        chargeSchema
+          .parse(req.body);
+
+      const data =
+        await wasteBillingService
+          .createCharge(
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
+
+      return res
+        .status(201)
+        .json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  "/charges/:id",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        chargeUpdateSchema
+          .parse(req.body);
+
+      const data =
+        await wasteBillingService
+          .updateCharge(
+            req.params.id,
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  "/charges/:id/notice",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const data =
+        await wasteBillingService
+          .queueNotice(
+            req.params.id,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
+
+      return res
+        .status(202)
+        .json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.get(
   "/incidents",
   requireRole(
@@ -1497,26 +1647,59 @@ router.patch(
     }
   },
 );
-router.get("/reports/operations", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const { from, to } = z.object({ from: dateSchema.optional(), to: dateSchema.optional() }).parse(req.query);
-    const conditions = [];
-    const values = [];
-    if (from) { conditions.push("p.scheduled_date >= ?"); values.push(from); }
-    if (to) { conditions.push("p.scheduled_date <= ?"); values.push(to); }
-    const [rows] = await pool.execute(`SELECT p.plan_no AS planNo, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate, r.route_name AS routeName, v.vehicle_code AS vehicleCode, d.full_name AS driverName, p.status, (SELECT COUNT(*) FROM waste_route_stops s WHERE s.route_id = p.route_id AND s.is_active = 1) AS stopTotal, (SELECT COUNT(*) FROM waste_stop_confirmations c WHERE c.plan_id = p.id AND c.status = 'COLLECTED') AS collectedStops FROM waste_operation_plans p INNER JOIN waste_routes r ON r.id = p.route_id INNER JOIN waste_vehicles v ON v.id = p.vehicle_id INNER JOIN waste_drivers d ON d.id = p.driver_id ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""} ORDER BY p.scheduled_date DESC, p.plan_no`, values);
-    return res.json({ data: rows.map((row) => ({ ...row, stopTotal: Number(row.stopTotal || 0), collectedStops: Number(row.collectedStops || 0) })) });
-  } catch (error) { next(error); }
-});
+router.get(
+  "/reports/operations",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+    "VIEWER",
+  ),
+  async (req, res, next) => {
+    try {
+      const query =
+        z.object({
+          from:
+            dateSchema.optional(),
+          to:
+            dateSchema.optional(),
+        }).parse(req.query);
 
-router.get("/reports/billing", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const { billingPeriod } = z.object({ billingPeriod: dateSchema.optional() }).parse(req.query);
-    const [rows] = await pool.execute(`SELECT DATE_FORMAT(c.billing_period, '%Y-%m-%d') AS billingPeriod, c.status, COUNT(*) AS count, COALESCE(SUM(c.amount), 0) AS amount FROM waste_service_charges c ${billingPeriod ? "WHERE c.billing_period = ?" : ""} GROUP BY c.billing_period, c.status ORDER BY c.billing_period DESC, c.status`, billingPeriod ? [billingPeriod] : []);
-    return res.json({ data: rows.map((row) => ({ ...row, count: Number(row.count), amount: Number(row.amount) })) });
-  } catch (error) { next(error); }
-});
+      const data =
+        await wasteReportQueryService
+          .operations(query);
 
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get(
+  "/reports/billing",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+    "VIEWER",
+  ),
+  async (req, res, next) => {
+    try {
+      const query =
+        z.object({
+          billingPeriod:
+            dateSchema.optional(),
+        }).parse(req.query);
+
+      const data =
+        await wasteReportQueryService
+          .billing(query);
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 export class WasteHttpModule {
   constructor(expressRouter) {
     this.router = expressRouter;
