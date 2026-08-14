@@ -13,6 +13,11 @@ import { WasteTrackingTokenService } from "./application/WasteTrackingTokenServi
 import { WastePlanResourceService } from "./application/WastePlanResourceService.js";
 import { WastePlanResourcePolicy } from "./domain/WastePlanResourcePolicy.js";
 import { MariaDbWastePlanResourceRepository } from "./infrastructure/MariaDbWastePlanResourceRepository.js";
+import { WasteVehicleService } from "./application/WasteVehicleService.js";
+import { WasteDriverService } from "./application/WasteDriverService.js";
+import { MariaDbWasteVehicleRepository } from "./infrastructure/MariaDbWasteVehicleRepository.js";
+import { MariaDbWasteDriverRepository } from "./infrastructure/MariaDbWasteDriverRepository.js";
+import { MariaDbAuditLogRepository } from "../../infrastructure/audit/MariaDbAuditLogRepository.js";
 
 const router = Router();
 const planNumberService = new WastePlanNumberService();
@@ -34,6 +39,29 @@ function createWastePlanResourceService(database) {
 
 const wastePlanResourceService =
   createWastePlanResourceService(pool);
+
+const auditLogRepository =
+  new MariaDbAuditLogRepository({
+    database: pool,
+  });
+
+const wasteVehicleService =
+  new WasteVehicleService({
+    repository:
+      new MariaDbWasteVehicleRepository({
+        database: pool,
+      }),
+    auditLog: auditLogRepository,
+  });
+
+const wasteDriverService =
+  new WasteDriverService({
+    repository:
+      new MariaDbWasteDriverRepository({
+        database: pool,
+      }),
+    auditLog: auditLogRepository,
+  });
 const THA_PHO_BOUNDS = Object.freeze({ minLatitude: 16.70, maxLatitude: 16.805, minLongitude: 100.15, maxLongitude: 100.27 });
 
 const dateSchema = z.string().date();
@@ -202,25 +230,6 @@ function readTrackingToken(req) {
   }
 }
 
-function mapVehicle(row) {
-  return {
-    id: row.id,
-    vehicleCode: row.vehicleCode,
-    registrationNo: row.registrationNo,
-    vehicleType: row.vehicleType,
-    capacityKg: row.capacityKg,
-    status: row.status,
-    lastLatitude: row.lastLatitude,
-    lastLongitude: row.lastLongitude,
-    lastGpsAt: row.lastGpsAt,
-    note: row.note,
-  };
-}
-
-function mapDriver(row) {
-  return { id: row.id, fullName: row.fullName, phone: row.phone, lineUserId: row.lineUserId, isActive: toBoolean(row.isActive) };
-}
-
 function mapRoute(row) {
   return {
     id: row.id,
@@ -234,12 +243,22 @@ function mapRoute(row) {
   };
 }
 
-async function audit(userId, action, entityType, entityId, nextValue, ipAddress) {
-  await pool.execute(
-    `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [crypto.randomUUID(), userId, action, entityType, entityId, JSON.stringify(nextValue), ipAddress || null],
-  );
+async function audit(
+  userId,
+  action,
+  entityType,
+  entityId,
+  nextValue,
+  ipAddress,
+) {
+  return auditLogRepository.record({
+    userId,
+    action,
+    entityType,
+    entityId,
+    nextValue,
+    ipAddress,
+  });
 }
 
 async function syncServiceUserStop(db, serviceUserId) {
@@ -479,109 +498,206 @@ router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, 
   } catch (error) { next(error); }
 });
 
-router.get("/vehicles", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const { status, search } = z.object({ status: z.enum(["AVAILABLE", "IN_SERVICE", "MAINTENANCE", "OUT_OF_SERVICE"]).optional(), search: z.string().trim().max(100).optional() }).parse(req.query);
-    const terms = [];
-    const values = [];
-    if (status) { terms.push("status = ?"); values.push(status); }
-    if (search) { terms.push("(vehicle_code LIKE ? OR registration_no LIKE ? OR vehicle_type LIKE ?)"); values.push(`%${search}%`, `%${search}%`, `%${search}%`); }
-    const [rows] = await pool.execute(`SELECT id, vehicle_code AS vehicleCode, registration_no AS registrationNo, vehicle_type AS vehicleType, capacity_kg AS capacityKg, status, last_latitude AS lastLatitude, last_longitude AS lastLongitude, last_gps_at AS lastGpsAt, note FROM waste_vehicles ${terms.length ? `WHERE ${terms.join(" AND ")}` : ""} ORDER BY vehicle_code`, values);
-    return res.json({ data: rows.map(mapVehicle) });
-  } catch (error) { next(error); }
-});
+router.get(
+  "/vehicles",
+  requireRole("ADMIN", "OFFICER", "VIEWER"),
+  async (req, res, next) => {
+    try {
+      const query = z.object({
+        status: z
+          .enum([
+            "AVAILABLE",
+            "IN_SERVICE",
+            "MAINTENANCE",
+            "OUT_OF_SERVICE",
+          ])
+          .optional(),
+        search: z
+          .string()
+          .trim()
+          .max(100)
+          .optional(),
+      }).parse(req.query);
 
-router.post("/vehicles", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = vehicleSchema.parse(req.body);
-    const id = crypto.randomUUID();
-    await pool.execute(`INSERT INTO waste_vehicles (id, vehicle_code, registration_no, vehicle_type, capacity_kg, status, note) VALUES (?, ?, ?, ?, ?, ?, ?)`, [id, input.vehicleCode, input.registrationNo, input.vehicleType, input.capacityKg, input.status, input.note]);
-    await audit(req.user.sub, "CREATE_WASTE_VEHICLE", "WASTE_VEHICLE", id, input, req.ip);
-    return res.status(201).json({ data: { id, ...input } });
-  } catch (error) { next(error); }
-});
-
-router.patch("/vehicles/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = vehicleSchema.partial().parse(req.body);
-    if (!Object.keys(input).length) throw httpError(422, "กรุณาระบุข้อมูลรถเก็บขยะที่ต้องการปรับปรุง");
-    const fields = { vehicleCode: "vehicle_code", registrationNo: "registration_no", vehicleType: "vehicle_type", capacityKg: "capacity_kg", status: "status", note: "note" };
-    const values = [];
-    const sets = Object.entries(input).map(([key, value]) => { values.push(value); return `${fields[key]} = ?`; });
-    values.push(req.params.id);
-    const [result] = await pool.execute(`UPDATE waste_vehicles SET ${sets.join(", ")} WHERE id = ?`, values);
-    if (!result.affectedRows) throw httpError(404, "ไม่พบข้อมูลรถเก็บขยะ");
-    await audit(req.user.sub, "UPDATE_WASTE_VEHICLE", "WASTE_VEHICLE", req.params.id, input, req.ip);
-    return res.json({ data: { id: req.params.id, ...input } });
-  } catch (error) { next(error); }
-});
-
-router.delete("/vehicles/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const [[usage]] = await pool.execute(
-      `SELECT (SELECT COUNT(*) FROM waste_operation_plans WHERE vehicle_id = ?) +
-              (SELECT COUNT(*) FROM waste_incidents WHERE vehicle_id = ? OR replacement_vehicle_id = ?) AS usageCount`,
-      [req.params.id, req.params.id, req.params.id],
-    );
-    if (Number(usage.usageCount || 0) > 0) {
-      throw httpError(409, "รถคันนี้มีประวัติการใช้งานแล้ว กรุณาเปลี่ยนสถานะเป็นหยุดใช้งานแทนการลบ");
+      return res.json({
+        data:
+          await wasteVehicleService.list(query),
+      });
+    } catch (error) {
+      next(error);
     }
-    const [result] = await pool.execute(`DELETE FROM waste_vehicles WHERE id = ?`, [req.params.id]);
-    if (!result.affectedRows) throw httpError(404, "ไม่พบข้อมูลรถเก็บขยะ");
-    await audit(req.user.sub, "DELETE_WASTE_VEHICLE", "WASTE_VEHICLE", req.params.id, null, req.ip);
-    return res.status(204).end();
-  } catch (error) { next(error); }
-});
+  },
+);
 
-router.get("/drivers", requireRole("ADMIN", "OFFICER", "VIEWER"), async (_req, res, next) => {
-  try {
-    const [rows] = await pool.execute(`SELECT id, full_name AS fullName, phone, line_user_id AS lineUserId, is_active AS isActive FROM waste_drivers ORDER BY is_active DESC, full_name`);
-    return res.json({ data: rows.map(mapDriver) });
-  } catch (error) { next(error); }
-});
+router.post(
+  "/vehicles",
+  requireRole("ADMIN", "OFFICER"),
+  async (req, res, next) => {
+    try {
+      const input =
+        vehicleSchema.parse(req.body);
 
-router.post("/drivers", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = driverSchema.parse(req.body);
-    const id = crypto.randomUUID();
-    await pool.execute(`INSERT INTO waste_drivers (id, full_name, phone, line_user_id, is_active) VALUES (?, ?, ?, ?, ?)`, [id, input.fullName, input.phone, input.lineUserId, input.isActive]);
-    await audit(req.user.sub, "CREATE_WASTE_DRIVER", "WASTE_DRIVER", id, input, req.ip);
-    return res.status(201).json({ data: { id, ...input } });
-  } catch (error) { next(error); }
-});
+      const data =
+        await wasteVehicleService.create(
+          input,
+          {
+            userId: req.user.sub,
+            ipAddress: req.ip,
+          },
+        );
 
-router.patch("/drivers/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = driverSchema.partial().parse(req.body);
-    if (!Object.keys(input).length) throw httpError(422, "กรุณาระบุข้อมูลคนขับรถเก็บขยะที่ต้องการปรับปรุง");
-    const fields = { fullName: "full_name", phone: "phone", lineUserId: "line_user_id", isActive: "is_active" };
-    const values = [];
-    const sets = Object.entries(input).map(([key, value]) => { values.push(value); return `${fields[key]} = ?`; });
-    values.push(req.params.id);
-    const [result] = await pool.execute(`UPDATE waste_drivers SET ${sets.join(", ")} WHERE id = ?`, values);
-    if (!result.affectedRows) throw httpError(404, "ไม่พบข้อมูลคนขับรถเก็บขยะ");
-    await audit(req.user.sub, "UPDATE_WASTE_DRIVER", "WASTE_DRIVER", req.params.id, input, req.ip);
-    return res.json({ data: { id: req.params.id, ...input } });
-  } catch (error) { next(error); }
-});
-
-router.delete("/drivers/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const [[usage]] = await pool.execute(
-      `SELECT (SELECT COUNT(*) FROM waste_operation_plans WHERE driver_id = ?) +
-              (SELECT COUNT(*) FROM waste_incidents WHERE driver_id = ?) AS usageCount`,
-      [req.params.id, req.params.id],
-    );
-    if (Number(usage.usageCount || 0) > 0) {
-      throw httpError(409, "คนขับรายนี้มีประวัติการปฏิบัติงานแล้ว กรุณาปิดการใช้งานแทนการลบ");
+      return res
+        .status(201)
+        .json({ data });
+    } catch (error) {
+      next(error);
     }
-    const [result] = await pool.execute(`DELETE FROM waste_drivers WHERE id = ?`, [req.params.id]);
-    if (!result.affectedRows) throw httpError(404, "ไม่พบข้อมูลคนขับรถเก็บขยะ");
-    await audit(req.user.sub, "DELETE_WASTE_DRIVER", "WASTE_DRIVER", req.params.id, null, req.ip);
-    return res.status(204).end();
-  } catch (error) { next(error); }
-});
+  },
+);
 
+router.patch(
+  "/vehicles/:id",
+  requireRole("ADMIN", "OFFICER"),
+  async (req, res, next) => {
+    try {
+      const input =
+        vehicleSchema.partial().parse(req.body);
+
+      if (!Object.keys(input).length) {
+        throw httpError(
+          422,
+          "กรุณาระบุข้อมูลรถเก็บขยะที่ต้องการปรับปรุง",
+        );
+      }
+
+      const data =
+        await wasteVehicleService.update(
+          req.params.id,
+          input,
+          {
+            userId: req.user.sub,
+            ipAddress: req.ip,
+          },
+        );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  "/vehicles/:id",
+  requireRole("ADMIN", "OFFICER"),
+  async (req, res, next) => {
+    try {
+      await wasteVehicleService.remove(
+        req.params.id,
+        {
+          userId: req.user.sub,
+          ipAddress: req.ip,
+        },
+      );
+
+      return res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+router.get(
+  "/drivers",
+  requireRole("ADMIN", "OFFICER", "VIEWER"),
+  async (_req, res, next) => {
+    try {
+      return res.json({
+        data:
+          await wasteDriverService.list(),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  "/drivers",
+  requireRole("ADMIN", "OFFICER"),
+  async (req, res, next) => {
+    try {
+      const input =
+        driverSchema.parse(req.body);
+
+      const data =
+        await wasteDriverService.create(
+          input,
+          {
+            userId: req.user.sub,
+            ipAddress: req.ip,
+          },
+        );
+
+      return res
+        .status(201)
+        .json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  "/drivers/:id",
+  requireRole("ADMIN", "OFFICER"),
+  async (req, res, next) => {
+    try {
+      const input =
+        driverSchema.partial().parse(req.body);
+
+      if (!Object.keys(input).length) {
+        throw httpError(
+          422,
+          "กรุณาระบุข้อมูลคนขับรถเก็บขยะที่ต้องการปรับปรุง",
+        );
+      }
+
+      const data =
+        await wasteDriverService.update(
+          req.params.id,
+          input,
+          {
+            userId: req.user.sub,
+            ipAddress: req.ip,
+          },
+        );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  "/drivers/:id",
+  requireRole("ADMIN", "OFFICER"),
+  async (req, res, next) => {
+    try {
+      await wasteDriverService.remove(
+        req.params.id,
+        {
+          userId: req.user.sub,
+          ipAddress: req.ip,
+        },
+      );
+
+      return res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.post("/drivers/:id/line-link-code", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
   try {
     const [rows] = await pool.execute(`SELECT id, full_name AS fullName FROM waste_drivers WHERE id = ?`, [req.params.id]);
