@@ -1,8 +1,7 @@
-import crypto from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { config } from "../../core/config.js";
-import { pool, withTransaction } from "../../core/db.js";
+import { pool } from "../../core/db.js";
 import { authenticate, requireRole } from "../../core/middleware.js";
 import { HttpError } from "../../presentation/http/HttpError.js";
 import { RouteAssignmentService } from "./domain/RouteAssignmentService.js";
@@ -37,6 +36,12 @@ import { WasteChargeNoticeFactory } from "./domain/WasteChargeNoticeFactory.js";
 import { MariaDbWasteBillingRepository } from "./infrastructure/MariaDbWasteBillingRepository.js";
 import { WasteReportQueryService } from "./application/WasteReportQueryService.js";
 import { MariaDbWasteReportRepository } from "./infrastructure/MariaDbWasteReportRepository.js";
+import { WasteDriverLineLinkService } from "./application/WasteDriverLineLinkService.js";
+import { MariaDbWasteDriverLinkRepository } from "./infrastructure/MariaDbWasteDriverLinkRepository.js";
+import { DriverLinkCodeSecurity } from "./infrastructure/DriverLinkCodeSecurity.js";
+import { WasteRoutePreviewPolicy } from "./domain/WasteRoutePreviewPolicy.js";
+import { WasteRoutePreviewService } from "./application/WasteRoutePreviewService.js";
+import { OsrmRoutePreviewProvider } from "./infrastructure/OsrmRoutePreviewProvider.js";
 
 const router = Router();
 const planNumberService = new WastePlanNumberService();
@@ -179,6 +184,29 @@ const wasteReportQueryService =
       }),
   });
 
+const wasteDriverLineLinkService =
+  new WasteDriverLineLinkService({
+    repository:
+      new MariaDbWasteDriverLinkRepository({
+        database: pool,
+      }),
+    auditLog:
+      auditLogRepository,
+    codeSecurity:
+      new DriverLinkCodeSecurity(),
+  });
+
+const wasteRoutePreviewService =
+  new WasteRoutePreviewService({
+    policy:
+      new WasteRoutePreviewPolicy(),
+    provider:
+      new OsrmRoutePreviewProvider({
+        baseUrl:
+          config.routingApiBaseUrl,
+      }),
+  });
+
 const dateSchema = z.string().date();
 const nullableText = (max) => z.string().trim().max(max).optional().nullable().transform((value) => value || null);
 const nullableNumber = z.coerce.number().finite().optional().nullable().transform((value) => value ?? null);
@@ -209,11 +237,16 @@ const routeSchema = z.object({
 
 const routePreviewSchema = z.object({
   waypoints: z.array(z.object({
-    latitude: z.coerce.number().min(16.70, "จุดเส้นทางอยู่นอกเขตเทศบาลท่าโพธ์").max(16.805, "จุดเส้นทางอยู่นอกเขตเทศบาลท่าโพธ์"),
-    longitude: z.coerce.number().min(100.15, "จุดเส้นทางอยู่นอกเขตเทศบาลท่าโพธ์").max(100.27, "จุดเส้นทางอยู่นอกเขตเทศบาลท่าโพธ์"),
+    latitude: z.coerce
+      .number()
+      .min(-90)
+      .max(90),
+    longitude: z.coerce
+      .number()
+      .min(-180)
+      .max(180),
   })).min(2).max(50),
 });
-
 const routeStopsSchema = z.object({
   stops: z.array(z.object({
     serviceUserId: z.string().uuid(),
@@ -308,10 +341,6 @@ const chargeSchema = z.object({
 const chargeUpdateSchema = z.object({
   status: z.enum(["PENDING", "PAID", "OVERDUE", "VOID"]),
 });
-
-function hashLinkCode(value) {
-  return crypto.createHash("sha256").update(String(value)).digest("hex");
-}
 
 function httpError(status, message) {
   return new HttpError(status, message);
@@ -648,41 +677,34 @@ router.delete(
     }
   },
 );
-router.post("/drivers/:id/line-link-code", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const [rows] = await pool.execute(`SELECT id, full_name AS fullName FROM waste_drivers WHERE id = ?`, [req.params.id]);
-    if (!rows[0]) throw httpError(404, "ไม่พบข้อมูลคนขับรถเก็บขยะ");
+router.post(
+  "/drivers/:id/line-link-code",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const data =
+        await wasteDriverLineLinkService
+          .createLinkCode(
+            req.params.id,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
 
-    let code;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const candidate = String(crypto.randomInt(100000, 1000000));
-      const [duplicates] = await pool.execute(
-        `SELECT id FROM waste_driver_link_codes
-         WHERE code_hash = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1`,
-        [hashLinkCode(candidate)],
-      );
-      if (!duplicates.length) { code = candidate; break; }
+      return res
+        .status(201)
+        .json({ data });
+    } catch (error) {
+      next(error);
     }
-    if (!code) throw httpError(503, "ไม่สามารถสร้างรหัสเชื่อม LINE ได้ กรุณาลองอีกครั้ง");
-
-    const id = crypto.randomUUID();
-    await withTransaction(async (db) => {
-      await db.execute(
-        `UPDATE waste_driver_link_codes SET used_at = NOW()
-         WHERE driver_id = ? AND used_at IS NULL`,
-        [req.params.id],
-      );
-      await db.execute(
-        `INSERT INTO waste_driver_link_codes (id, driver_id, code_hash, expires_at, created_by)
-         VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), ?)`,
-        [id, req.params.id, hashLinkCode(code), req.user.sub],
-      );
-    });
-    await audit(req.user.sub, "CREATE_WASTE_DRIVER_LINE_CODE", "WASTE_DRIVER", req.params.id, { expiresInMinutes: 15 }, req.ip);
-    return res.status(201).json({ data: { code, driverName: rows[0].fullName, expiresInMinutes: 15 } });
-  } catch (error) { next(error); }
-});
-
+  },
+);
 router.get(
   "/routes",
   requireRole("ADMIN", "OFFICER", "VIEWER"),
@@ -697,51 +719,30 @@ router.get(
     }
   },
 );
-router.post("/routes/preview", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = routePreviewSchema.parse(req.body);
-    const coordinates = input.waypoints
-      .map((point) => `${point.longitude.toFixed(7)},${point.latitude.toFixed(7)}`)
-      .join(";");
-    const query = new URLSearchParams({ overview: "full", geometries: "geojson", steps: "false" });
-    let response;
+router.post(
+  "/routes/preview",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
     try {
-      response = await fetch(`${config.routingApiBaseUrl}/route/v1/driving/${coordinates}?${query}`, {
-        headers: { Accept: "application/json", "User-Agent": "Smart-Tha-Pho/1.0" },
-        signal: AbortSignal.timeout(15_000),
-      });
-    } catch {
-      throw httpError(502, "ไม่สามารถเชื่อมต่อบริการคำนวณเส้นทางได้ในขณะนี้");
-    }
-    if (!response.ok) throw httpError(502, "ไม่สามารถคำนวณเส้นทางตามถนนได้ในขณะนี้");
-    const result = await response.json();
-    const route = result.routes?.[0];
-    if (result.code !== "Ok" || !route?.geometry) throw httpError(422, "ไม่พบถนนที่เชื่อมต่อระหว่างจุดที่เลือก");
-    return res.json({
-      data: {
-        routeGeojson: {
-          type: "Feature",
-          properties: {
-            waypoints: input.waypoints,
-            distanceMeters: Math.round(route.distance || 0),
-            durationSeconds: Math.round(route.duration || 0),
-            source: "OpenStreetMap / OSRM",
-          },
-          geometry: route.geometry,
-        },
-        distanceMeters: Math.round(route.distance || 0),
-        durationSeconds: Math.round(route.duration || 0),
-        snappedWaypoints: (result.waypoints || []).map((point) => ({
-          name: point.name || "",
-          longitude: point.location?.[0],
-          latitude: point.location?.[1],
-          distanceMeters: point.distance,
-        })),
-      },
-    });
-  } catch (error) { next(error); }
-});
+      const input =
+        routePreviewSchema
+          .parse(req.body);
 
+      const data =
+        await wasteRoutePreviewService
+          .preview(
+            input.waypoints,
+          );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.post(
   "/routes",
   requireRole("ADMIN", "OFFICER"),
