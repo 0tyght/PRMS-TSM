@@ -166,6 +166,11 @@ test("waste runtime source follows V10 terminology", async () => {
       "เหตุระหว่าง",
       "ปฏิบัติงาน",
     ].join(""),
+
+    [
+      "เยก",
+      "เลิกการใช้งาน",
+    ].join(""),
   ];
 
   const violations = [];
@@ -349,5 +354,34 @@ test("V10 staff, service location, collection point, and incident labels are vis
   assert.match(
     ui,
     /RESOLVED:\s*"ปิดเหตุแล้ว"/u,
+  );
+});
+
+test("ACTIVE status uses V10 wording", async () => {
+  const ui =
+    await fs.readFile(
+      path.join(
+        repositoryRoot,
+        "apps/waste-management/src/components/ui.jsx",
+      ),
+      "utf8",
+    );
+
+  assert.match(
+    ui,
+    /ACTIVE:\s*"ใช้งาน"/u,
+  );
+
+  const corruptedActiveStateLabel =
+    [
+      "เยก",
+      "เลิกการใช้งาน",
+    ].join("");
+
+  assert.equal(
+    ui.includes(
+      corruptedActiveStateLabel,
+    ),
+    false,
   );
 });

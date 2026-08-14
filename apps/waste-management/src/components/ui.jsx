@@ -19,7 +19,7 @@ const STATUS_LABELS = Object.freeze({
   REPORTED: "รอรับทราบ", ACKNOWLEDGED: "รับทราบแล้ว", RESOLVED: "ปิดเหตุแล้ว",
   PENDING: "รอชำระ", PAID: "ชำระแล้ว", OVERDUE: "ค้างชำระ", VOID: "ยกเลิก",
   COLLECTED: "เก็บแล้ว", SKIPPED: "ข้ามจุด",
-  ACTIVE: "เยกเลิกการใช้งาน", INACTIVE: "ยกเลิกการใช้งาน",
+  ACTIVE: "ใช้งาน", INACTIVE: "ยกเลิกการใช้งาน",
 });
 
 export function StatusBadge({ value }) { return <span className={`waste-status waste-status--${String(value || "").toLowerCase()}`}>{STATUS_LABELS[value] || value || "-"}</span>; }
