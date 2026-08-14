@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
 import { wasteBillingPolicy } from "../src/domain/WasteBillingPolicy.js";
 import { wasteDashboardPolicy } from "../src/domain/WasteDashboardPolicy.js";
@@ -41,9 +41,77 @@ test("WasteServiceUserPolicy filters by route and summarizes readiness", () => {
 });
 
 test("WastePlanPolicy resolves the official municipal schedule and publication readiness", () => {
-  const route = { routeGeojson: { properties: { officialSchedules: [{ day: 4, label: "วันพฤหัสบดี", time: "03:00-10:00", areas: ["บ้านสวน"] }] } } };
-  assert.deepEqual(wastePlanPolicy.timeRange(route, "2026-08-13"), { start: "03:00", end: "10:00" });
-  assert.equal(wastePlanPolicy.readiness({ scheduledDate: "2026-08-13", scheduledStartAt: "start", scheduledEndAt: "end", vehicleId: "v", driverId: "d", stopTotal: 2 }).ready, true);
-  assert.equal(wastePlanPolicy.readiness({ scheduledDate: "2026-08-13", vehicleId: "v", driverId: "d", stopTotal: 2 }).ready, false);
+  const route = {
+    routeGeojson: {
+      properties: {
+        officialSchedules: [
+          {
+            day: 4,
+            label: "วันพฤหัสบดี",
+            time: "03:00-10:00",
+            areas: ["บ้านสวน"],
+          },
+        ],
+      },
+    },
+  };
+
+  assert.deepEqual(
+    wastePlanPolicy.timeRange(
+      route,
+      "2026-08-13",
+    ),
+    {
+      start: "03:00",
+      end: "10:00",
+    },
+  );
+
+  const now =
+    new Date(
+      "2026-08-14T10:00:00.000Z",
+    );
+
+  assert.equal(
+    wastePlanPolicy.readiness(
+      {
+        scheduledDate:
+          "2026-08-15",
+        scheduledStartAt:
+          "2026-08-15T01:00:00.000Z",
+        scheduledEndAt:
+          "2026-08-15T03:00:00.000Z",
+        vehicleId:
+          "v",
+        driverId:
+          "d",
+        stopTotal:
+          2,
+        lineRecipientCount:
+          1,
+      },
+      now,
+    ).ready,
+    true,
+  );
+
+  assert.equal(
+    wastePlanPolicy.readiness(
+      {
+        scheduledDate:
+          "2026-08-15",
+        vehicleId:
+          "v",
+        driverId:
+          "d",
+        stopTotal:
+          2,
+        lineRecipientCount:
+          1,
+      },
+      now,
+    ).ready,
+    false,
+  );
 });
 
