@@ -4,7 +4,6 @@ import { z } from "zod";
 import { config } from "../../core/config.js";
 import { pool, withTransaction } from "../../core/db.js";
 import { authenticate, requireRole } from "../../core/middleware.js";
-import { WasteOperationPlan } from "../../domain/waste/entities/WasteOperationPlan.js";
 import { HttpError } from "../../presentation/http/HttpError.js";
 import { RouteAssignmentService } from "./domain/RouteAssignmentService.js";
 import { WasteRouteLifecycleService } from "./domain/WasteRouteLifecycleService.js";
@@ -27,6 +26,12 @@ import { WasteTrackingService } from "./application/WasteTrackingService.js";
 import { MariaDbWasteTrackingRepository } from "./infrastructure/MariaDbWasteTrackingRepository.js";
 import { WasteIncidentService } from "./application/WasteIncidentService.js";
 import { MariaDbWasteIncidentRepository } from "./infrastructure/MariaDbWasteIncidentRepository.js";
+import { WastePlanExecutionPolicy } from "./domain/WastePlanExecutionPolicy.js";
+import { WastePlanService } from "./application/WastePlanService.js";
+import { WastePlanStatusService } from "./application/WastePlanStatusService.js";
+import { MariaDbWastePlanAdminRepository } from "./infrastructure/MariaDbWastePlanAdminRepository.js";
+import { WasteDashboardQueryService } from "./application/WasteDashboardQueryService.js";
+import { MariaDbWasteDashboardRepository } from "./infrastructure/MariaDbWasteDashboardRepository.js";
 
 const router = Router();
 const planNumberService = new WastePlanNumberService();
@@ -110,6 +115,43 @@ const wasteIncidentService =
       }),
     auditLog:
       auditLogRepository,
+  });
+
+const wastePlanAdminRepository =
+  new MariaDbWastePlanAdminRepository({
+    database: pool,
+  });
+
+const wastePlanExecutionPolicy =
+  new WastePlanExecutionPolicy();
+
+const wastePlanService =
+  new WastePlanService({
+    repository:
+      wastePlanAdminRepository,
+    auditLog:
+      auditLogRepository,
+    planNumberService,
+    resourceServiceFactory:
+      createWastePlanResourceService,
+  });
+
+const wastePlanStatusService =
+  new WastePlanStatusService({
+    repository:
+      wastePlanAdminRepository,
+    policy:
+      wastePlanExecutionPolicy,
+    auditLog:
+      auditLogRepository,
+  });
+
+const wasteDashboardQueryService =
+  new WasteDashboardQueryService({
+    repository:
+      new MariaDbWasteDashboardRepository({
+        database: pool,
+      }),
   });
 
 const dateSchema = z.string().date();
@@ -304,15 +346,6 @@ async function audit(
   });
 }
 
-async function assertPlanAssignment(
-  db,
-  input,
-  excludePlanId = null,
-) {
-  return createWastePlanResourceService(db)
-    .assertAssignment(input, { excludePlanId });
-}
-
 router.get(
   "/driver-tracking/session",
   async (req, res, next) => {
@@ -365,85 +398,31 @@ router.post(
 );
 router.use(authenticate);
 
-router.get("/dashboard", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const { date } = z.object({ date: dateSchema.optional() }).parse(req.query);
-    const selectedDate = date || new Date().toISOString().slice(0, 10);
-    const [[summary], [activePlans], [incidents], [overdueCharges], [routes]] = await Promise.all([
-      pool.execute(
-        `SELECT
-          (SELECT COUNT(*) FROM waste_vehicles WHERE status = 'AVAILABLE') AS availableVehicles,
-          (SELECT COUNT(*) FROM waste_vehicles WHERE status = 'MAINTENANCE') AS maintenanceVehicles,
-          (SELECT COUNT(*) FROM waste_operation_plans WHERE scheduled_date = ? AND status = 'SCHEDULED') AS scheduledPlans,
-          (SELECT COUNT(*) FROM waste_operation_plans WHERE scheduled_date = ? AND status = 'IN_PROGRESS') AS operatingPlans,
-          (SELECT COUNT(*) FROM waste_operation_plans WHERE scheduled_date = ? AND status = 'COMPLETED') AS completedPlans,
-          (SELECT COUNT(*) FROM waste_service_users WHERE is_active = 1 AND route_id IS NULL) AS unassignedServiceUsers,
-          (SELECT COUNT(*) FROM waste_service_users WHERE is_active = 1 AND (latitude IS NULL OR longitude IS NULL)) AS serviceUsersWithoutLocation`,
-        [selectedDate, selectedDate, selectedDate],
-      ),
-      pool.execute(
-        `SELECT p.id, p.plan_no AS planNo, p.status, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate,
-                r.id AS routeId, r.route_name AS routeName, v.vehicle_code AS vehicleCode, v.registration_no AS registrationNo,
-                d.full_name AS driverName, v.last_latitude AS latitude, v.last_longitude AS longitude,
-                v.last_gps_at AS lastGpsAt,
-                (SELECT COUNT(*) FROM waste_route_stops s WHERE s.route_id = p.route_id AND s.is_active = 1) AS stopTotal,
-                (SELECT COUNT(*) FROM waste_stop_confirmations c WHERE c.plan_id = p.id AND c.status = 'COLLECTED') AS collectedStops
-         FROM waste_operation_plans p
-         INNER JOIN waste_routes r ON r.id = p.route_id
-         INNER JOIN waste_vehicles v ON v.id = p.vehicle_id
-         INNER JOIN waste_drivers d ON d.id = p.driver_id
-         WHERE p.scheduled_date = ? AND p.status IN ('SCHEDULED', 'IN_PROGRESS', 'INTERRUPTED')
-         ORDER BY FIELD(p.status, 'IN_PROGRESS', 'INTERRUPTED', 'SCHEDULED'), p.scheduled_start_at, p.created_at`,
-        [selectedDate],
-      ),
-      pool.execute(
-        `SELECT i.id, i.incident_type AS incidentType, i.status, i.description, i.happened_at AS happenedAt,
-                p.plan_no AS planNo, v.vehicle_code AS vehicleCode
-         FROM waste_incidents i
-         LEFT JOIN waste_operation_plans p ON p.id = i.plan_id
-         LEFT JOIN waste_vehicles v ON v.id = i.vehicle_id
-         WHERE i.status <> 'RESOLVED'
-         ORDER BY i.happened_at DESC LIMIT 6`,
-      ),
-      pool.execute(
-        `SELECT COUNT(*) AS total, COALESCE(SUM(amount), 0) AS amount
-         FROM waste_service_charges WHERE status IN ('PENDING', 'OVERDUE') AND due_date < CURDATE()`,
-      ),
-      pool.execute(
-        `SELECT r.id, r.route_code AS routeCode, r.route_name AS routeName, r.description,
-                CAST(r.route_geojson AS CHAR) AS routeGeojson, r.is_active AS isActive,
-                COUNT(DISTINCT s.id) AS stopCount, COUNT(DISTINCT u.id) AS serviceUserCount
-         FROM waste_routes r
-         LEFT JOIN waste_route_stops s ON s.route_id = r.id AND s.is_active = 1
-         LEFT JOIN waste_service_users u ON u.route_id = r.id AND u.is_active = 1
-         WHERE r.is_active = 1
-         GROUP BY r.id, r.route_code, r.route_name, r.description, r.route_geojson, r.is_active
-         ORDER BY r.route_code`,
-      ),
-    ]);
+router.get(
+  "/dashboard",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+    "VIEWER",
+  ),
+  async (req, res, next) => {
+    try {
+      const query =
+        z.object({
+          date:
+            dateSchema.optional(),
+        }).parse(req.query);
 
-    return res.json({
-      data: {
-        date: selectedDate,
-        summary: {
-          availableVehicles: Number(summary[0].availableVehicles || 0),
-          maintenanceVehicles: Number(summary[0].maintenanceVehicles || 0),
-          scheduledPlans: Number(summary[0].scheduledPlans || 0),
-          operatingPlans: Number(summary[0].operatingPlans || 0),
-          completedPlans: Number(summary[0].completedPlans || 0),
-          unassignedServiceUsers: Number(summary[0].unassignedServiceUsers || 0),
-          serviceUsersWithoutLocation: Number(summary[0].serviceUsersWithoutLocation || 0),
-          overdueCharges: Number(overdueCharges[0].total || 0),
-          overdueAmount: Number(overdueCharges[0].amount || 0),
-        },
-        activePlans: activePlans.map((row) => ({ ...row, stopTotal: Number(row.stopTotal || 0), collectedStops: Number(row.collectedStops || 0) })),
-        routes: routes.map(mapRoute),
-        incidents,
-      },
-    });
-  } catch (error) { next(error); }
-});
+      const data =
+        await wasteDashboardQueryService
+          .get(query);
 
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.get(
   "/vehicles",
   requireRole("ADMIN", "OFFICER", "VIEWER"),
@@ -952,151 +931,139 @@ router.get(
   },
 );
 
-router.get("/plans", requireRole("ADMIN", "OFFICER", "VIEWER"), async (req, res, next) => {
-  try {
-    const { date } = z.object({ date: dateSchema.optional() }).parse(req.query);
-    const values = date ? [date] : [];
-    const [rows] = await pool.execute(
-      `SELECT p.id, p.plan_no AS planNo, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate, p.status,
-              p.publication_status AS publicationStatus, p.publication_version AS publicationVersion,
-              p.public_note AS publicNote, p.published_at AS publishedAt, p.withdrawn_at AS withdrawnAt,
-              p.scheduled_start_at AS scheduledStartAt, p.scheduled_end_at AS scheduledEndAt,
-              p.actual_start_at AS actualStartAt, p.actual_end_at AS actualEndAt, p.note,
-              r.id AS routeId, r.route_name AS routeName, v.id AS vehicleId, v.vehicle_code AS vehicleCode,
-              d.id AS driverId, d.full_name AS driverName,
-              (SELECT COUNT(*) FROM waste_route_stops s WHERE s.route_id = p.route_id AND s.is_active = 1) AS stopTotal,
-              (SELECT COUNT(*) FROM waste_stop_confirmations c WHERE c.plan_id = p.id AND c.status = 'COLLECTED') AS collectedStops,
-              (SELECT COUNT(*) FROM waste_service_users u WHERE u.route_id = p.route_id AND u.is_active = 1 AND u.line_user_id IS NOT NULL AND u.line_user_id <> '') AS lineRecipientCount,
-              (SELECT COUNT(*) FROM waste_line_notifications n WHERE n.plan_id = p.id AND n.notification_type = 'SCHEDULE_PUBLISHED' AND n.delivery_status = 'SENT') AS lineSentCount,
-              (SELECT COUNT(*) FROM waste_line_notifications n WHERE n.plan_id = p.id AND n.notification_type = 'SCHEDULE_PUBLISHED' AND n.delivery_status IN ('PENDING','PROCESSING')) AS linePendingCount,
-              (SELECT COUNT(*) FROM waste_line_notifications n WHERE n.plan_id = p.id AND n.notification_type = 'SCHEDULE_PUBLISHED' AND n.delivery_status = 'FAILED') AS lineFailedCount
-       FROM waste_operation_plans p
-       INNER JOIN waste_routes r ON r.id = p.route_id
-       INNER JOIN waste_vehicles v ON v.id = p.vehicle_id
-       INNER JOIN waste_drivers d ON d.id = p.driver_id
-       ${date ? "WHERE p.scheduled_date = ?" : ""}
-       ORDER BY p.scheduled_date DESC, p.scheduled_start_at, p.created_at DESC`,
-      values,
-    );
-    return res.json({ data: rows.map((row) => ({
-      ...row,
-      publicationVersion: Number(row.publicationVersion || 0),
-      stopTotal: Number(row.stopTotal || 0),
-      collectedStops: Number(row.collectedStops || 0),
-      lineRecipientCount: Number(row.lineRecipientCount || 0),
-      lineSentCount: Number(row.lineSentCount || 0),
-      linePendingCount: Number(row.linePendingCount || 0),
-      lineFailedCount: Number(row.lineFailedCount || 0),
-    })) });
-  } catch (error) { next(error); }
-});
+router.get(
+  "/plans",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+    "VIEWER",
+  ),
+  async (req, res, next) => {
+    try {
+      const query =
+        z.object({
+          date:
+            dateSchema.optional(),
+        }).parse(req.query);
 
-router.post("/plans", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = planSchema.parse(req.body);
-    const id = crypto.randomUUID();
-    let planNo = input.planNo;
-    await withTransaction(async (db) => {
-      await assertPlanAssignment(db, input);
-      planNo ||= await planNumberService.next(db, input.scheduledDate);
-      await db.execute(`INSERT INTO waste_operation_plans (id, plan_no, scheduled_date, route_id, vehicle_id, driver_id, scheduled_start_at, scheduled_end_at, note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, planNo, input.scheduledDate, input.routeId, input.vehicleId, input.driverId, asDateTime(input.scheduledStartAt), asDateTime(input.scheduledEndAt), input.note, req.user.sub]);
-    });
-    const created = { ...input, planNo };
-    await audit(req.user.sub, "CREATE_WASTE_PLAN", "WASTE_PLAN", id, created, req.ip);
-    return res.status(201).json({ data: { id, ...created, status: "SCHEDULED" } });
-  } catch (error) { next(error); }
-});
+      const data =
+        await wastePlanService
+          .list(query);
 
-router.patch("/plans/:id", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = planSchema.partial().parse(req.body);
-    if (!Object.keys(input).length) throw httpError(422, "กรุณาระบุข้อมูลแผนปฏิบัติงานที่ต้องการปรับปรุง");
-    await withTransaction(async (db) => {
-      const [planRows] = await db.execute(
-        `SELECT status, plan_no AS planNo, scheduled_date AS scheduledDate, route_id AS routeId,
-                vehicle_id AS vehicleId, driver_id AS driverId,
-                scheduled_start_at AS scheduledStartAt, scheduled_end_at AS scheduledEndAt
-         FROM waste_operation_plans WHERE id = ? FOR UPDATE`,
-        [req.params.id],
-      );
-      if (!planRows[0]) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
-      new WasteOperationPlan({ id: req.params.id, ...planRows[0] }).assertEditable();
-      const current = planRows[0];
-      const merged = {
-        scheduledDate: input.scheduledDate || asDateOnly(current.scheduledDate),
-        routeId: input.routeId || current.routeId,
-        vehicleId: input.vehicleId || current.vehicleId,
-        driverId: input.driverId || current.driverId,
-        scheduledStartAt: input.scheduledStartAt === undefined ? current.scheduledStartAt : input.scheduledStartAt,
-        scheduledEndAt: input.scheduledEndAt === undefined ? current.scheduledEndAt : input.scheduledEndAt,
-      };
-      await assertPlanAssignment(db, merged, req.params.id);
-      const fields = {
-        planNo: "plan_no", scheduledDate: "scheduled_date", routeId: "route_id", vehicleId: "vehicle_id",
-        driverId: "driver_id", scheduledStartAt: "scheduled_start_at", scheduledEndAt: "scheduled_end_at", note: "note",
-      };
-      const values = [];
-      const sets = Object.entries(input).map(([key, value]) => {
-        values.push(["scheduledStartAt", "scheduledEndAt"].includes(key) ? asDateTime(value) : value);
-        return `${fields[key]} = ?`;
-      });
-      values.push(req.params.id);
-      await db.execute(`UPDATE waste_operation_plans SET ${sets.join(", ")} WHERE id = ?`, values);
-    });
-    await audit(req.user.sub, "UPDATE_WASTE_PLAN", "WASTE_PLAN", req.params.id, input, req.ip);
-    return res.json({ data: { id: req.params.id, ...input } });
-  } catch (error) { next(error); }
-});
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
-router.patch("/plans/:id/status", requireRole("ADMIN", "OFFICER"), async (req, res, next) => {
-  try {
-    const input = planStatusSchema.parse(req.body);
-    await withTransaction(async (db) => {
-      const [rows] = await db.execute(`SELECT status, publication_status AS publicationStatus, publication_version AS publicationVersion, vehicle_id AS vehicleId, driver_id AS driverId FROM waste_operation_plans WHERE id = ? FOR UPDATE`, [req.params.id]);
-      if (!rows[0]) throw httpError(404, "ไม่พบแผนปฏิบัติงานเก็บขยะ");
-      new WasteOperationPlan({ id: req.params.id, ...rows[0] }).transitionTo(input.status);
-      if (input.status === "IN_PROGRESS") {
-        const [vehicleRows] = await db.execute(`SELECT status FROM waste_vehicles WHERE id = ? FOR UPDATE`, [rows[0].vehicleId]);
-        const [driverRows] = await db.execute(`SELECT d.is_active AS isActive FROM waste_drivers d INNER JOIN waste_operation_plans p ON p.driver_id = d.id WHERE p.id = ?`, [req.params.id]);
-        const [activeRows] = await db.execute(
-          `SELECT plan_no AS planNo,
-                  CASE WHEN vehicle_id = ? THEN 'VEHICLE' ELSE 'DRIVER' END AS conflictType
-           FROM waste_operation_plans
-           WHERE id <> ?
-             AND status IN ('IN_PROGRESS', 'INTERRUPTED')
-             AND (vehicle_id = ? OR driver_id = ?)
-           LIMIT 1`,
-          [
-            rows[0].vehicleId,
-            req.params.id,
-            rows[0].vehicleId,
-            rows[0].driverId,
-          ],
+router.post(
+  "/plans",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        planSchema.parse(
+          req.body,
         );
-        if (!vehicleRows[0] || vehicleRows[0].status !== "AVAILABLE") throw httpError(409, "รถเก็บขยะไม่อยู่ในสถานะพร้อมใช้งาน จึงยังเริ่มแผนนี้ไม่ได้");
-        if (!driverRows[0] || !toBoolean(driverRows[0].isActive)) throw httpError(409, "คนขับรถเก็บขยะถูกปิดใช้งาน จึงยังเริ่มแผนนี้ไม่ได้");
-        if (activeRows[0]) {
-          const resource =
-            activeRows[0].conflictType === "VEHICLE"
-              ? "รถเก็บขยะ"
-              : "คนขับรถเก็บขยะ";
 
-          throw httpError(
-            409,
-            `${resource}กำลังถูกใช้ในแผน ${activeRows[0].planNo}`,
+      const data =
+        await wastePlanService
+          .create(
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
           );
-        }
-      }
-      const timeColumns = input.status === "IN_PROGRESS" ? ", actual_start_at = COALESCE(actual_start_at, NOW())" : input.status === "COMPLETED" ? ", actual_end_at = NOW()" : "";
-      await db.execute(`UPDATE waste_operation_plans SET status = ?, note = COALESCE(?, note) ${timeColumns} WHERE id = ?`, [input.status, input.note, req.params.id]);
-      if (input.status === "IN_PROGRESS") await db.execute(`UPDATE waste_vehicles SET status = 'IN_SERVICE' WHERE id = ?`, [rows[0].vehicleId]);
-      if (["COMPLETED", "CANCELLED"].includes(input.status)) await db.execute(`UPDATE waste_vehicles SET status = 'AVAILABLE' WHERE id = ? AND status = 'IN_SERVICE'`, [rows[0].vehicleId]);
-    });
-    await audit(req.user.sub, "UPDATE_WASTE_PLAN_STATUS", "WASTE_PLAN", req.params.id, input, req.ip);
-    return res.json({ data: { id: req.params.id, ...input } });
-  } catch (error) { next(error); }
-});
 
+      return res
+        .status(201)
+        .json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  "/plans/:id",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        planSchema
+          .partial()
+          .parse(req.body);
+
+      if (
+        !Object.keys(input).length
+      ) {
+        throw httpError(
+          422,
+          "กรุณาระบุข้อมูลแผนปฏิบัติงานที่ต้องการปรับปรุง",
+        );
+      }
+
+      const data =
+        await wastePlanService
+          .update(
+            req.params.id,
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  "/plans/:id/status",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        planStatusSchema
+          .parse(req.body);
+
+      const data =
+        await wastePlanStatusService
+          .updateStatus(
+            req.params.id,
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.get(
   "/plans/:id/track",
   requireRole(
