@@ -35,6 +35,12 @@ jobs:
       - name: Run API and shared tests
         run: npm test
 
+      - name: Validate API runtime syntax
+        run: |
+          node --check apps/api/src/composition-root/createApiRuntime.js
+          node --check apps/api/src/server.js
+          node --input-type=module -e "await import('./apps/api/src/composition-root/createApiRuntime.js'); console.log('API runtime import: PASS')"
+
       - name: Copy runtime configuration
         run: |
           for app in portal prms-tsm waste-management disaster-management waterworks-management; do

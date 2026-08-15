@@ -7,14 +7,16 @@ import { NativeCitizenAdapter } from "../infrastructure/line/NativeCitizenAdapte
 import { RichMenuAdapter } from "../infrastructure/line/RichMenuAdapter.js";
 import { WasteLineAdapter } from "../infrastructure/line/WasteLineAdapter.js";
 import { database } from "../core/db.js";
-import { WasteLineNotificationQueue } from "../modules/waste/infrastructure/WasteLineNotificationQueue.js";`nimport { WastePaymentReminderScanner } from "../modules/waste/infrastructure/WastePaymentReminderScanner.js";
+import { WasteLineNotificationQueue } from "../modules/waste/infrastructure/WasteLineNotificationQueue.js";
+import { WastePaymentReminderScanner } from "../modules/waste/infrastructure/WastePaymentReminderScanner.js";
 
 export function createApiRuntime({ logger = console } = {}) {
   const notifications = new LineNotificationAdapter();
   const nativeCitizen = new NativeCitizenAdapter();
   const richMenus = new RichMenuAdapter();
   const wasteLine = new WasteLineAdapter();
-  const wasteNotifications = new WasteLineNotificationQueue({ database });`n  const wastePaymentReminders = new WastePaymentReminderScanner({ database });
+  const wasteNotifications = new WasteLineNotificationQueue({ database });
+  const wastePaymentReminders = new WastePaymentReminderScanner({ database });
   const notificationQueue = new ScheduledTask({
     name: "line-notification",
     intervalMs: 60_000,
