@@ -37,7 +37,31 @@ test("WasteServiceUserPolicy filters by route and summarizes readiness", () => {
   ];
   assert.equal(wasteServiceUserPolicy.filter(users).length, 2);
   assert.equal(wasteServiceUserPolicy.filter(users, { routeId: "UNASSIGNED" }).length, 1);
-  assert.deepEqual(wasteServiceUserPolicy.summarize(users), { total: 2, unassigned: 1, linkedToLine: 1 });
+  assert.equal(
+    wasteServiceUserPolicy.filter(
+      users,
+      { status: "INACTIVE" },
+    ).length,
+    1,
+  );
+
+  assert.equal(
+    wasteServiceUserPolicy.filter(
+      users,
+      { status: "ALL" },
+    ).length,
+    3,
+  );
+
+  assert.deepEqual(
+    wasteServiceUserPolicy.summarize(users),
+    {
+      total: 2,
+      inactive: 1,
+      unassigned: 1,
+      linkedToLine: 1,
+    },
+  );
 });
 
 test("WastePlanPolicy resolves the official municipal schedule and publication readiness", () => {

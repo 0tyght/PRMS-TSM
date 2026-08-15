@@ -2,13 +2,44 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import { wastePlanFormController } from "../application/WastePlanFormController.js";
 import { wastePlanPolicy } from "../domain/WastePlanPolicy.js";
-import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, StatusBadge, formatDate, formatNumber, toDateInput } from "../components/ui.jsx";
+import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, ProgressTracker, StatusBadge, formatDate, formatNumber, toDateInput } from "../components/ui.jsx";
 
 function toIso(date, time) { return time ? new Date(`${date}T${time}:00+07:00`).toISOString() : null; }
 function toTimeInput(value) {
   if (!value) return "";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" }).format(date);
+}
+
+const PLAN_PROGRESS_STEPS = Object.freeze([
+  "จัดทำแผน",
+  "ตรวจความพร้อม",
+  "ประกาศ",
+  "ปฏิบัติงาน",
+  "เสร็จสิ้น",
+]);
+
+function planProgressStep(plan) {
+  if (plan.status === "COMPLETED") {
+    return 4;
+  }
+
+  if (
+    ["IN_PROGRESS", "INTERRUPTED"]
+      .includes(plan.status)
+  ) {
+    return 3;
+  }
+
+  if (plan.publicationStatus === "PUBLISHED") {
+    return 2;
+  }
+
+  if (wastePlanPolicy.readiness(plan).ready) {
+    return 1;
+  }
+
+  return 0;
 }
 
 const STATUS_CONFIRMATIONS = Object.freeze({
@@ -695,7 +726,7 @@ export default function PlansPage({ token, navigate }) {
 
   return <>
     <PageHead
-      eyebrow="OPERATION PLANNING · FR17"
+      eyebrow="การวางแผนปฏิบัติงานเก็บขยะ"
       title="แผนปฏิบัติงานเก็บขยะ"
       detail="ดูแผนทั้งหมดในภาพเดียว แล้วใช้ตัวกรองเพื่อค้นหาช่วงเวลา เส้นทาง สถานะแผน หรือสถานะการประกาศที่ต้องการ"
       actions={
@@ -708,11 +739,11 @@ export default function PlansPage({ token, navigate }) {
         </button>
       }
     />
-    <section className="waste-plan-workflow" aria-label="ขั้นตอนจัดแผน"><article><b>1</b><span><strong>จัดแผนร่าง</strong><small>วัน เส้นทาง รถ พนักงานประจำรถขยะ เวลา</small></span></article><article><b>2</b><span><strong>ตรวจความพร้อม</strong><small>ทรัพยากรไม่ซ้ำและเส้นทางพร้อม</small></span></article><article><b>3</b><span><strong>ประกาศผ่าน LINE</strong><small>ส่งเฉพาะผู้ใช้บริการในพื้นที่</small></span></article></section>
+    <section className="waste-plan-guide"><strong>วงจรแผนปฏิบัติงานเก็บขยะ</strong><span>แต่ละแผนด้านล่างแสดงขั้นตอนปัจจุบัน เพื่อให้เห็นงานที่ต้องดำเนินการต่อทันที</span></section>
     <section className="waste-panel waste-plan-filters">
       <header className="waste-panel__head">
         <div>
-          <p>FILTER & SEARCH</p>
+          <p>ค้นหาและกรอง</p>
           <h2>ค้นหาและกรองแผน</h2>
         </div>
 
@@ -828,7 +859,7 @@ export default function PlansPage({ token, navigate }) {
     <ErrorNotice error={error} onRetry={load} />
     <section className="waste-panel">{loading ? <LoadingState /> : !plans.length ? <EmptyState title="ยังไม่มีแผนปฏิบัติงานเก็บขยะ" detail="สร้างแผนร่างจากเส้นทางจริง แล้วตรวจและประกาศตารางกำหนดการเก็บขยะประจำพื้นที่ก่อนเริ่มงาน" actionLabel="สร้างแผนร่าง" onAction={() => { setDialogError(""); setCreateOpen(true); }} /> : !filteredPlans.length ? <EmptyState title="ไม่พบแผนตามตัวกรอง" detail="ลองเปลี่ยนเงื่อนไขการค้นหา หรือล้างตัวกรองเพื่อดูแผนทั้งหมด" actionLabel="ล้างตัวกรอง" onAction={clearFilters} /> : <div className="waste-plan-list">{filteredPlans.map((plan) => <article key={plan.id}>
       <div className="waste-plan-list__date"><strong>{formatDate(plan.scheduledDate, { day: "numeric" })}</strong><span>{formatDate(plan.scheduledDate, { month: "short" })}</span></div>
-      <div className="waste-plan-list__main"><header><div><small>{plan.planNo}</small><h2>{plan.routeName}</h2></div><div className="waste-plan-statuses"><span className={`waste-publication waste-publication--${String(plan.publicationStatus || "DRAFT").toLowerCase()}`}>{wastePlanPolicy.publicationLabel(plan.publicationStatus)}</span><StatusBadge value={plan.status} /></div></header><dl><div><dt>รถเก็บขยะ</dt><dd>{plan.vehicleCode}</dd></div><div><dt>พนักงานประจำรถขยะ</dt><dd>{plan.driverName}</dd></div><div><dt>จุดเก็บขยะ</dt><dd>{formatNumber(plan.stopTotal)} จุด</dd></div><div><dt>เวลา</dt><dd>{plan.scheduledStartAt ? `${formatDate(plan.scheduledStartAt, { hour: "2-digit", minute: "2-digit" })}–${formatDate(plan.scheduledEndAt, { hour: "2-digit", minute: "2-digit" })}` : "ยังไม่ครบ"}</dd></div></dl>{plan.publicationStatus === "PUBLISHED" ? <div className="waste-line-delivery"><span>LINE เป้าหมาย {formatNumber(plan.lineRecipientCount)}</span><span>ส่งแล้ว {formatNumber(plan.lineSentCount)}</span><span>รอส่ง {formatNumber(plan.linePendingCount)}</span>{plan.lineFailedCount ? <span className="is-failed">ไม่สำเร็จ {formatNumber(plan.lineFailedCount)}</span> : null}</div> : null}</div>
+      <div className="waste-plan-list__main"><header><div><small>{plan.planNo}</small><h2>{plan.routeName}</h2></div><div className="waste-plan-statuses"><span className={`waste-publication waste-publication--${String(plan.publicationStatus || "DRAFT").toLowerCase()}`}>{wastePlanPolicy.publicationLabel(plan.publicationStatus)}</span><StatusBadge value={plan.status} /></div></header><dl><div><dt>รถเก็บขยะ</dt><dd>{plan.vehicleCode}</dd></div><div><dt>พนักงานประจำรถขยะ</dt><dd>{plan.driverName}</dd></div><div><dt>จุดเก็บขยะ</dt><dd>{formatNumber(plan.stopTotal)} จุด</dd></div><div><dt>เวลา</dt><dd>{plan.scheduledStartAt ? `${formatDate(plan.scheduledStartAt, { hour: "2-digit", minute: "2-digit" })}–${formatDate(plan.scheduledEndAt, { hour: "2-digit", minute: "2-digit" })}` : "ยังไม่ครบ"}</dd></div></dl><ProgressTracker steps={PLAN_PROGRESS_STEPS} currentStep={planProgressStep(plan)} ariaLabel={`ความคืบหน้า ${plan.planNo}`} />{plan.publicationStatus === "PUBLISHED" ? <div className="waste-line-delivery"><span>LINE เป้าหมาย {formatNumber(plan.lineRecipientCount)}</span><span>ส่งแล้ว {formatNumber(plan.lineSentCount)}</span><span>รอส่ง {formatNumber(plan.linePendingCount)}</span>{plan.lineFailedCount ? <span className="is-failed">ไม่สำเร็จ {formatNumber(plan.lineFailedCount)}</span> : null}</div> : null}</div>
       <div className="waste-plan-list__actions">{plan.status === "SCHEDULED" ? <>{plan.publicationStatus !== "PUBLISHED" ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => { setDialogError(""); setEditing(plan); }}>แก้ไขแผนร่าง</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setPublication({ plan, mode: "publish" }); }}>{wastePlanPolicy.readiness(plan).ready ? "ตรวจและประกาศ" : "ตรวจความพร้อม"}</button></> : <><button type="button" className="waste-button waste-button--secondary" onClick={() => { setDialogError(""); setPublication({ plan, mode: "withdraw" }); }}>ถอนประกาศ</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setStatusConfirmation({ plan, status: "IN_PROGRESS" }); }}>เริ่มปฏิบัติงาน</button></>}<button type="button" className="waste-button waste-button--quiet" disabled={saving} onClick={() => { setDialogError(""); setStatusConfirmation({ plan, status: "CANCELLED" }); }}>ยกเลิก</button></> : null}{["IN_PROGRESS", "INTERRUPTED"].includes(plan.status) ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate(`tracking?plan=${plan.id}`)}>ติดตาม</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setStatusConfirmation({ plan, status: "COMPLETED" }); }}>บันทึกเสร็จสิ้น</button></> : null}</div>
     </article>)}</div>}</section>
     {createOpen ? <Modal title="สร้างแผนปฏิบัติงานเก็บขยะ" onClose={() => setCreateOpen(false)}><PlanForm api={api} resources={resources} date={toDateInput()} onCancel={() => setCreateOpen(false)} onSubmit={(input) => savePlan(input)} saving={saving} error={dialogError} /></Modal> : null}

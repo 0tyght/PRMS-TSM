@@ -105,6 +105,7 @@ export default function ServiceUsersPage({ token }) {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [routeFilter, setRouteFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ACTIVE");
   const [suggestions, setSuggestions] = useState([]);
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [deleting, setDeleting] = useState(null);
@@ -246,25 +247,25 @@ export default function ServiceUsersPage({ token }) {
   };
 
   const filteredUsers = useMemo(
-    () => wasteServiceUserPolicy.filter(users, { routeId: routeFilter, search }),
-    [routeFilter, search, users],
+    () => wasteServiceUserPolicy.filter(users, { routeId: routeFilter, search, status: statusFilter }),
+    [routeFilter, search, statusFilter, users],
   );
   const summary = useMemo(() => wasteServiceUserPolicy.summarize(users), [users]);
 
   return <>
-    <PageHead eyebrow="SERVICE POINTS" title="ทะเบียนผู้ใช้บริการเก็บขยะ" detail="จัดการทะเบียนผู้ใช้บริการเก็บขยะและสถานที่รับบริการ พร้อมกำหนดเส้นทางเก็บขยะให้สถานที่รับบริการตามข้อมูลที่ตรวจสอบแล้ว" actions={<button type="button" className="waste-button waste-button--primary" onClick={() => setModal({})}>+ เพิ่มผู้ใช้บริการ</button>} />
+    <PageHead eyebrow="ทะเบียนผู้ใช้บริการเก็บขยะ" title="ทะเบียนผู้ใช้บริการเก็บขยะ" detail="จัดการทะเบียนผู้ใช้บริการเก็บขยะและสถานที่รับบริการ พร้อมกำหนดเส้นทางเก็บขยะให้สถานที่รับบริการตามข้อมูลที่ตรวจสอบแล้ว" actions={<button type="button" className="waste-button waste-button--primary" onClick={() => setModal({})}>+ เพิ่มผู้ใช้บริการ</button>} />
     <ErrorNotice error={error} onRetry={load} />
     <section className="waste-compact-stats" aria-label="สรุปทะเบียนผู้ใช้บริการเก็บขยะ">
       <article><span>ผู้ใช้บริการทั้งหมด</span><strong>{formatNumber(summary.total)}</strong><small>ราย</small></article>
       <article className={summary.unassigned ? "is-warning" : ""}><span>ยังไม่กำหนดเส้นทาง</span><strong>{formatNumber(summary.unassigned)}</strong><small>รายที่ต้องดำเนินการ</small>{summary.unassigned ? <button type="button" className="waste-stat-action" onClick={() => setRouteFilter("UNASSIGNED")}>เปิดคิวกำหนดเส้นทาง</button> : null}</article>
-      <article><span>เชื่อม LINE แล้ว</span><strong>{formatNumber(summary.linkedToLine)}</strong><small>จาก {formatNumber(summary.total)} ราย</small></article>
+      <article><span>เชื่อม LINE แล้ว</span><strong>{formatNumber(summary.linkedToLine)}</strong><small>จาก {formatNumber(summary.total)} รายที่รับบริการ</small></article><article><span>ปิดบริการ</span><strong>{formatNumber(summary.inactive)}</strong><small>เก็บประวัติไว้และเปิดบริการกลับได้</small>{summary.inactive ? <button type="button" className="waste-stat-action" onClick={() => setStatusFilter("INACTIVE")}>ดูรายการปิดบริการ</button> : null}</article>
     </section>
     <section className="waste-panel">
       <header className="waste-panel__head waste-panel__head--filters">
-        <div><p>REGISTERED SERVICE USERS</p><h2>ผู้ใช้บริการทั้งหมด</h2></div>
+        <div><p>ทะเบียนผู้ใช้บริการเก็บขยะ</p><h2>ผู้ใช้บริการทั้งหมด</h2></div>
         <div className="waste-filter-row">
           <label><span className="sr-only">ค้นหาผู้ใช้บริการ</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ เลขผู้ใช้บริการ หรือบ้านเลขที่" /></label>
-          <label><span className="sr-only">กรองตามเส้นทาง</span><select value={routeFilter} onChange={(event) => setRouteFilter(event.target.value)}><option value="ALL">ทุกเส้นทาง</option><option value="UNASSIGNED">ยังไม่กำหนดเส้นทาง</option>{routes.map((route) => <option key={route.id} value={route.id}>{route.routeCode} — {route.routeName}</option>)}</select></label>
+          <label><span className="sr-only">กรองตามเส้นทาง</span><select value={routeFilter} onChange={(event) => setRouteFilter(event.target.value)}><option value="ALL">ทุกเส้นทาง</option><option value="UNASSIGNED">ยังไม่กำหนดเส้นทาง</option>{routes.map((route) => <option key={route.id} value={route.id}>{route.routeCode} — {route.routeName}</option>)}</select></label><label><span className="sr-only">กรองตามสถานะบริการ</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="ACTIVE">รับบริการอยู่</option><option value="INACTIVE">ปิดบริการ</option><option value="ALL">ทุกสถานะ</option></select></label>
         </div>
       </header>
       {loading ? <LoadingState /> : !users.length ? <EmptyState title="ยังไม่มีสถานที่รับบริการ" detail="เพิ่มบ้านเรือนหรือสถานที่ พร้อมตรวจพิกัดก่อนกำหนดรอบเก็บขยะ" actionLabel="เพิ่มสถานที่รับบริการ" onAction={() => setModal({})} /> : !filteredUsers.length ? <EmptyState title="ไม่พบข้อมูลที่ค้นหา" detail="ลองเปลี่ยนคำค้นหรือเงื่อนไขเส้นทาง" /> : <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th>เลขผู้ใช้บริการ</th><th>ผู้ใช้บริการ / ติดต่อ</th><th>ที่อยู่</th><th>เส้นทาง</th><th>LINE</th><th>สถานะ</th><th /></tr></thead><tbody>{filteredUsers.map((user) => <tr key={user.id} className={!user.routeId && user.isActive ? "waste-row-needs-action" : ""}><td><strong>{user.serviceNo}</strong></td><td><strong>{user.fullName}</strong><small>{user.phone}</small></td><td>หมู่ {user.villageNo} · {user.houseNo}<small>{user.villageName}{user.latitude != null ? " · มีพิกัด" : " · ยังไม่มีพิกัด"}</small></td><td>{user.routeName ? <><strong>{user.routeName}</strong><button type="button" className="waste-route-assign-link" onClick={() => void openRouteAssignment(user)}>เปลี่ยนเส้นทาง</button></> : <button type="button" className="waste-route-assign-button" onClick={() => void openRouteAssignment(user)}><span>ยังไม่กำหนด</span><strong>{user.latitude == null ? "ระบุตำแหน่งและกำหนดเส้นทาง" : "กำหนดเส้นทาง"}</strong></button>}</td><td>{user.lineUserId ? "เชื่อมแล้ว" : "ยังไม่เชื่อม"}</td><td><StatusBadge value={user.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><div className="waste-table-actions"><button type="button" className="waste-table-action" onClick={() => { setSuggestions([]); setModal(user); }}>แก้ไข</button><button type="button" className="waste-table-action waste-table-action--danger" onClick={() => setDeleting(user)}>ลบผู้ใช้บริการ</button></div></td></tr>)}</tbody></table></div>}

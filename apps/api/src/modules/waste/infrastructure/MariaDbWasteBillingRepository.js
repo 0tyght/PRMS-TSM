@@ -207,7 +207,31 @@ export class MariaDbWasteBillingRepository {
            c.amount,
            c.status,
            c.paid_at AS paidAt,
-           c.notice_requested_at AS noticeRequestedAt
+           c.notice_requested_at AS noticeRequestedAt,
+           (
+             SELECT n.delivery_status
+             FROM waste_line_notifications n
+             WHERE n.charge_id = c.id
+               AND n.notification_type = 'CHARGE_NOTICE'
+             ORDER BY n.created_at DESC
+             LIMIT 1
+           ) AS noticeDeliveryStatus,
+           (
+             SELECT n.sent_at
+             FROM waste_line_notifications n
+             WHERE n.charge_id = c.id
+               AND n.notification_type = 'CHARGE_NOTICE'
+             ORDER BY n.created_at DESC
+             LIMIT 1
+           ) AS noticeSentAt,
+           (
+             SELECT n.last_error
+             FROM waste_line_notifications n
+             WHERE n.charge_id = c.id
+               AND n.notification_type = 'CHARGE_NOTICE'
+             ORDER BY n.created_at DESC
+             LIMIT 1
+           ) AS noticeLastError
          FROM waste_service_charges c
          INNER JOIN waste_service_users u
            ON u.id =
@@ -373,6 +397,42 @@ export class MariaDbWasteBillingRepository {
       message,
     },
   ) {
+    const [existing] =
+      await database.execute(
+        `SELECT id
+         FROM waste_line_notifications
+         WHERE charge_id = ?
+           AND notification_type = 'CHARGE_NOTICE'
+         ORDER BY created_at DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [charge.id],
+      );
+
+    if (existing[0]) {
+      await database.execute(
+        `UPDATE waste_line_notifications
+         SET
+           line_user_id = ?,
+           service_user_id = ?,
+           message_text = ?,
+           delivery_status = 'PENDING',
+           attempts = 0,
+           next_attempt_at = NOW(),
+           sent_at = NULL,
+           last_error = NULL
+         WHERE id = ?`,
+        [
+          charge.lineUserId,
+          charge.serviceUserId,
+          message,
+          existing[0].id,
+        ],
+      );
+
+      return;
+    }
+
     await database.execute(
       `INSERT INTO waste_line_notifications
         (

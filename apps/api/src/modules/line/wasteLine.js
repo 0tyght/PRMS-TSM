@@ -221,15 +221,139 @@ async function driverJobs(driver, lineUserId) {
 }
 
 async function ensureDriverPlan(driver, planId, statuses) {
-  if (!driver) throw new Error("บัญชี LINE นี้ยังไม่ได้เชื่อมกับข้อมูลพนักงานประจำรถขยะ");
-  const placeholders = statuses.map(() => "?").join(",");
-  const [rows] = await pool.execute(
-    `SELECT p.id, p.plan_no AS planNo, p.status, p.vehicle_id AS vehicleId, p.route_id AS routeId
-     FROM waste_operation_plans p WHERE p.id = ? AND p.driver_id = ? AND p.status IN (${placeholders})`,
-    [planId, driver.id, ...statuses],
-  );
-  if (!rows[0]) throw new Error("ไม่พบงานนี้ หรือสถานะงานไม่อนุญาตให้ดำเนินการ");
+  if (!driver) {
+    throw new Error(
+      "บัญชี LINE นี้ยังไม่ได้เชื่อมกับข้อมูลพนักงานประจำรถขยะ",
+    );
+  }
+
+  const placeholders =
+    statuses.map(() => "?").join(",");
+
+  const [rows] =
+    await pool.execute(
+      `SELECT
+         p.id,
+         p.plan_no AS planNo,
+         p.status,
+         p.publication_status AS publicationStatus,
+         p.vehicle_id AS vehicleId,
+         p.route_id AS routeId,
+         r.route_name AS routeName
+       FROM waste_operation_plans p
+       INNER JOIN waste_routes r
+         ON r.id = p.route_id
+       WHERE p.id = ?
+         AND p.driver_id = ?
+         AND p.status IN (${placeholders})`,
+      [
+        planId,
+        driver.id,
+        ...statuses,
+      ],
+    );
+
+  if (!rows[0]) {
+    throw new Error(
+      "ไม่พบงานนี้ หรือสถานะงานไม่อนุญาตให้ดำเนินการ",
+    );
+  }
+
   return rows[0];
+}
+
+
+async function queueCollectionStatusNotices(
+  db,
+  plan,
+  status,
+) {
+  if (
+    plan.publicationStatus !== "PUBLISHED" ||
+    !["IN_PROGRESS", "COMPLETED"].includes(status)
+  ) {
+    return 0;
+  }
+
+  const statusLabel =
+    status === "IN_PROGRESS"
+      ? "กำลังปฏิบัติงาน"
+      : "ปฏิบัติงานเสร็จสิ้น";
+
+  const message = [
+    "สถานะการดำเนินการตามแผนปฏิบัติงานเก็บขยะ",
+    statusLabel,
+    plan.routeName,
+    `เลขที่แผน ${plan.planNo}`,
+    status === "IN_PROGRESS"
+      ? "ตรวจสอบตำแหน่งรถได้จากเมนู “ตำแหน่งรถ”"
+      : "การเก็บขยะของรอบนี้เสร็จสิ้นแล้ว",
+  ].join("\n");
+
+  const [users] =
+    await db.execute(
+      `SELECT
+         id,
+         line_user_id AS lineUserId
+       FROM waste_service_users
+       WHERE route_id = ?
+         AND is_active = 1
+         AND line_user_id IS NOT NULL
+         AND line_user_id <> ''`,
+      [plan.routeId],
+    );
+
+  let queued = 0;
+
+  for (const user of users) {
+    const [existing] =
+      await db.execute(
+        `SELECT id
+         FROM waste_line_notifications
+         WHERE plan_id = ?
+           AND service_user_id = ?
+           AND notification_type = 'COLLECTION_STATUS'
+           AND message_text = ?
+         LIMIT 1`,
+        [
+          plan.id,
+          user.id,
+          message,
+        ],
+      );
+
+    if (existing.length) {
+      continue;
+    }
+
+    await db.execute(
+      `INSERT INTO waste_line_notifications
+        (
+          id,
+          line_user_id,
+          service_user_id,
+          plan_id,
+          notification_type,
+          message_text
+        )
+       VALUES (
+         UUID(),
+         ?, ?, ?,
+         'COLLECTION_STATUS',
+         ?
+       )`,
+      [
+        user.lineUserId,
+        user.id,
+        plan.id,
+        message,
+      ],
+    );
+
+    queued += 1;
+  }
+
+  return queued;
 }
 
 async function beginRegistration(lineUserId) {
@@ -402,20 +526,108 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
     return textMessage(`งาน ${plan.planNo}\nสถานะ: เสร็จสิ้นแล้ว`, wasteLineShortcuts.driverMenu());
   }
   if (params.waste === "driver_start") {
-    const plan = await ensureDriverPlan(actors.driver, params.planId, ["SCHEDULED"]);
-    await withTransaction(async (db) => {
-      await db.execute(`UPDATE waste_operation_plans SET status = 'IN_PROGRESS', actual_start_at = COALESCE(actual_start_at, NOW()) WHERE id = ?`, [plan.id]);
-      await db.execute(`UPDATE waste_vehicles SET status = 'IN_SERVICE' WHERE id = ?`, [plan.vehicleId]);
-    });
-    return textMessage(`เริ่มปฏิบัติงาน ${plan.planNo} แล้ว\nกด “เปิด GPS ต่อเนื่อง” และอนุญาตตำแหน่ง โดยคงหน้าติดตามไว้ระหว่างปฏิบัติงาน`, [uriAction("เปิด GPS ต่อเนื่อง", trackingUrl(plan, lineUserId, actors.driver.id)), ...wasteLineShortcuts.activePlan(plan).filter((action) => !String(action.data || "").startsWith("waste=driver_gps"))]);
+    const plan =
+      await ensureDriverPlan(
+        actors.driver,
+        params.planId,
+        ["SCHEDULED"],
+      );
+
+    await withTransaction(
+      async (db) => {
+        await db.execute(
+          `UPDATE waste_operation_plans
+           SET
+             status = 'IN_PROGRESS',
+             actual_start_at =
+               COALESCE(
+                 actual_start_at,
+                 NOW()
+               )
+           WHERE id = ?`,
+          [plan.id],
+        );
+
+        await db.execute(
+          `UPDATE waste_vehicles
+           SET status = 'IN_SERVICE'
+           WHERE id = ?`,
+          [plan.vehicleId],
+        );
+
+        await queueCollectionStatusNotices(
+          db,
+          plan,
+          "IN_PROGRESS",
+        );
+      },
+    );
+
+    return textMessage(
+      `เริ่มปฏิบัติงาน ${plan.planNo} แล้ว\nกด “เปิด GPS ต่อเนื่อง” และอนุญาตตำแหน่ง โดยคงหน้าติดตามไว้ระหว่างปฏิบัติงาน`,
+      [
+        uriAction(
+          "เปิด GPS ต่อเนื่อง",
+          trackingUrl(
+            plan,
+            lineUserId,
+            actors.driver.id,
+          ),
+        ),
+        ...wasteLineShortcuts
+          .activePlan(plan)
+          .filter(
+            (action) =>
+              !String(
+                action.data || "",
+              ).startsWith(
+                "waste=driver_gps",
+              ),
+          ),
+      ],
+    );
   }
   if (params.waste === "driver_complete") {
-    const plan = await ensureDriverPlan(actors.driver, params.planId, ["IN_PROGRESS", "INTERRUPTED"]);
-    await withTransaction(async (db) => {
-      await db.execute(`UPDATE waste_operation_plans SET status = 'COMPLETED', actual_end_at = NOW() WHERE id = ?`, [plan.id]);
-      await db.execute(`UPDATE waste_vehicles SET status = 'AVAILABLE' WHERE id = ?`, [plan.vehicleId]);
-    });
-    return textMessage(`บันทึกงาน ${plan.planNo} เสร็จสิ้นแล้ว`, wasteLineShortcuts.driverMenu());
+    const plan =
+      await ensureDriverPlan(
+        actors.driver,
+        params.planId,
+        [
+          "IN_PROGRESS",
+          "INTERRUPTED",
+        ],
+      );
+
+    await withTransaction(
+      async (db) => {
+        await db.execute(
+          `UPDATE waste_operation_plans
+           SET
+             status = 'COMPLETED',
+             actual_end_at = NOW()
+           WHERE id = ?`,
+          [plan.id],
+        );
+
+        await db.execute(
+          `UPDATE waste_vehicles
+           SET status = 'AVAILABLE'
+           WHERE id = ?`,
+          [plan.vehicleId],
+        );
+
+        await queueCollectionStatusNotices(
+          db,
+          plan,
+          "COMPLETED",
+        );
+      },
+    );
+
+    return textMessage(
+      `บันทึกงาน ${plan.planNo} เสร็จสิ้นแล้ว`,
+      wasteLineShortcuts.driverMenu(),
+    );
   }
   if (params.waste === "driver_gps") {
     const plan = await ensureDriverPlan(actors.driver, params.planId, ["IN_PROGRESS", "INTERRUPTED"]);

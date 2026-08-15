@@ -165,6 +165,18 @@ export class WastePlanStatusService {
               current.vehicleId,
             );
         }
+
+
+        if (
+          current.publicationStatus === "PUBLISHED" &&
+          ["IN_PROGRESS", "COMPLETED"].includes(input.status) &&
+          typeof this.repository.enqueueCollectionStatusNotices === "function"
+        ) {
+          await this.repository.enqueueCollectionStatusNotices(db, {
+            plan: current,
+            status: input.status,
+          });
+        }
       },
     );
 

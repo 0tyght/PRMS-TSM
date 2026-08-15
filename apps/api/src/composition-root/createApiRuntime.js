@@ -7,14 +7,14 @@ import { NativeCitizenAdapter } from "../infrastructure/line/NativeCitizenAdapte
 import { RichMenuAdapter } from "../infrastructure/line/RichMenuAdapter.js";
 import { WasteLineAdapter } from "../infrastructure/line/WasteLineAdapter.js";
 import { database } from "../core/db.js";
-import { WasteLineNotificationQueue } from "../modules/waste/infrastructure/WasteLineNotificationQueue.js";
+import { WasteLineNotificationQueue } from "../modules/waste/infrastructure/WasteLineNotificationQueue.js";`nimport { WastePaymentReminderScanner } from "../modules/waste/infrastructure/WastePaymentReminderScanner.js";
 
 export function createApiRuntime({ logger = console } = {}) {
   const notifications = new LineNotificationAdapter();
   const nativeCitizen = new NativeCitizenAdapter();
   const richMenus = new RichMenuAdapter();
   const wasteLine = new WasteLineAdapter();
-  const wasteNotifications = new WasteLineNotificationQueue({ database });
+  const wasteNotifications = new WasteLineNotificationQueue({ database });`n  const wastePaymentReminders = new WastePaymentReminderScanner({ database });
   const notificationQueue = new ScheduledTask({
     name: "line-notification",
     intervalMs: 60_000,
@@ -45,6 +45,21 @@ export function createApiRuntime({ logger = console } = {}) {
     },
   });
 
+
+
+  const wastePaymentReminderScanner = new ScheduledTask({
+    name: "waste-payment-reminder",
+    intervalMs: 6 * 60 * 60 * 1000,
+    logger,
+    action: async () => {
+      const result = await wastePaymentReminders.enqueueDueReminders({ daysBefore: 3 });
+      if (result.queued) {
+        logger.log(`[waste-line] payment reminders queued=${result.queued}`);
+        await notificationQueue.run();
+      }
+      return result;
+    },
+  });
   const workflowCleanup = new ScheduledTask({
     name: "line-native-cleanup",
     intervalMs: 6 * 60 * 60 * 1000,
@@ -70,7 +85,7 @@ export function createApiRuntime({ logger = console } = {}) {
     app: createApp(),
     port: config.port,
     logger,
-    tasks: [notificationQueue, reminderScanner, workflowCleanup],
+    tasks: [notificationQueue, reminderScanner, wastePaymentReminderScanner, workflowCleanup],
     warmups: [warmRichMenus],
   });
 }

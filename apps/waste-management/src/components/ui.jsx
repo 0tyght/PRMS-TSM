@@ -58,6 +58,64 @@ export function PageHead({ eyebrow, title, detail, actions }) {
   return <header className="waste-page-head"><div><p>{eyebrow}</p><h1>{title}</h1>{detail ? <span>{detail}</span> : null}</div>{actions ? <div className="waste-page-head__actions">{actions}</div> : null}</header>;
 }
 
+export function ProgressTracker({
+  steps = [],
+  currentStep = 0,
+  ariaLabel = "ความคืบหน้า",
+}) {
+  if (!steps.length) return null;
+
+  const safeCurrent =
+    Math.min(
+      Math.max(
+        Number(currentStep) || 0,
+        0,
+      ),
+      steps.length - 1,
+    );
+
+  return (
+    <ol
+      className="waste-progress-tracker"
+      aria-label={ariaLabel}
+    >
+      {steps.map((step, index) => {
+        const state =
+          index < safeCurrent
+            ? "done"
+            : index === safeCurrent
+              ? "current"
+              : "upcoming";
+
+        return (
+          <li
+            key={`${step}-${index}`}
+            className={`is-${state}`}
+            aria-current={
+              state === "current"
+                ? "step"
+                : undefined
+            }
+          >
+            <span
+              className="waste-progress-tracker__marker"
+              aria-hidden="true"
+            >
+              {state === "done"
+                ? "✓"
+                : index + 1}
+            </span>
+
+            <span className="waste-progress-tracker__label">
+              {step}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function Modal({ title, children, onClose }) {
   const titleId = useId();
   const modalRef = useRef(null);

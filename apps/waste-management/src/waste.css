@@ -82,3 +82,163 @@ html{font-size:16px}body{overflow-x:hidden;color:#213e34;background:#f2f6f3}.was
 .waste-form option[style*="b42318"] {
   color: #b42318;
 }
+
+/* Waste V10 UX refinement */
+.waste-panel,
+.waste-kpis article,
+.waste-billing-summary article {
+  box-shadow: none;
+}
+
+.waste-sidebar {
+  background: #173a2f;
+  box-shadow: none;
+}
+
+.waste-button--primary {
+  box-shadow: none;
+}
+
+.waste-page-head p,
+.waste-panel__head p {
+  letter-spacing: .035em;
+}
+
+.waste-plan-guide {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: -7px 0 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #dfe8e3;
+  color: #60766c;
+}
+
+.waste-plan-guide strong {
+  color: #26493c;
+}
+
+.waste-plan-guide span {
+  font-size: .92em;
+}
+
+.waste-progress-tracker {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  margin: 14px 0 5px;
+  padding: 0;
+  list-style: none;
+}
+
+.waste-progress-tracker li {
+  position: relative;
+  display: grid;
+  flex: 1 1 0;
+  min-width: 0;
+  justify-items: center;
+  gap: 6px;
+  color: #87968f;
+  text-align: center;
+  font-size: .78rem;
+}
+
+.waste-progress-tracker li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: calc(50% + 15px);
+  right: calc(-50% + 15px);
+  height: 2px;
+  background: #dfe7e2;
+}
+
+.waste-progress-tracker li.is-done:not(:last-child)::after {
+  background: #77a995;
+}
+
+.waste-progress-tracker__marker {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid #d7e1dc;
+  border-radius: 50%;
+  background: #fff;
+  color: #7a8d84;
+  font-weight: 700;
+}
+
+.waste-progress-tracker .is-done
+.waste-progress-tracker__marker {
+  border-color: #4e826e;
+  background: #4e826e;
+  color: #fff;
+}
+
+.waste-progress-tracker .is-current
+.waste-progress-tracker__marker {
+  border: 2px solid #b86c25;
+  background: #fff8ef;
+  color: #8b4b12;
+}
+
+.waste-progress-tracker .is-current
+.waste-progress-tracker__label {
+  color: #7d4517;
+  font-weight: 700;
+}
+
+.waste-notice-state {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #eef2f0;
+  color: #63766d;
+  font-size: .8rem;
+  font-weight: 700;
+}
+
+.waste-notice-state--sent {
+  background: #e5f3ec;
+  color: #176a4e;
+}
+
+.waste-notice-state--pending,
+.waste-notice-state--processing {
+  background: #fff2df;
+  color: #975613;
+}
+
+.waste-notice-state--failed {
+  background: #fff0ed;
+  color: #a14735;
+}
+
+@media (max-width: 900px) {
+  .waste-plan-guide {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .waste-progress-tracker {
+    overflow-x: auto;
+    justify-content: flex-start;
+    padding-bottom: 6px;
+  }
+
+  .waste-progress-tracker li {
+    min-width: 110px;
+  }
+}
+
+@media (max-width: 640px) {
+  .waste-progress-tracker li {
+    min-width: 98px;
+  }
+}

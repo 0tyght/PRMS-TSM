@@ -335,12 +335,16 @@ export class MariaDbWastePlanAdminRepository {
       await database.execute(
         `SELECT
            p.id,
+           p.plan_no AS planNo,
            p.status,
            p.publication_status AS publicationStatus,
            p.publication_version AS publicationVersion,
+           p.route_id AS routeId,
+           r.route_name AS routeName,
            p.vehicle_id AS vehicleId,
            p.driver_id AS driverId
          FROM waste_operation_plans p
+         INNER JOIN waste_routes r ON r.id = p.route_id
          WHERE p.id = ?
          LIMIT 1
          ${lock ? "FOR UPDATE" : ""}`,
@@ -443,6 +447,44 @@ export class MariaDbWastePlanAdminRepository {
       );
 
     return rows[0] || null;
+  }
+
+  async enqueueCollectionStatusNotices(database, { plan, status }) {
+    if (plan.publicationStatus !== "PUBLISHED" || !["IN_PROGRESS", "COMPLETED"].includes(status)) return 0;
+    const statusLabel = status === "IN_PROGRESS" ? "กำลังปฏิบัติงาน" : "ปฏิบัติงานเสร็จสิ้น";
+    const message = [
+      "สถานะการดำเนินการตามแผนปฏิบัติงานเก็บขยะ",
+      statusLabel,
+      plan.routeName,
+      `เลขที่แผน ${plan.planNo}`,
+      status === "IN_PROGRESS" ? "ตรวจสอบตำแหน่งรถได้จากเมนู “ตำแหน่งรถ”" : "การเก็บขยะของรอบนี้เสร็จสิ้นแล้ว",
+    ].join("\n");
+
+
+    const [users] = await database.execute(
+      `SELECT id, line_user_id AS lineUserId FROM waste_service_users
+       WHERE route_id = ? AND is_active = 1 AND line_user_id IS NOT NULL AND line_user_id <> ''`,
+      [plan.routeId],
+    );
+
+
+    let queued = 0;
+    for (const user of users) {
+      const [existing] = await database.execute(
+        `SELECT id FROM waste_line_notifications
+         WHERE plan_id = ? AND service_user_id = ? AND notification_type = 'COLLECTION_STATUS' AND message_text = ? LIMIT 1`,
+        [plan.id, user.id, message],
+      );
+      if (existing.length) continue;
+      await database.execute(
+        `INSERT INTO waste_line_notifications
+          (id, line_user_id, service_user_id, plan_id, plan_version, notification_type, message_text)
+         VALUES (UUID(), ?, ?, ?, ?, 'COLLECTION_STATUS', ?)`,
+        [user.lineUserId, user.id, plan.id, plan.publicationVersion, message],
+      );
+      queued += 1;
+    }
+    return queued;
   }
 
   async updateStatus(
