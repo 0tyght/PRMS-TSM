@@ -242,3 +242,94 @@ html{font-size:16px}body{overflow-x:hidden;color:#213e34;background:#f2f6f3}.was
     min-width: 98px;
   }
 }
+/* Waste Map UX V11 */
+
+.waste-map-controls select {
+  min-width: 210px;
+  min-height: 44px;
+}
+
+.waste-map-controls .waste-text-button {
+  min-height: 44px;
+  padding-inline: 12px;
+}
+
+.waste-route-map-legend {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 11px 16px;
+  border-top: 1px solid #e8efeb;
+  background: #fbfdfc;
+}
+
+.waste-route-map-legend button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #dce6e1;
+  border-radius: 999px;
+  color: #4c675c;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.waste-route-map-legend button.is-active {
+  border-color: #8fb3a2;
+  color: #173f31;
+  background: #eef6f2;
+}
+
+.waste-route-map-legend button:disabled {
+  opacity: .45;
+}
+
+.waste-route-map-legend i {
+  display: block;
+  width: 18px;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.waste-route-map-legend i.is-all {
+  background:
+    linear-gradient(
+      90deg,
+      #166534 0 20%,
+      #1d4ed8 20% 40%,
+      #b45309 40% 60%,
+      #7e22ce 60% 80%,
+      #0f766e 80% 100%
+    );
+}
+
+.waste-panel--map .leaflet-control-zoom a {
+  width: 40px;
+  height: 40px;
+  line-height: 40px;
+}
+
+@media (max-width: 760px) {
+  .waste-panel--map .waste-panel__head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .waste-map-controls label,
+  .waste-map-controls select {
+    width: 100%;
+  }
+
+  .waste-route-map-legend {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .waste-route-map-legend button {
+    min-height: 44px;
+    flex: 0 0 auto;
+  }
+}

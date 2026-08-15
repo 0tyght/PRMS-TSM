@@ -7,9 +7,9 @@ export class WasteDashboardPolicy {
     return routes.find((route) => route.id === routeId) || null;
   }
 
-  resolveSelectedRouteId(routes = [], activePlans = [], currentId = "") {
+  resolveSelectedRouteId(routes = [], _activePlans = [], currentId = "") {
     if (routes.some((route) => route.id === currentId)) return currentId;
-    return activePlans[0]?.routeId || routes[0]?.id || "";
+    return "";
   }
 
   planProgress(plan = {}) {

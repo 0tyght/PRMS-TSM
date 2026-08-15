@@ -9,7 +9,23 @@ import { wastePlanPolicy } from "../src/domain/WastePlanPolicy.js";
 test("WasteDashboardPolicy resolves routes and bounded progress", () => {
   const routes = [{ id: "r1", routeGeojson: null }, { id: "r2", routeGeojson: {} }];
   assert.equal(wasteDashboardPolicy.routeWithoutGeometryCount(routes), 1);
-  assert.equal(wasteDashboardPolicy.resolveSelectedRouteId(routes, [], "missing"), "r1");
+  assert.equal(
+    wasteDashboardPolicy.resolveSelectedRouteId(
+      routes,
+      [],
+      "missing",
+    ),
+    "",
+  );
+
+  assert.equal(
+    wasteDashboardPolicy.resolveSelectedRouteId(
+      routes,
+      [],
+      "r1",
+    ),
+    "r1",
+  );
   assert.equal(wasteDashboardPolicy.planProgress({ collectedStops: 6, stopTotal: 8 }), 75);
 });
 
