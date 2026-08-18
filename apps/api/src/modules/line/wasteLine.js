@@ -50,6 +50,35 @@ function normalizeText(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
 
+// LINE shows a postback's displayText in the chat.  Supporting that visible
+// text as a command as well means a user can tap it again, type it manually,
+// or use the persistent Rich Menu without reaching a dead end.
+const DISPLAY_TEXT_COMMANDS = Object.freeze({
+  CITIZEN: Object.freeze({
+    "ตารางกำหนดการเก็บขยะประจำพื้นที่": "ตารางกำหนดการ",
+    "ดูตำแหน่งรถเก็บขยะ": "ตำแหน่งรถขยะ",
+    "ตรวจสอบค่าบริการเก็บขยะ": "ค่าบริการเก็บขยะ",
+    "กลับเมนูบริการเก็บขยะ": "เมนูขยะ",
+  }),
+  DRIVER: Object.freeze({
+    "ดูแผนปฏิบัติงานเก็บขยะที่ได้รับมอบหมาย": "งานเก็บขยะของฉัน",
+    "ดูงานเก็บขยะวันนี้": "งานวันนี้",
+    "ดูงานเก็บขยะล่วงหน้า": "งานล่วงหน้า",
+    "กลับเมนูพนักงานประจำรถขยะ": "เมนูพนักงานประจำรถขยะ",
+    "ยืนยันตัวตน": "ยืนยันตัวตนพนักงานประจำรถขยะ",
+    "เริ่มยืนยันตัวตนพนักงานใหม่": "เริ่มยืนยันตัวตนใหม่",
+    "วิธีใช้งานระบบพนักงานประจำรถขยะ": "วิธีใช้งานพนักงาน",
+    "วิธีใช้งาน": "วิธีใช้งานพนักงาน",
+    "ช่วยเหลือ": "วิธีใช้งานพนักงาน",
+  }),
+});
+
+export function normalizeWasteCommand(value, audience = "CITIZEN") {
+  const normalized = normalizeText(value).toLowerCase();
+  const aliases = DISPLAY_TEXT_COMMANDS[String(audience || "CITIZEN").toUpperCase()] || {};
+  return aliases[normalized] || normalized;
+}
+
 function parsePostback(value) {
   return Object.fromEntries(new URLSearchParams(String(value || "")));
 }
@@ -283,9 +312,26 @@ async function driverJobs(driver, _lineUserId, scope = "ALL") {
   );
   if (!rows.length) {
     const label = scope === "TODAY" ? "วันนี้" : scope === "UPCOMING" ? "ใน 7 วันข้างหน้า" : "ใน 7 วัน";
-    return textMessage(`ยังไม่มีงานเก็บขยะที่ได้รับมอบหมาย${label}`, wasteLineShortcuts.driverMenu());
+    return textMessage(
+      `ยังไม่มีงานเก็บขยะที่ได้รับมอบหมาย${label}\nเมื่อเจ้าหน้าที่ตรวจความพร้อมและประกาศแผน ระบบจะแจ้งงานมาที่ LINE นี้\nเลือก “งานล่วงหน้า” เพื่อตรวจรอบถัดไป หรือเปิดเมนูเพื่อทำรายการอื่น`,
+      wasteLineShortcuts.driverMenu(),
+    );
   }
   return buildDriverJobsMessage(rows, scope);
+}
+
+function driverHelp(actors) {
+  if (!actors.driver) {
+    return textMessage(
+      "วิธีเริ่มใช้งานสำหรับพนักงานประจำรถขยะ\n1. กด “ยืนยันตัวตน”\n2. พิมพ์รหัสพนักงานและหมายเลขโทรศัพท์ที่เทศบาลบันทึกไว้\n3. เมื่อยืนยันแล้ว กด “งานของฉัน” เพื่อดูแผนที่ได้รับมอบหมาย",
+      wasteLineShortcuts.driverGuest(),
+    );
+  }
+
+  return textMessage(
+    "วิธีปฏิบัติงานเก็บขยะ\n1. กด “งานวันนี้” หรือ “งานของฉัน” แล้วเลือกแผน\n2. กด “เริ่มงาน” เมื่อเริ่มปฏิบัติงานจริง\n3. เปิด GPS ต่อเนื่อง หรือส่งตำแหน่งรถ\n4. ยืนยันจุดเก็บขยะตามลำดับ\n5. หากมีปัญหาให้กด “แจ้งเหตุ”\n6. กด “เสร็จสิ้น” เมื่อจบรอบเก็บขยะ",
+    wasteLineShortcuts.driverMenu(),
+  );
 }
 
 async function ensureDriverPlan(driver, planId, statuses) {
@@ -704,6 +750,7 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
   if (params.waste === "driver_jobs") return driverJobs(actors.driver, lineUserId, "ALL");
   if (params.waste === "driver_jobs_today") return driverJobs(actors.driver, lineUserId, "TODAY");
   if (params.waste === "driver_jobs_upcoming") return driverJobs(actors.driver, lineUserId, "UPCOMING");
+  if (params.waste === "driver_help") return driverHelp(actors);
   if (params.waste === "driver_plan") return driverPlanDetails(actors.driver, params.planId, lineUserId, params.page);
 
   if (params.waste === "driver_start") {
@@ -865,7 +912,7 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
 export function isExplicitWasteCommand(event, audience = "CITIZEN") {
   if (event?.type === "postback") return Boolean(parsePostback(event.postback?.data).waste);
   if (event?.type !== "message" || event.message?.type !== "text") return false;
-  const text = normalizeText(event.message.text).toLowerCase();
+  const text = normalizeWasteCommand(event.message.text, audience);
   if (audience === "DRIVER") {
     return [
       "เมนู",
@@ -875,6 +922,7 @@ export function isExplicitWasteCommand(event, audience = "CITIZEN") {
       "งานล่วงหน้า",
       "ยืนยันตัวตนพนักงานประจำรถขยะ",
       "เริ่มยืนยันตัวตนใหม่",
+      "วิธีใช้งานพนักงาน",
       "ยกเลิกบริการขยะ",
     ].includes(text);
   }
@@ -884,10 +932,10 @@ export function isExplicitWasteCommand(event, audience = "CITIZEN") {
 export async function handleWasteLineEvent(event, { audience = "CITIZEN", force = false } = {}) {
   const lineUserId = String(event?.source?.userId || "").trim();
   if (!lineUserId) return { handled: false };
-  const session = await getSession(lineUserId, audience);
+  let session = await getSession(lineUserId, audience);
   if (!session && !force && !isExplicitWasteCommand(event, audience)) return { handled: false };
 
-  const text = event.type === "message" && event.message?.type === "text" ? normalizeText(event.message.text) : "";
+  const text = event.type === "message" && event.message?.type === "text" ? normalizeWasteCommand(event.message.text, audience) : "";
   if (text === "ยกเลิกบริการขยะ") {
     await clearSession(lineUserId, audience);
     const actors = await loadActors(lineUserId);
@@ -897,6 +945,10 @@ export async function handleWasteLineEvent(event, { audience = "CITIZEN", force 
   const actors = await loadActors(lineUserId);
   let result;
   const postbackParams = event.type === "postback" ? parsePostback(event.postback?.data) : {};
+  if (session && event.type === "message" && isExplicitWasteCommand(event, audience)) {
+    await clearSession(lineUserId, audience);
+    session = null;
+  }
   if (audience === "DRIVER" && postbackParams.waste === "driver_link") {
     result = await handleWasteAction(postbackParams, lineUserId, actors, audience);
   } else if (audience === "DRIVER" && text === "เริ่มยืนยันตัวตนใหม่") {
@@ -904,6 +956,8 @@ export async function handleWasteLineEvent(event, { audience = "CITIZEN", force 
     result = textMessage("เริ่มยืนยันตัวตนใหม่ กรุณาพิมพ์รหัสพนักงาน", wasteLineShortcuts.driverIdentity());
   } else if (audience === "DRIVER" && text === "ยืนยันตัวตนพนักงานประจำรถขยะ") {
     result = await handleWasteAction({ waste: "driver_link" }, lineUserId, actors, audience);
+  } else if (audience === "DRIVER" && text === "วิธีใช้งานพนักงาน") {
+    result = driverHelp(actors);
   } else if (event.type === "postback" && postbackParams.waste) {
     if (session) {
       await clearSession(lineUserId, audience);
@@ -941,4 +995,4 @@ export async function cleanupWasteLineState() {
   return { sessions: Number(sessions.affectedRows || 0), linkCodes: 0 };
 }
 
-export { normalizeText as normalizeWasteCommand, parsePostback as parseWastePostback };
+export { parsePostback as parseWastePostback };

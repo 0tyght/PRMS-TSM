@@ -213,14 +213,7 @@ function PlanForm({ api, resources, date, initial = null, onCancel, onSubmit, sa
 
   return <form className="waste-form" onSubmit={submit}>
     <ErrorNotice error={error} />
-    <div className="waste-form__wide">
-      <ProgressTracker
-        steps={PLAN_PROGRESS_STEPS}
-        currentStep={initial ? planProgressStep(initial) : 0}
-        ariaLabel="ขั้นตอนจัดทำแผนปฏิบัติงานเก็บขยะ"
-      />
-    </div>
-    <div className="waste-form__summary"><strong>ขั้นที่ 1 · บันทึกแผนร่าง</strong><p>เลือกวัน เส้นทาง รถ และพนักงานประจำรถขยะ ระบบช่วยเติมเวลาจากประกาศของเทศบาลตามวันจริง จากนั้นตรวจสอบก่อนประกาศผ่าน LINE</p></div>
+    <div className="waste-form__summary"><strong>{initial ? "แก้ไขแผนปฏิบัติงานเก็บขยะ" : "สร้างแผนปฏิบัติงานเก็บขยะ"}</strong><p>ระบุวัน เส้นทาง รถ และพนักงานประจำรถขยะก่อนบันทึกแผนร่าง เมื่อตรวจสอบความพร้อมแล้วจึงประกาศแผนและแจ้งเตือนผ่าน LINE</p></div>
     <label>เลขที่แผนปฏิบัติงานเก็บขยะ<input value={initial?.planNo || "ระบบออกเลขให้อัตโนมัติเมื่อบันทึก"} readOnly aria-readonly="true" /></label>
     <label>
       วันที่ปฏิบัติงาน

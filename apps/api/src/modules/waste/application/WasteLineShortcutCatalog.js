@@ -29,7 +29,10 @@ export class WasteLineShortcutCatalog {
     return this.normalize(actions);
   }
   driverGuest() {
-    return this.normalize([this.postback("ยืนยันตัวตน", "waste=driver_link", "ยืนยันตัวตนพนักงานประจำรถขยะ")]);
+    return this.normalize([
+      this.postback("ยืนยันตัวตน", "waste=driver_link", "ยืนยันตัวตนพนักงานประจำรถขยะ"),
+      this.postback("วิธีใช้งาน", "waste=driver_help", "วิธีใช้งานระบบพนักงานประจำรถขยะ"),
+    ]);
   }
   driverIdentity() {
     return this.normalize([
@@ -90,6 +93,7 @@ export class WasteLineShortcutCatalog {
       this.postback("งานของฉัน", "waste=driver_jobs", "ดูแผนปฏิบัติงานเก็บขยะที่ได้รับมอบหมาย"),
       this.postback("งานวันนี้", "waste=driver_jobs_today", "ดูงานเก็บขยะวันนี้"),
       this.postback("งานล่วงหน้า", "waste=driver_jobs_upcoming", "ดูงานเก็บขยะล่วงหน้า"),
+      this.postback("วิธีใช้งาน", "waste=driver_help", "วิธีใช้งานระบบพนักงานประจำรถขยะ"),
       this.postback("เมนูพนักงาน", "waste=menu", "กลับเมนูพนักงานประจำรถขยะ"),
     ]);
   }

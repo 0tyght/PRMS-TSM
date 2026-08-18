@@ -23,6 +23,23 @@ test("normalizes spacing in Thai waste commands", () => {
   assert.equal(normalizeWasteCommand("  งานเก็บขยะ   ของฉัน  "), "งานเก็บขยะ ของฉัน");
 });
 
+test("accepts every visible driver menu label as a typed command", () => {
+  const cases = [
+    ["ดูแผนปฏิบัติงานเก็บขยะที่ได้รับมอบหมาย", "งานเก็บขยะของฉัน"],
+    ["ดูงานเก็บขยะวันนี้", "งานวันนี้"],
+    ["ดูงานเก็บขยะล่วงหน้า", "งานล่วงหน้า"],
+    ["วิธีใช้งานระบบพนักงานประจำรถขยะ", "วิธีใช้งานพนักงาน"],
+  ];
+  for (const [visibleText, command] of cases) {
+    assert.equal(normalizeWasteCommand(visibleText, "DRIVER"), command);
+    assert.equal(
+      isExplicitWasteCommand({ type: "message", message: { type: "text", text: visibleText } }, "DRIVER"),
+      true,
+      visibleText,
+    );
+  }
+});
+
 test("LINE postback actions take precedence over a pending input step", async () => {
   const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../src/modules/line/wasteLine.js", import.meta.url), "utf8"));
   assert.match(
