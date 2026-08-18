@@ -832,3 +832,117 @@ html{font-size:16px}body{overflow-x:hidden;color:#213e34;background:#f2f6f3}.was
 }
 
 /* ===== Plans page redesign V1 END ===== */
+
+/* ===== Plans page V2 actions/progress START ===== */
+
+/*
+ * Desktop cards always reserve the same action rail.
+ * This keeps cards such as "ถอนประกาศแล้ว / ยกเลิก" aligned with cards
+ * that have operational buttons on the right.
+ */
+@media(min-width:1101px){
+  .waste-plan-list>article,
+  .waste-plan-list>article:has(>.waste-plan-list__actions:empty){
+    grid-template-columns:82px minmax(0,1fr) 190px;
+  }
+
+  .waste-plan-list__actions:empty{
+    display:block;
+    visibility:hidden;
+    width:190px;
+    min-width:190px;
+    max-width:190px;
+    padding-left:18px;
+    border-left:1px solid transparent;
+  }
+
+  .waste-plan-list__actions{
+    width:190px;
+    min-width:190px;
+    max-width:190px;
+    box-sizing:border-box;
+  }
+}
+
+@media(min-width:1101px) and (max-width:1366px){
+  .waste-plan-list>article,
+  .waste-plan-list>article:has(>.waste-plan-list__actions:empty){
+    grid-template-columns:72px minmax(0,1fr) 176px;
+  }
+
+  .waste-plan-list__actions,
+  .waste-plan-list__actions:empty{
+    width:176px;
+    min-width:176px;
+    max-width:176px;
+  }
+}
+
+/* On tablet/mobile an empty action rail should not consume a blank row. */
+@media(max-width:1100px){
+  .waste-plan-list__actions:empty{
+    display:none;
+  }
+}
+
+/*
+ * Plans-page workflow semantics:
+ * - currentStepCompleted means the supplied currentStep is already finished.
+ * - all finished steps are green checks.
+ * - the next actionable/waiting step is the soft-orange ring.
+ * - only the bridge from the latest completed step to the next step moves.
+ */
+.waste-plan-list .waste-progress-tracker li.is-done
+.waste-progress-tracker__marker{
+  border-color:#277755;
+  background:#277755;
+  color:#fff;
+}
+
+.waste-plan-list .waste-progress-tracker li.is-current
+.waste-progress-tracker__marker{
+  border:3px solid #d58a36;
+  background:#fff6e9;
+  color:#b96816;
+  box-shadow:0 0 0 4px #fff,0 0 0 6px rgb(213 138 54 / .11);
+}
+
+.waste-plan-list .waste-progress-tracker li.is-current
+.waste-progress-tracker__label{
+  color:#965817;
+  font-weight:800;
+}
+
+/* Finished connections stay solid green. */
+.waste-plan-list .waste-progress-tracker li.is-done:not(:last-child)::after{
+  background:#64a483;
+}
+
+/* Latest completed -> next step: animated dashed flow, right to left. */
+.waste-plan-list .waste-progress-tracker li.is-flowing:not(:last-child)::after{
+  background:
+    repeating-linear-gradient(
+      90deg,
+      #5d9f7d 0 12px,
+      #d7eadf 12px 22px
+    );
+  background-size:88px 100%;
+  animation:waste-plan-progress-flow-rtl 5.2s linear infinite;
+}
+
+@keyframes waste-plan-progress-flow-rtl{
+  from{
+    background-position:0 0;
+  }
+  to{
+    background-position:-88px 0;
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  .waste-plan-list .waste-progress-tracker li.is-flowing:not(:last-child)::after{
+    animation:none;
+  }
+}
+
+/* ===== Plans page V2 actions/progress END ===== */

@@ -61,6 +61,7 @@ export function PageHead({ eyebrow, title, detail, actions }) {
 export function ProgressTracker({
   steps = [],
   currentStep = 0,
+  currentStepCompleted = false,
   ariaLabel = "ความคืบหน้า",
 }) {
   if (!steps.length) return null;
@@ -81,16 +82,27 @@ export function ProgressTracker({
     >
       {steps.map((step, index) => {
         const state =
-          index < safeCurrent
-            ? "done"
-            : index === safeCurrent
-              ? "current"
-              : "upcoming";
+          currentStepCompleted
+            ? index <= safeCurrent
+              ? "done"
+              : index === safeCurrent + 1
+                ? "current"
+                : "upcoming"
+            : index < safeCurrent
+              ? "done"
+              : index === safeCurrent
+                ? "current"
+                : "upcoming";
+
+        const isFlowing =
+          currentStepCompleted &&
+          index === safeCurrent &&
+          safeCurrent < steps.length - 1;
 
         return (
           <li
             key={`${step}-${index}`}
-            className={`is-${state}`}
+            className={`is-${state}${isFlowing ? " is-flowing" : ""}`}
             aria-current={
               state === "current"
                 ? "step"
