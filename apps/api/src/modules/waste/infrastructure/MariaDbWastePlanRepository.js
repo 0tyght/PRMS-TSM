@@ -12,6 +12,12 @@ export class MariaDbWastePlanRepository {
     const [rows] = await db.execute(
       `SELECT p.id, p.plan_no AS planNo, DATE_FORMAT(p.scheduled_date, '%Y-%m-%d') AS scheduledDate,
               p.scheduled_start_at AS scheduledStartAt, p.scheduled_end_at AS scheduledEndAt,
+              CASE
+                WHEN p.scheduled_end_at IS NOT NULL
+                  AND p.scheduled_end_at > NOW()
+                THEN 1
+                ELSE 0
+              END AS scheduleWindowOpen,
               p.status, p.publication_status AS publicationStatus,
               p.publication_version AS publicationVersion, p.public_note AS publicNote,
               p.route_id AS routeId, r.route_code AS routeCode, r.route_name AS routeName,
@@ -25,7 +31,13 @@ export class MariaDbWastePlanRepository {
                 p.route_id, r.route_code, r.route_name${lock ? " FOR UPDATE" : ""}`,
       [planId],
     );
-    return rows[0] ? { ...rows[0], activeStopCount: Number(rows[0].activeStopCount || 0) } : null;
+    return rows[0]
+      ? {
+          ...rows[0],
+          activeStopCount: Number(rows[0].activeStopCount || 0),
+          scheduleWindowOpen: Boolean(Number(rows[0].scheduleWindowOpen || 0)),
+        }
+      : null;
   }
 
   async countRecipients(db, routeId) {

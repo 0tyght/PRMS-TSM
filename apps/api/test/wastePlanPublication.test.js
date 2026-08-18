@@ -78,3 +78,61 @@ test("publishing succeeds with zero linked LINE recipients", async () => {
   assert.equal(calls[1][0], "notices");
   assert.equal(calls[1][1].type, "SCHEDULE_PUBLISHED");
 });
+test("uses repository scheduleWindowOpen as publication clock source", async () => {
+  const repository = {
+    transaction: (work) => work({}),
+    findPublicationContext: async () => ({
+      ...record(),
+      scheduleWindowOpen: true,
+    }),
+    markPublished: async () => {},
+    enqueueRouteNotices: async () => 0,
+  };
+
+  const useCase = new PublishWasteOperationPlanUseCase({
+    repository,
+    noticeFactory: new WastePlanNoticeFactory(),
+    now: () => new Date("2099-01-01T00:00:00.000Z"),
+  });
+
+  const result = await useCase.execute({
+    planId: "plan-1",
+    officerId: "officer-1",
+    publicNote: null,
+  });
+
+  assert.equal(result.publicationStatus, "PUBLISHED");
+  assert.equal(result.recipientCount, 0);
+});
+
+test("rejects a publication window closed by the database clock with a visible domain error", async () => {
+  const repository = {
+    transaction: (work) => work({}),
+    findPublicationContext: async () => ({
+      ...record(),
+      scheduleWindowOpen: false,
+    }),
+    markPublished: async () => {
+      throw new Error("must not publish");
+    },
+    enqueueRouteNotices: async () => 0,
+  };
+
+  const useCase = new PublishWasteOperationPlanUseCase({
+    repository,
+    noticeFactory: new WastePlanNoticeFactory(),
+  });
+
+  await assert.rejects(
+    () =>
+      useCase.execute({
+        planId: "plan-1",
+        officerId: "officer-1",
+        publicNote: null,
+      }),
+    (error) =>
+      error?.name === "DomainRuleViolation" &&
+      error?.code === "WASTE_PLAN_PUBLICATION_WINDOW_ENDED" &&
+      error?.status === 422,
+  );
+});

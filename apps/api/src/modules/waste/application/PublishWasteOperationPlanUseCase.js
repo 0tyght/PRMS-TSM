@@ -1,4 +1,5 @@
 import { WasteOperationPlan } from "../../../domain/waste/entities/WasteOperationPlan.js";
+import { DomainRuleViolation } from "../../../domain/common/errors/DomainRuleViolation.js";
 
 export class PublishWasteOperationPlanUseCase {
   constructor({
@@ -42,19 +43,24 @@ export class PublishWasteOperationPlanUseCase {
         ? new Date(record.scheduledEndAt)
         : null;
 
+      const scheduleWindowOpen =
+        record.scheduleWindowOpen === undefined
+          ? Boolean(
+              scheduledEndAt &&
+              !Number.isNaN(scheduledEndAt.getTime()) &&
+              scheduledEndAt.getTime() > this.now().getTime()
+            )
+          : Boolean(record.scheduleWindowOpen);
+
       if (
         hasSchedule &&
-        (
-          !scheduledEndAt ||
-          Number.isNaN(scheduledEndAt.getTime()) ||
-          scheduledEndAt.getTime() <= this.now().getTime()
-        )
+        !scheduleWindowOpen
       ) {
-        const error = new Error(
-          "ไม่สามารถประกาศแผนปฏิบัติงานเก็บขยะที่ช่วงเวลาปฏิบัติงานสิ้นสุดแล้ว กรุณาเลือกวันและเวลาปัจจุบันหรืออนาคต"
+        throw new DomainRuleViolation(
+          "WASTE_PLAN_PUBLICATION_WINDOW_ENDED",
+          "ไม่สามารถประกาศแผนปฏิบัติงานเก็บขยะที่ช่วงเวลาปฏิบัติงานสิ้นสุดแล้ว กรุณาแก้ไขวันและเวลาของแผนก่อนประกาศ",
+          { status: 422 },
         );
-        error.status = 422;
-        throw error;
       }
 
       const plan = new WasteOperationPlan(record).publish({

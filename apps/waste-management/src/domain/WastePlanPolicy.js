@@ -80,7 +80,7 @@ export class WastePlanPolicy {
         key:
           "schedule-window",
         label:
-          "เวลาเริ่มปฏิบัติงานผ่านไปแล้ว",
+          "ช่วงเวลาปฏิบัติงานยังไม่สิ้นสุด",
         ready:
           scheduleIsCurrentOrFuture,
       },
