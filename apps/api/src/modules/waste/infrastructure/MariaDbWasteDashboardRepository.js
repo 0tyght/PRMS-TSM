@@ -80,10 +80,42 @@ export class MariaDbWasteDashboardRepository {
              WHERE is_active = 1
                AND (
                  latitude IS NULL
-                 OR longitude IS NULL
+               OR longitude IS NULL
                )
-           ) AS serviceUsersWithoutLocation`,
+           ) AS serviceUsersWithoutLocation,
+
+           (
+             SELECT COALESCE(SUM(
+               (
+                 SELECT COUNT(*)
+                 FROM waste_route_stops s
+                 WHERE s.route_id = p.route_id
+                   AND s.is_active = 1
+               )
+             ), 0)
+             FROM waste_operation_plans p
+             WHERE p.scheduled_date = ?
+               AND p.status <> 'CANCELLED'
+           ) AS collectionStopTotal,
+
+           (
+             SELECT COUNT(*)
+             FROM waste_stop_confirmations c
+             INNER JOIN waste_operation_plans p
+               ON p.id = c.plan_id
+             WHERE p.scheduled_date = ?
+               AND p.status <> 'CANCELLED'
+               AND c.status = 'COLLECTED'
+           ) AS collectedCollectionStops,
+
+           (
+             SELECT COUNT(*)
+             FROM waste_incidents
+             WHERE status <> 'RESOLVED'
+           ) AS openIncidents`,
         [
+          date,
+          date,
           date,
           date,
           date,
@@ -279,6 +311,24 @@ export class MariaDbWasteDashboardRepository {
         serviceUsersWithoutLocation:
           Number(
             summary.serviceUsersWithoutLocation ||
+            0,
+          ),
+
+        collectionStopTotal:
+          Number(
+            summary.collectionStopTotal ||
+            0,
+          ),
+
+        collectedCollectionStops:
+          Number(
+            summary.collectedCollectionStops ||
+            0,
+          ),
+
+        openIncidents:
+          Number(
+            summary.openIncidents ||
             0,
           ),
 

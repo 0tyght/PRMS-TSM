@@ -39,7 +39,7 @@ test("keeps driver shortcuts separate from citizen and Smart Tha Pho menus", () 
   );
   assert.deepEqual(
     catalog.driverMenu().map((action) => action.data),
-    ["waste=driver_jobs", "waste=menu"],
+    ["waste=driver_jobs", "waste=driver_jobs_today", "waste=driver_jobs_upcoming", "waste=menu"],
   );
   assert.ok(catalog.menu({ citizen: { id: "citizen-1" } }).every((action) => !String(action.data).includes("driver_")));
 });
@@ -63,6 +63,12 @@ test("covers active driver work without exceeding LINE limits", () => {
   for (const command of ["driver_gps", "driver_location", "driver_stops", "driver_incident", "driver_complete", "driver_jobs", "menu"]) {
     assert.ok(commands.some((value) => value.includes(`waste=${command}`)), `missing ${command}`);
   }
+  assertValidActions(catalog.incidentTypes(plan));
+  assert.ok(
+    catalog.incidentTypes(plan).some((action) => String(action.data || "").includes("driver_incident_type") && String(action.data || "").includes("VEHICLE_BREAKDOWN")),
+    "FR13 must let the driver identify the incident type before entering its description",
+  );
+  assert.match(catalog.registrationProgress("LOCATION"), /ขั้นตอน 6\/7/);
 });
 
 test("renders up to eight driver plans as one LINE message with complete shortcuts", () => {
@@ -82,7 +88,7 @@ test("renders up to eight driver plans as one LINE message with complete shortcu
   assert.match(message.text, /WST-20260813-001/);
   assert.match(message.text, /WST-20260820-001/);
   assertValidActions(actionsOf(message));
-  assert.equal(actionsOf(message).length, 10);
+  assert.equal(actionsOf(message).length, 12);
   assert.equal(actionsOf(message).filter((action) => String(action.data || "").includes("waste=driver_plan")).length, 8);
 });
 

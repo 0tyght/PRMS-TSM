@@ -22,6 +22,8 @@ export class MariaDbWasteIncidentRepository {
            v.vehicle_code AS vehicleCode,
            i.replacement_vehicle_id AS replacementVehicleId,
            rv.vehicle_code AS replacementVehicleCode,
+           i.replacement_driver_id AS replacementDriverId,
+           rd.full_name AS replacementDriverName,
            i.driver_id AS driverId,
            d.full_name AS driverName,
            i.incident_type AS incidentType,
@@ -40,6 +42,8 @@ export class MariaDbWasteIncidentRepository {
               i.replacement_vehicle_id
          LEFT JOIN waste_drivers d
            ON d.id = i.driver_id
+         LEFT JOIN waste_drivers rd
+           ON rd.id = i.replacement_driver_id
          ${
            status
              ? "WHERE i.status = ?"
@@ -52,9 +56,15 @@ export class MariaDbWasteIncidentRepository {
     return rows;
   }
 
-  async findById(id) {
+  async findById(
+    id,
+    {
+      database = this.database,
+      lock = false,
+    } = {},
+  ) {
     const [rows] =
-      await this.database.execute(
+      await database.execute(
         `SELECT
            i.id,
            i.plan_id AS planId,
@@ -63,6 +73,8 @@ export class MariaDbWasteIncidentRepository {
            v.vehicle_code AS vehicleCode,
            i.replacement_vehicle_id AS replacementVehicleId,
            rv.vehicle_code AS replacementVehicleCode,
+           i.replacement_driver_id AS replacementDriverId,
+           rd.full_name AS replacementDriverName,
            i.driver_id AS driverId,
            d.full_name AS driverName,
            i.incident_type AS incidentType,
@@ -81,8 +93,11 @@ export class MariaDbWasteIncidentRepository {
               i.replacement_vehicle_id
          LEFT JOIN waste_drivers d
            ON d.id = i.driver_id
+         LEFT JOIN waste_drivers rd
+           ON rd.id = i.replacement_driver_id
          WHERE i.id = ?
-         LIMIT 1`,
+         LIMIT 1
+         ${lock ? "FOR UPDATE" : ""}`,
         [id],
       );
 
@@ -136,6 +151,31 @@ export class MariaDbWasteIncidentRepository {
           changes.replacementVehicleId,
           changes.resolutionNote,
           changes.status,
+          id,
+        ],
+      );
+
+    return result.affectedRows > 0;
+  }
+
+  async assignReplacement(
+    database,
+    id,
+    changes,
+  ) {
+    const [result] =
+      await database.execute(
+        `UPDATE waste_incidents
+         SET
+           status = 'ACKNOWLEDGED',
+           replacement_vehicle_id = ?,
+           replacement_driver_id = ?,
+           resolution_note = COALESCE(?, resolution_note)
+         WHERE id = ?`,
+        [
+          changes.replacementVehicleId,
+          changes.replacementDriverId,
+          changes.resolutionNote,
           id,
         ],
       );

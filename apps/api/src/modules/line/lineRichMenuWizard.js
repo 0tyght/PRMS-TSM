@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 
 import sharp from "sharp";
 
-import { config } from "../../core/config.js";
+import { lineChannelSettings } from "./lineChannelSettings.js";
 import { pool } from "../../core/db.js";
 
 const LINE_API_BASE = "https://api.line.me";
@@ -25,15 +25,14 @@ const MAX_HISTORY = 12;
 const REQUEST_TIMEOUT_MS = 15_000;
 const IMAGE_CACHE_LIMIT = 32;
 const ASSET_SOFT_LIMIT = 850;
-const LINE_CHANNEL_SCOPE = config.lineChannelId || (
-  config.lineChannelAccessToken
-    ? crypto
-      .createHash("sha256")
-      .update(config.lineChannelAccessToken)
-      .digest("hex")
-      .slice(0, 16)
-    : "unconfigured"
-);
+function lineChannelScope() {
+  const channel = lineChannelSettings.getCached("CITIZEN");
+  return channel.channelId || (
+    channel.channelAccessToken
+      ? crypto.createHash("sha256").update(channel.channelAccessToken).digest("hex").slice(0, 16)
+      : "unconfigured"
+  );
+}
 
 const STATIC_ALIAS_BY_KEY = Object.freeze({
   "main-guest-v12": "prms-v12-main-guest",
@@ -484,14 +483,16 @@ function abortSignal() {
 }
 
 async function lineRequest(method, endpoint, body = undefined) {
-  if (!config.lineChannelAccessToken) {
-    throw new Error("ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN");
+  const citizenChannel = await lineChannelSettings.get("CITIZEN");
+  const accessToken = citizenChannel.channelAccessToken;
+  if (!accessToken) {
+    throw new Error("ยังไม่ได้ตั้งค่า LINE OA สำหรับประชาชน");
   }
 
   const response = await fetch(`${LINE_API_BASE}${endpoint}`, {
     method,
     headers: {
-      Authorization: `Bearer ${config.lineChannelAccessToken}`,
+      Authorization: `Bearer ${accessToken}`,
       ...(body ? { "Content-Type": "application/json; charset=utf-8" } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -521,12 +522,15 @@ async function lineRequest(method, endpoint, body = undefined) {
 }
 
 async function uploadMenuImage(richMenuId, image) {
+  const citizenChannel = await lineChannelSettings.get("CITIZEN");
+  const accessToken = citizenChannel.channelAccessToken;
+  if (!accessToken) throw new Error("ยังไม่ได้ตั้งค่า LINE OA สำหรับประชาชน");
   const response = await fetch(
     `${LINE_DATA_BASE}/v2/bot/richmenu/${encodeURIComponent(richMenuId)}/content`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.lineChannelAccessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         "Content-Type": "image/png",
       },
       body: image,
@@ -1145,7 +1149,7 @@ function stableAction(action) {
 
 export function fingerprintWizardPage(page) {
   const canonical = {
-    channelScope: LINE_CHANNEL_SCOPE,
+    channelScope: lineChannelScope(),
     renderVersion: RENDER_VERSION,
     size: { width: MENU_WIDTH, height: MENU_HEIGHT },
     title: page.title,

@@ -2,9 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import LocationPicker from "../components/LocationPicker.jsx";
 import WasteMap from "../components/WasteMap.jsx";
-import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, StatusBadge, formatNumber } from "../components/ui.jsx";
+import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, ProgressTracker, StatusBadge, formatNumber } from "../components/ui.jsx";
 import { wasteServiceUserPolicy } from "../domain/WasteServiceUserPolicy.js";
 import { routeComparisonPolicy } from "../application/RouteComparisonPolicy.js";
+
+const SERVICE_USER_REGISTRATION_STEPS = Object.freeze([
+  "ทะเบียน",
+  "พิกัดบ้าน",
+  "กำหนดเส้นทาง",
+  "เชื่อม LINE",
+  "พร้อมบริการ",
+]);
 
 function formatRouteDistance(value) {
   return `${(Number(value || 0) / 1000).toLocaleString("th-TH", { maximumFractionDigits: 1 })} กม.`;
@@ -79,6 +87,14 @@ function ServiceUserForm({ initial, villages, onCancel, onSubmit, onUnlinkLine, 
   }
 
   return <form className="waste-form" onSubmit={submit}>
+    <div className="waste-form__wide">
+      <ProgressTracker
+        steps={SERVICE_USER_REGISTRATION_STEPS}
+        currentStep={wasteServiceUserPolicy.registrationStep(initial)}
+        ariaLabel="ขั้นตอนความพร้อมของผู้ใช้บริการเก็บขยะ"
+      />
+      <p className="waste-form__progress-note">บันทึกทะเบียนและพิกัดก่อน จากนั้นกำหนดเส้นทางโดยให้ระบบคำนวณรอบวิ่ง แล้วผู้ใช้บริการเชื่อมบัญชีผ่าน LINE</p>
+    </div>
     <label>เลขผู้ใช้บริการ<input name="serviceNo" required defaultValue={initial?.serviceNo || ""} placeholder="เช่น WU-0001" /></label>
     <label>ชื่อ-นามสกุล/ชื่อผู้ติดต่อ<input name="fullName" required defaultValue={initial?.fullName || ""} /></label>
     <label>โทรศัพท์<input name="phone" inputMode="numeric" pattern="0[0-9]{9}" required defaultValue={initial?.phone || ""} /></label>

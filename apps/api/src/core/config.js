@@ -127,6 +127,11 @@ export const config = Object.freeze({
 
   mfaEncryptionKey: readText(process.env.MFA_ENCRYPTION_KEY, jwtSecret),
 
+  lineSettingsEncryptionKey: readText(
+    process.env.LINE_SETTINGS_ENCRYPTION_KEY,
+    readText(process.env.MFA_ENCRYPTION_KEY, jwtSecret),
+  ),
+
   lineChannelSecret: readText(process.env.LINE_CHANNEL_SECRET),
 
   lineChannelAccessToken: readText(process.env.LINE_CHANNEL_ACCESS_TOKEN),

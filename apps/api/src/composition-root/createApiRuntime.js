@@ -1,5 +1,6 @@
 import { createApp } from "./createHttpApplication.js";
 import { config } from "../core/config.js";
+import { lineChannelSettings } from "../modules/line/lineChannelSettings.js";
 import { ScheduledTask } from "../application/background/ScheduledTask.js";
 import { ApiRuntime } from "../infrastructure/server/ApiRuntime.js";
 import { LineNotificationAdapter } from "../infrastructure/line/LineNotificationAdapter.js";
@@ -76,6 +77,7 @@ export function createApiRuntime({ logger = console } = {}) {
 
   const warmRichMenus = async () => {
     try {
+      await lineChannelSettings.refresh({ force: true });
       const menus = await richMenus.warm();
       logger.log(`[rich-menu-v12] warmed=${menus.length}`);
     } catch (error) {

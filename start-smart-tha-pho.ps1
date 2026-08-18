@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$SkipGitPush
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -14,5 +16,5 @@ if (-not (Test-Path -LiteralPath $launcherPath)) {
 
 Write-Host "Smart Tha Pho: starting API, MySQL, Public Tunnel and LINE webhook update..." -ForegroundColor Cyan
 
-& $launcherPath -ProjectPath $projectPath
+& $launcherPath -ProjectPath $projectPath -SkipGitPush:$SkipGitPush
 exit $LASTEXITCODE

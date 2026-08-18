@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { config } from "../../../core/config.js";
+import { lineChannelSettings } from "../../line/lineChannelSettings.js";
 
 
 const THEMES = Object.freeze({
@@ -10,6 +10,12 @@ const THEMES = Object.freeze({
   PAYMENT_REMINDER: { kicker: "ค่าบริการเก็บขยะ", title: "แจ้งเตือนกำหนดชำระ", accent: "#9A4C2D", action: ["ตรวจสอบค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการเก็บขยะ"] },
   PLAN_ASSIGNMENT: { kicker: "งานเก็บขยะ", title: "ได้รับมอบหมายงาน", accent: "#315E86", action: ["ดูงานของฉัน", "waste=driver_jobs", "ดูแผนปฏิบัติงานเก็บขยะที่ได้รับมอบหมาย"] },
 });
+
+export function lineChannelKindForWasteNotification(notificationType) {
+  return String(notificationType || "").toUpperCase() === "PLAN_ASSIGNMENT"
+    ? "DRIVER"
+    : "CITIZEN";
+}
 
 
 export function buildWasteLinePushMessage(notificationType, text) {
@@ -40,11 +46,12 @@ export function buildWasteLinePushMessage(notificationType, text) {
 
 
 export class WasteLineNotificationQueue {
-  constructor({ database, fetchImplementation = fetch, accessToken = config.lineChannelAccessToken } = {}) {
+  constructor({ database, fetchImplementation = fetch, accessToken = null, channelSettings = lineChannelSettings } = {}) {
     if (!database) throw new TypeError("WasteLineNotificationQueue requires database");
     this.database = database;
     this.fetchImplementation = fetchImplementation;
-    this.accessToken = accessToken;
+    this.accessTokenOverride = accessToken;
+    this.channelSettings = channelSettings;
   }
   async processPending(limit = 30) {
     const safeLimit = Math.min(100, Math.max(1, Number(limit) || 30));
@@ -66,14 +73,19 @@ export class WasteLineNotificationQueue {
       [id],
     );
     if (!row) return { status: "NOT_FOUND" };
-    if (!this.accessToken) {
-      await this.markFailed(id, "LINE_NOT_CONFIGURED", Number(row.attempts || 1));
+    const channelKind = lineChannelKindForWasteNotification(row.notificationType);
+    const channel = this.accessTokenOverride
+      ? null
+      : await this.channelSettings.get(channelKind);
+    const accessToken = this.accessTokenOverride || channel?.channelAccessToken || "";
+    if (!accessToken) {
+      await this.markFailed(id, `LINE_${channelKind}_NOT_CONFIGURED`, Number(row.attempts || 1));
       return { status: "FAILED" };
     }
     try {
       const response = await this.fetchImplementation("https://api.line.me/v2/bot/message/push", {
         method: "POST",
-        headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/json", "X-Line-Retry-Key": crypto.randomUUID() },
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", "X-Line-Retry-Key": crypto.randomUUID() },
         body: JSON.stringify({ to: row.lineUserId, messages: [buildWasteLinePushMessage(row.notificationType, row.message)] }),
       });
       if (response.ok) {

@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS waste_incidents (
     plan_id CHAR(36) NULL,
     vehicle_id CHAR(36) NULL,
     replacement_vehicle_id CHAR(36) NULL,
+    replacement_driver_id CHAR(36) NULL,
     driver_id CHAR(36) NULL,
     incident_type ENUM('VEHICLE_BREAKDOWN', 'ACCIDENT', 'ROAD_CLOSED', 'ACCESS_BLOCKED', 'OTHER') NOT NULL,
     status ENUM('REPORTED', 'ACKNOWLEDGED', 'RESOLVED') NOT NULL DEFAULT 'REPORTED',
@@ -186,8 +187,11 @@ CREATE TABLE IF NOT EXISTS waste_incidents (
         REFERENCES waste_vehicles(id) ON UPDATE CASCADE ON DELETE SET NULL,
     CONSTRAINT fk_waste_incident_replacement FOREIGN KEY (replacement_vehicle_id)
         REFERENCES waste_vehicles(id) ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT fk_waste_incident_replacement_driver FOREIGN KEY (replacement_driver_id)
+        REFERENCES waste_drivers(id) ON UPDATE CASCADE ON DELETE SET NULL,
     CONSTRAINT fk_waste_incident_driver FOREIGN KEY (driver_id)
         REFERENCES waste_drivers(id) ON UPDATE CASCADE ON DELETE SET NULL,
+    INDEX idx_waste_incident_replacement_driver (replacement_driver_id),
     INDEX idx_waste_incident_status_time (status, happened_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

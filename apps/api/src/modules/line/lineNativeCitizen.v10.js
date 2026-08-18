@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { config } from "../../core/config.js";
+import { lineChannelSettings } from "./lineChannelSettings.js";
 import { pool, withTransaction } from "../../core/db.js";
 import {
   buildCitizenStatusFlex,
@@ -131,10 +131,12 @@ function quickReply(items) {
 }
 
 async function linkRichMenuForUser(lineUserId, richMenuId) {
+  const citizenChannel = await lineChannelSettings.get("CITIZEN");
+  const accessToken = citizenChannel.channelAccessToken;
   if (
     !isValidLineUserId(lineUserId) ||
     !richMenuId ||
-    !config.lineChannelAccessToken
+    !accessToken
   ) {
     return false;
   }
@@ -146,7 +148,7 @@ async function linkRichMenuForUser(lineUserId, richMenuId) {
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.lineChannelAccessToken}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     },
   );
@@ -607,12 +609,14 @@ async function showPetPicker(lineUserId, action, page = 0, statusFilter = "") {
 }
 
 async function downloadLineImage(lineUserId, messageId) {
-  if (!config.lineChannelAccessToken) {
-    throw new Error("ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN");
+  const citizenChannel = await lineChannelSettings.get("CITIZEN");
+  const accessToken = citizenChannel.channelAccessToken;
+  if (!accessToken) {
+    throw new Error("ยังไม่ได้ตั้งค่า LINE OA สำหรับประชาชน");
   }
   const response = await fetch(
     `${LINE_CONTENT_ENDPOINT}/${encodeURIComponent(messageId)}/content`,
-    { headers: { Authorization: `Bearer ${config.lineChannelAccessToken}` } },
+    { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!response.ok) {
     const detail = (await response.text().catch(() => "")).slice(0, 300);

@@ -9,7 +9,7 @@ const TABS = Object.freeze([
   ["routes", "เส้นทางเก็บขยะ"],
 ]);
 
-function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
+function ResourceForm({ type, initial, onCancel, onSubmit, saving, error = "" }) {
   const editing = Boolean(initial?.id);
 
   function submit(event) {
@@ -29,9 +29,9 @@ function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
 
     if (type === "drivers") {
       onSubmit({
+        driverCode: value.driverCode,
         fullName: value.fullName,
         phone: value.phone,
-        lineUserId: initial?.lineUserId || null,
         isActive: value.isActive === "true",
       });
     }
@@ -49,6 +49,7 @@ function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
 
   return (
     <form className="waste-form" onSubmit={submit}>
+      <ErrorNotice error={error} />
       {type === "vehicles" && <>
         <label>รหัสรถ<input name="vehicleCode" required defaultValue={initial?.vehicleCode || ""} placeholder="เช่น W-01" /></label>
         <label>หมายเลขทะเบียนรถ<input name="registrationNo" required defaultValue={initial?.registrationNo || ""} /></label>
@@ -58,9 +59,10 @@ function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
         <label className="waste-form__wide">หมายเหตุ<textarea name="note" defaultValue={initial?.note || ""} rows="3" /></label>
       </>}
       {type === "drivers" && <>
+        <label>รหัสพนักงาน<input name="driverCode" required maxLength="30" defaultValue={initial?.driverCode || ""} placeholder="รหัสพนักงานของเทศบาล" /></label>
         <label className="waste-form__wide">ชื่อ-นามสกุล<input name="fullName" required defaultValue={initial?.fullName || ""} /></label>
-        <label>โทรศัพท์<input name="phone" inputMode="numeric" pattern="0[0-9]{9}" required defaultValue={initial?.phone || ""} /></label>
-        {initial ? <div className="waste-form__summary"><strong>การเชื่อมบัญชี LINE</strong><p>{initial.lineUserId ? "เชื่อมบัญชีแล้ว หากต้องเปลี่ยนบัญชีให้สร้างรหัสเชื่อมใหม่จากตารางพนักงานประจำรถขยะ" : "ยังไม่เชื่อมบัญชี บันทึกข้อมูลก่อนแล้วสร้างรหัสเชื่อมจากตารางพนักงานประจำรถขยะ"}</p></div> : null}
+        <label>โทรศัพท์<input name="phone" type="tel" inputMode="numeric" pattern="0[0-9]{9}" required defaultValue={initial?.phone || ""} /></label>
+        {initial ? <div className="waste-form__summary"><strong>การเชื่อมบัญชี LINE</strong><p>{initial.lineUserId ? "เชื่อมบัญชี LINE แล้ว" : "ยังไม่เชื่อมบัญชี LINE พนักงานต้องยืนยันตัวตนใน LINE OA พนักงานด้วยรหัสพนักงานและหมายเลขโทรศัพท์"}</p></div> : null}
         <label>สถานะ<select name="isActive" defaultValue={String(initial?.isActive ?? true)}><option value="true">ปฏิบัติงานได้</option><option value="false">ยกเลิกการใช้งาน</option></select></label>
       </>}
       {type === "routes" && <>
@@ -75,13 +77,13 @@ function ResourceForm({ type, initial, onCancel, onSubmit, saving }) {
   );
 }
 
-function ResourceTable({ type, records, onEdit, onDelete, onLink, onSchedule }) {
+function ResourceTable({ type, records, onEdit, onDelete, onUnlinkLine, onSchedule }) {
   if (type === "vehicles") {
     return <table className="waste-table"><thead><tr><th>รหัสรถ</th><th>ทะเบียน / รายละเอียด</th><th>ความจุ</th><th>สถานะ</th><th aria-label="การจัดการ" /></tr></thead><tbody>{records.map((item) => <tr key={item.id}><td><strong>{item.vehicleCode}</strong></td><td><strong>{item.registrationNo}</strong><small>{item.vehicleType}</small></td><td>{item.capacityKg ? `${formatNumber(item.capacityKg)} กก.` : "-"}</td><td><StatusBadge value={item.status} /></td><td><div className="waste-table-actions"><button type="button" className="waste-table-action" onClick={() => onEdit(item)}>แก้ไข</button><button type="button" className="waste-table-action waste-table-action--danger" onClick={() => onDelete(item)}>ลบ</button></div></td></tr>)}</tbody></table>;
   }
 
   if (type === "drivers") {
-    return <table className="waste-table"><thead><tr><th>พนักงานประจำรถขยะ</th><th>โทรศัพท์</th><th>การเชื่อม LINE</th><th>สถานะ</th><th aria-label="การจัดการ" /></tr></thead><tbody>{records.map((item) => <tr key={item.id}><td><strong>{item.fullName}</strong></td><td>{item.phone}</td><td>{item.lineUserId ? <span className="waste-text-success">เชื่อมแล้ว</span> : <span className="waste-text-warning">ยังไม่เชื่อม</span>}</td><td><StatusBadge value={item.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><div className="waste-table-actions"><button type="button" className="waste-table-action" onClick={() => onEdit(item)}>แก้ไข</button><button type="button" className="waste-table-action" onClick={() => onLink(item)}>{item.lineUserId ? "เชื่อมใหม่" : "สร้างรหัส LINE"}</button><button type="button" className="waste-table-action waste-table-action--danger" onClick={() => onDelete(item)}>ลบ</button></div></td></tr>)}</tbody></table>;
+    return <table className="waste-table"><thead><tr><th>รหัสพนักงาน / พนักงานประจำรถขยะ</th><th>โทรศัพท์</th><th>การเชื่อม LINE</th><th>สถานะ</th><th aria-label="การจัดการ" /></tr></thead><tbody>{records.map((item) => <tr key={item.id}><td><strong>{item.driverCode || "ยังไม่ได้กำหนดรหัส"}</strong><small>{item.fullName}</small></td><td>{item.phone}</td><td>{item.lineUserId ? <span className="waste-text-success">เชื่อมแล้ว</span> : <span className="waste-text-warning">ยังไม่เชื่อม</span>}</td><td><StatusBadge value={item.isActive ? "AVAILABLE" : "OUT_OF_SERVICE"} /></td><td><div className="waste-table-actions"><button type="button" className="waste-table-action" onClick={() => onEdit(item)}>แก้ไข</button>{item.lineUserId ? <button type="button" className="waste-table-action" onClick={() => onUnlinkLine(item)}>ยกเลิกการเชื่อม LINE</button> : null}<button type="button" className="waste-table-action waste-table-action--danger" onClick={() => onDelete(item)}>ลบ</button></div></td></tr>)}</tbody></table>;
   }
 
   return <table className="waste-table"><thead><tr><th>เส้นทาง</th><th>รายละเอียด</th><th>จุดเก็บขยะ / ผู้ใช้บริการ</th><th>ความพร้อม</th><th aria-label="การจัดการ" /></tr></thead><tbody>{records.map((item) => {
@@ -108,9 +110,9 @@ export default function ResourcesPage({ token }) {
   const [error, setError] = useState("");
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [linkCode, setLinkCode] = useState(null);
   const [routeWorkspace, setRouteWorkspace] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [unlinking, setUnlinking] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -147,12 +149,15 @@ export default function ResourcesPage({ token }) {
     }
   }
 
-  async function createLineLinkCode(driver) {
+
+  async function unlinkDriverLine() {
+    if (!unlinking) return;
     setSaving(true);
     setError("");
     try {
-      const result = await api.post(`/api/waste/drivers/${driver.id}/line-link-code`);
-      setLinkCode({ ...result, driver });
+      await api.delete(`/api/waste/drivers/${unlinking.id}/line-link`);
+      setUnlinking(null);
+      await load();
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -180,9 +185,9 @@ export default function ResourcesPage({ token }) {
     <PageHead eyebrow="MASTER DATA" title="รถ พนักงานประจำรถขยะ และเส้นทางเก็บขยะ" detail="เพิ่ม แก้ไข ยกเลิกการใช้งาน และคำนวณเส้นทางจากจุดเก็บขยะจริงในหน้าจอเดียว" />
     <div className="waste-tabs" role="tablist">{TABS.map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "is-active" : ""} onClick={() => setTab(id)}>{label}<b>{formatNumber(data[id]?.length)}</b></button>)}</div>
     <ErrorNotice error={error} onRetry={load} />
-    <section className="waste-panel"><header className="waste-panel__head"><div><p>CONFIGURATION</p><h2>{title}</h2></div><button type="button" className="waste-button waste-button--primary" onClick={() => setModal({ type: tab, item: null })}>+ {createLabel}</button></header>{tab === "routes" ? <div className="waste-route-inline-guide"><b>1</b><span>เพิ่มชื่อรอบรับผิดชอบ</span><b>2</b><span>กำหนดสถานที่รับบริการจากหน้าทะเบียนผู้ใช้บริการเก็บขยะ</span><b>3</b><span>คำนวณ ตรวจบนแผนที่ และยืนยัน</span></div> : null}{loading ? <LoadingState /> : !records.length ? <EmptyState title={`ยังไม่มี${title}`} detail="เพิ่มข้อมูลจริงเพื่อใช้สร้างแผนปฏิบัติงานเก็บขยะและติดตามการเก็บขยะ" actionLabel={createLabel} onAction={() => setModal({ type: tab, item: null })} /> : <div className="waste-table-wrap"><ResourceTable type={tab} records={records} onEdit={(item) => setModal({ type: tab, item })} onDelete={(item) => setDeleting({ type: tab, item })} onLink={createLineLinkCode} onSchedule={setRouteWorkspace} /></div>}</section>
-    {modal ? <Modal title={modal.item ? `แก้ไข${modal.type === "vehicles" ? "รถเก็บขยะ" : modal.type === "drivers" ? "พนักงานประจำรถขยะ" : "เส้นทางเก็บขยะ"}` : createLabel} onClose={() => setModal(null)}><ResourceForm type={modal.type} initial={modal.item} onCancel={() => setModal(null)} onSubmit={save} saving={saving} /></Modal> : null}
-    {linkCode ? <Modal title="รหัสเชื่อมบัญชีพนักงานประจำรถขยะกับ LINE" onClose={() => setLinkCode(null)}><section className="waste-link-code"><p>ให้ <strong>{linkCode.driverName}</strong> เปิด LINE ของ Smart Tha Pho แล้วพิมพ์ข้อความนี้ภายใน 15 นาที</p><code>ยืนยันพนักงานประจำรถขยะ {linkCode.code}</code><small>รหัสใช้ได้ครั้งเดียว เมื่อสร้างรหัสใหม่ รหัสเดิมจะถูกยกเลิก</small><button type="button" className="waste-button waste-button--primary" onClick={() => navigator.clipboard?.writeText(`ยืนยันพนักงานประจำรถขยะ ${linkCode.code}`)}>คัดลอกข้อความ</button></section></Modal> : null}
+    <section className="waste-panel"><header className="waste-panel__head"><div><p>CONFIGURATION</p><h2>{title}</h2></div><button type="button" className="waste-button waste-button--primary" onClick={() => setModal({ type: tab, item: null })}>+ {createLabel}</button></header>{tab === "routes" ? <div className="waste-route-inline-guide"><b>1</b><span>เพิ่มชื่อรอบรับผิดชอบ</span><b>2</b><span>กำหนดสถานที่รับบริการจากหน้าทะเบียนผู้ใช้บริการเก็บขยะ</span><b>3</b><span>คำนวณ ตรวจบนแผนที่ และยืนยัน</span></div> : null}{loading ? <LoadingState /> : !records.length ? <EmptyState title={`ยังไม่มี${title}`} detail="เพิ่มข้อมูลจริงเพื่อใช้สร้างแผนปฏิบัติงานเก็บขยะและติดตามการเก็บขยะ" actionLabel={createLabel} onAction={() => setModal({ type: tab, item: null })} /> : <div className="waste-table-wrap"><ResourceTable type={tab} records={records} onEdit={(item) => setModal({ type: tab, item })} onDelete={(item) => setDeleting({ type: tab, item })} onUnlinkLine={(item) => setUnlinking(item)} onSchedule={setRouteWorkspace} /></div>}</section>
+    {modal ? <Modal title={modal.item ? `แก้ไข${modal.type === "vehicles" ? "รถเก็บขยะ" : modal.type === "drivers" ? "พนักงานประจำรถขยะ" : "เส้นทางเก็บขยะ"}` : createLabel} onClose={() => setModal(null)}><ResourceForm type={modal.type} initial={modal.item} onCancel={() => setModal(null)} onSubmit={save} saving={saving} error={error} /></Modal> : null}
+    {unlinking ? <Modal title="ยกเลิกการเชื่อม LINE" onClose={() => setUnlinking(null)}><div className="waste-confirmation"><strong>{unlinking.driverCode || "-"} · {unlinking.fullName}</strong><p>ระบบจะยกเลิกการเชื่อมบัญชี LINE ปัจจุบัน พนักงานสามารถยืนยันตัวตนด้วยบัญชี LINE ใหม่ได้ภายหลัง</p><footer><button type="button" className="waste-button waste-button--secondary" onClick={() => setUnlinking(null)}>ยกเลิก</button><button type="button" className="waste-button waste-button--danger" disabled={saving} onClick={() => void unlinkDriverLine()}>{saving ? "กำลังยกเลิกการเชื่อม" : "ยืนยันยกเลิกการเชื่อม LINE"}</button></footer></div></Modal> : null}
     {routeWorkspace?.type === "schedule" ? <Modal title="วันและพื้นที่จัดเก็บตามประกาศ" onClose={() => setRouteWorkspace(null)}><RouteSchedule route={routeWorkspace.route} /></Modal> : null}
     {routeWorkspace?.type === "optimize" ? <Modal title="คำนวณเส้นทางจากจุดเก็บขยะ" onClose={() => setRouteWorkspace(null)}><RouteOptimizationManager api={api} route={routeWorkspace.route} onClose={() => setRouteWorkspace(null)} onSaved={load} /></Modal> : null}
     {deleting ? <Modal title="ยืนยันการลบข้อมูล" onClose={() => setDeleting(null)}><div className="waste-confirmation"><strong>{deleting.item.vehicleCode || deleting.item.fullName || `${deleting.item.routeCode} · ${deleting.item.routeName}`}</strong><p>ลบได้เฉพาะข้อมูลที่ยังไม่เคยถูกใช้ในแผนปฏิบัติงานเก็บขยะ หากมีประวัติ ระบบจะแนะนำให้ยกเลิกการใช้งานแทนเพื่อรักษาประวัติราชการ</p><footer><button type="button" className="waste-button waste-button--secondary" onClick={() => setDeleting(null)}>ยกเลิก</button><button type="button" className="waste-button waste-button--danger" disabled={saving} onClick={() => void removeResource()}>{saving ? "กำลังลบ" : "ยืนยันลบ"}</button></footer></div></Modal> : null}

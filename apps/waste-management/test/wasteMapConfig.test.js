@@ -69,5 +69,25 @@ test(
       new Set(colors).size,
       colors.length,
     );
+
+    const officialRouteColors = [
+      "THP-OFFICIAL-01",
+      "THP-OFFICIAL-02",
+      "THP-OFFICIAL-03",
+      "THP-OFFICIAL-04",
+      "THP-OFFICIAL-05",
+      "THP-OFFICIAL-06",
+    ].map(routeMapColor);
+
+    assert.equal(
+      new Set(officialRouteColors).size,
+      officialRouteColors.length,
+    );
+
+    assert.equal(
+      routeMapColor("THP-OFFICIAL-01"),
+      routeMapColor("THP-OFFICIAL-01"),
+      "the route keeps its color after sorting or filtering",
+    );
   },
 );

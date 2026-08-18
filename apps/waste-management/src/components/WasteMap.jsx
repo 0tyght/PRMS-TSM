@@ -230,7 +230,11 @@ export default function WasteMap({
         }
 
         const color =
-          routeMapColor(index);
+          routeMapColor(
+            route.routeCode ||
+            route.id ||
+            index,
+          );
 
         const selected =
           Boolean(

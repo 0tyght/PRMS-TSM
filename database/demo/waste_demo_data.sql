@@ -23,15 +23,15 @@ ON DUPLICATE KEY UPDATE
   status = VALUES(status), last_latitude = VALUES(last_latitude), last_longitude = VALUES(last_longitude),
   last_gps_at = VALUES(last_gps_at), note = VALUES(note);
 
-INSERT INTO waste_drivers (id, full_name, phone, line_user_id, is_active)
+INSERT INTO waste_drivers (id, driver_code, full_name, phone, line_user_id, is_active)
 VALUES
-  ('a3000000-0000-4000-8000-000000000001', '[ตัวอย่าง] สมชาย ใจดี', '0990000001', NULL, 1),
-  ('a3000000-0000-4000-8000-000000000002', '[ตัวอย่าง] วิชัย มั่นคง', '0990000002', NULL, 1),
-  ('a3000000-0000-4000-8000-000000000003', '[ตัวอย่าง] ประสิทธิ์ ร่วมใจ', '0990000003', NULL, 1),
-  ('a3000000-0000-4000-8000-000000000004', '[ตัวอย่าง] อนุชา พร้อมงาน', '0990000004', NULL, 1),
-  ('a3000000-0000-4000-8000-000000000005', '[ตัวอย่าง] มานพ ชำนาญ', '0990000005', NULL, 1),
-  ('a3000000-0000-4000-8000-000000000006', '[ตัวอย่าง] สุรชัย พักงาน', '0990000006', NULL, 0)
-ON DUPLICATE KEY UPDATE full_name = VALUES(full_name), phone = VALUES(phone), line_user_id = NULL, is_active = VALUES(is_active);
+  ('a3000000-0000-4000-8000-000000000001', 'DEMO-D01', '[ตัวอย่าง] สมชาย ใจดี', '0990000001', NULL, 1),
+  ('a3000000-0000-4000-8000-000000000002', 'DEMO-D02', '[ตัวอย่าง] วิชัย มั่นคง', '0990000002', NULL, 1),
+  ('a3000000-0000-4000-8000-000000000003', 'DEMO-D03', '[ตัวอย่าง] ประสิทธิ์ ร่วมใจ', '0990000003', NULL, 1),
+  ('a3000000-0000-4000-8000-000000000004', 'DEMO-D04', '[ตัวอย่าง] อนุชา พร้อมงาน', '0990000004', NULL, 1),
+  ('a3000000-0000-4000-8000-000000000005', 'DEMO-D05', '[ตัวอย่าง] มานพ ชำนาญ', '0990000005', NULL, 1),
+  ('a3000000-0000-4000-8000-000000000006', 'DEMO-D06', '[ตัวอย่าง] สุรชัย พักงาน', '0990000006', NULL, 0)
+ON DUPLICATE KEY UPDATE driver_code = VALUES(driver_code), full_name = VALUES(full_name), phone = VALUES(phone), line_user_id = NULL, is_active = VALUES(is_active);
 
 INSERT INTO waste_service_users
   (id, service_no, full_name, phone, house_no, village_id, address_detail, line_user_id, route_id, latitude, longitude, is_active)

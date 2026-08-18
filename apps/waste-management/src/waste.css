@@ -333,3 +333,93 @@ html{font-size:16px}body{overflow-x:hidden;color:#213e34;background:#f2f6f3}.was
     flex: 0 0 auto;
   }
 }
+
+/* LINE Official Account settings */
+.waste-line-security-note {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 20px;
+  padding: 16px 18px;
+  border: 1px solid rgba(23, 107, 80, 0.2);
+  border-radius: 14px;
+  background: rgba(23, 107, 80, 0.06);
+}
+.waste-line-security-note strong { color: #174f3d; }
+.waste-line-security-note p { margin: 0; color: #52645e; line-height: 1.6; }
+.waste-line-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.waste-line-settings-card { overflow: hidden; border: 1px solid #dde7e2; border-radius: 18px; background: #fff; box-shadow: 0 12px 30px rgba(36, 55, 49, 0.06); }
+.waste-line-settings-card__head { display: flex; justify-content: space-between; gap: 18px; padding: 20px; border-bottom: 1px solid #edf2ef; }
+.waste-line-settings-card__head h2 { margin: 6px 0 5px; font-size: 1.1rem; color: #243730; }
+.waste-line-settings-card__head p { margin: 0; color: #687972; font-size: 0.9rem; line-height: 1.55; }
+.waste-line-settings-card__audience { display: inline-flex; padding: 4px 9px; border-radius: 999px; background: #edf6f2; color: #176b50; font-size: 0.75rem; font-weight: 700; }
+.waste-line-connection { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; height: fit-content; padding: 7px 10px; border-radius: 999px; background: #f4f5f4; color: #65716d; font-size: 0.78rem; font-weight: 700; }
+.waste-line-connection i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.waste-line-connection.is-ready { background: #e9f7f0; color: #16704e; }
+.waste-line-connection.is-warning { background: #fff4db; color: #8b6519; }
+.waste-line-connection.is-disabled { background: #f1f2f2; color: #747c79; }
+.waste-line-settings-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0 20px; background: #edf2ef; border: 1px solid #edf2ef; border-radius: 12px; overflow: hidden; }
+.waste-line-settings-meta > div { display: grid; gap: 3px; padding: 11px 12px; background: #fafcfb; min-width: 0; }
+.waste-line-settings-meta small { color: #7b8b85; }
+.waste-line-settings-meta strong { color: #30423c; overflow-wrap: anywhere; font-size: 0.88rem; }
+.waste-line-settings-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; padding: 20px; }
+.waste-line-settings-form label { display: grid; gap: 7px; min-width: 0; }
+.waste-line-settings-form label > span { font-weight: 700; color: #344840; font-size: 0.9rem; }
+.waste-line-settings-form label > small { color: #7b8b85; line-height: 1.45; }
+.waste-line-settings-form input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #ccd9d3; border-radius: 10px; padding: 11px 12px; background: #fff; color: #263b33; outline: none; }
+.waste-line-settings-form input:focus { border-color: #176b50; box-shadow: 0 0 0 3px rgba(23, 107, 80, 0.1); }
+.waste-line-settings-form__wide { grid-column: 1 / -1; }
+.waste-secret-input { display: flex; gap: 7px; }
+.waste-secret-input input { flex: 1 1 auto; }
+.waste-secret-input button { flex: 0 0 auto; border: 1px solid #ccd9d3; border-radius: 10px; padding: 0 11px; background: #f7faf8; color: #496159; cursor: pointer; }
+.waste-secret-input button:disabled { opacity: 0.45; cursor: default; }
+.waste-line-toggle { display: flex; align-items: flex-start; gap: 10px; margin: 0 20px 18px; padding: 13px 14px; border: 1px solid #e0e8e4; border-radius: 12px; background: #fafcfb; cursor: pointer; }
+.waste-line-toggle input { margin-top: 3px; }
+.waste-line-toggle span { display: grid; gap: 3px; }
+.waste-line-toggle strong { color: #30423c; }
+.waste-line-toggle small { color: #7b8b85; line-height: 1.4; }
+.waste-line-webhook-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 20px 18px; padding: 13px 14px; border: 1px dashed #cddbd5; border-radius: 12px; background: #f8fbfa; }
+.waste-line-webhook-box > div { display: grid; gap: 4px; min-width: 0; }
+.waste-line-webhook-box small { color: #7b8b85; }
+.waste-line-webhook-box code { color: #245946; overflow-wrap: anywhere; }
+.waste-line-feedback { margin: 0 20px 18px; padding: 11px 13px; border-radius: 10px; font-size: 0.88rem; line-height: 1.5; }
+.waste-line-feedback.is-success { background: #eaf7f0; color: #176b50; }
+.waste-line-feedback.is-warning { background: #fff4db; color: #7d5b17; }
+.waste-line-feedback.is-error { background: #fff0ef; color: #a63c32; }
+.waste-line-settings-card__actions { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 20px; border-top: 1px solid #edf2ef; background: #fbfcfc; }
+@media (max-width: 1100px) { .waste-line-settings-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .waste-line-settings-card__head, .waste-line-webhook-box, .waste-line-settings-card__actions { flex-direction: column; align-items: stretch; }
+  .waste-line-settings-meta, .waste-line-settings-form { grid-template-columns: 1fr; }
+  .waste-line-settings-form__wide { grid-column: auto; }
+}
+
+.waste-form__check {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 13px;
+  border: 1px solid #dfeae4;
+  border-radius: 10px;
+  background: #f7fbf8;
+  cursor: pointer;
+}
+
+.waste-form__check input {
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: #187743;
+}
+
+.waste-form__check span { display: grid; gap: 2px; }
+.waste-form__check strong { color: #234439; font-size: 11px; }
+.waste-form__check small { color: #688075; font-size: 10px; line-height: 1.45; }
+.waste-form__progress-note { margin: 5px 0 0; color: #6b8277; font-size: 10px; line-height: 1.5; }
+
+.waste-kpis--operational article:nth-child(5) { border-top-color: #6f52a8; }
+.waste-kpis--operational article:nth-child(6) { border-top-color: #bd4e43; }
+@media (min-width: 1281px) {
+  .waste-kpis--operational { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .waste-kpis--operational article { min-width: 0; }
+  .waste-kpis--operational strong { font-size: clamp(20px, 1.75vw, 28px); }
+}

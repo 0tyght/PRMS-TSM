@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-import { config } from "../../core/config.js";
+import { lineChannelSettings } from "./lineChannelSettings.js";
 import { pool } from "../../core/db.js";
 import { syncRichMenuForLineUser } from "./citizenExperience.js";
 
@@ -139,7 +139,16 @@ export async function enqueueLineNotification(
   { ownerId, entityType, entityId, lineUserId, templateCode, message },
 ) {
   const id = crypto.randomUUID();
-  const configured = Boolean(lineUserId && config.lineChannelAccessToken);
+  const recipientLineUserId = String(lineUserId || "").trim();
+  // An owner without a linked LINE account can never receive a push message.
+  // Avoid loading channel settings (and opening a database connection) for this
+  // terminal path; the notification remains a durable, explicit SKIPPED record.
+  const citizenChannel = recipientLineUserId
+    ? await lineChannelSettings.get("CITIZEN")
+    : null;
+  const configured = Boolean(
+    recipientLineUserId && citizenChannel?.channelAccessToken,
+  );
   await db.execute(
     `INSERT INTO notifications
       (id, owner_id, entity_type, entity_id, line_user_id, template_code, message_text,
@@ -150,11 +159,11 @@ export async function enqueueLineNotification(
       ownerId,
       entityType,
       entityId || null,
-      lineUserId || "",
+      recipientLineUserId,
       templateCode,
       message,
       configured ? "PENDING" : "SKIPPED",
-      configured ? null : (lineUserId ? "LINE_NOT_CONFIGURED" : "OWNER_NOT_LINKED"),
+      configured ? null : (recipientLineUserId ? "LINE_NOT_CONFIGURED" : "OWNER_NOT_LINKED"),
     ],
   );
   return { id, status: configured ? "PENDING" : "SKIPPED" };
@@ -185,10 +194,13 @@ export async function deliverLineNotification(id) {
   const notification = rows[0];
 
   try {
+    const citizenChannel = await lineChannelSettings.get("CITIZEN");
+    const accessToken = citizenChannel.channelAccessToken;
+    if (!accessToken) throw new Error("LINE_NOT_CONFIGURED");
     const response = await fetch("https://api.line.me/v2/bot/message/push", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.lineChannelAccessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
         "X-Line-Retry-Key": crypto.randomUUID(),
       },
@@ -354,7 +366,8 @@ async function insertReminderMarker(db, groupNotificationId, group, item) {
 }
 
 export async function enqueueVaccinationReminders() {
-  if (!config.lineChannelAccessToken) return { queued: 0, pets: 0, households: 0 };
+  const citizenChannel = await lineChannelSettings.get("CITIZEN");
+  if (!citizenChannel.channelAccessToken) return { queued: 0, pets: 0, households: 0 };
 
   const db = await pool.getConnection();
   let lockAcquired = false;

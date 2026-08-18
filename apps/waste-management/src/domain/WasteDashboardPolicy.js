@@ -17,6 +17,15 @@ export class WasteDashboardPolicy {
     const completed = Number(plan.collectedStops || 0);
     return total > 0 ? Math.max(0, Math.min(100, Math.round((completed / total) * 100))) : 0;
   }
+
+  collectionProgress(summary = {}) {
+    return this.planProgress({
+      collectedStops:
+        summary.collectedCollectionStops,
+      stopTotal:
+        summary.collectionStopTotal,
+    });
+  }
 }
 
 export const wasteDashboardPolicy = new WasteDashboardPolicy();

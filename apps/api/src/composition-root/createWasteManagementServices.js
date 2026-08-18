@@ -18,12 +18,12 @@ import { WasteRouteService } from "../modules/waste/application/WasteRouteServic
 import { WasteServiceUserService } from "../modules/waste/application/WasteServiceUserService.js";
 import { WasteTrackingService } from "../modules/waste/application/WasteTrackingService.js";
 import { WasteIncidentService } from "../modules/waste/application/WasteIncidentService.js";
+import { AssignWasteIncidentReplacementUseCase } from "../modules/waste/application/AssignWasteIncidentReplacementUseCase.js";
 import { WastePlanService } from "../modules/waste/application/WastePlanService.js";
 import { WastePlanStatusService } from "../modules/waste/application/WastePlanStatusService.js";
 import { WasteDashboardQueryService } from "../modules/waste/application/WasteDashboardQueryService.js";
 import { WasteBillingService } from "../modules/waste/application/WasteBillingService.js";
 import { WasteReportQueryService } from "../modules/waste/application/WasteReportQueryService.js";
-import { WasteDriverLineLinkService } from "../modules/waste/application/WasteDriverLineLinkService.js";
 import { WasteRoutePreviewService } from "../modules/waste/application/WasteRoutePreviewService.js";
 import { ProposeWasteRouteUseCase } from "../modules/waste/application/ProposeWasteRouteUseCase.js";
 import { ConfirmWasteRouteProposalUseCase } from "../modules/waste/application/ConfirmWasteRouteProposalUseCase.js";
@@ -44,8 +44,6 @@ import { MariaDbWastePlanAdminRepository } from "../modules/waste/infrastructure
 import { MariaDbWasteDashboardRepository } from "../modules/waste/infrastructure/MariaDbWasteDashboardRepository.js";
 import { MariaDbWasteBillingRepository } from "../modules/waste/infrastructure/MariaDbWasteBillingRepository.js";
 import { MariaDbWasteReportRepository } from "../modules/waste/infrastructure/MariaDbWasteReportRepository.js";
-import { MariaDbWasteDriverLinkRepository } from "../modules/waste/infrastructure/MariaDbWasteDriverLinkRepository.js";
-import { DriverLinkCodeSecurity } from "../modules/waste/infrastructure/DriverLinkCodeSecurity.js";
 import { OsrmRoutePreviewProvider } from "../modules/waste/infrastructure/OsrmRoutePreviewProvider.js";
 import { MariaDbWasteRouteRepository } from "../modules/waste/infrastructure/MariaDbWasteRouteRepository.js";
 import { OsrmTripRouteOptimizer } from "../modules/waste/infrastructure/OsrmTripRouteOptimizer.js";
@@ -160,19 +158,34 @@ export function createWasteManagementServices({
         new WasteTrackingPolicy(),
     });
 
+  const wastePlanAdminRepository =
+    new MariaDbWastePlanAdminRepository({
+      database,
+    });
+
+  const wasteIncidentRepository =
+    new MariaDbWasteIncidentRepository({
+      database,
+    });
+
   const wasteIncidentService =
     new WasteIncidentService({
       repository:
-        new MariaDbWasteIncidentRepository({
-          database,
-        }),
+        wasteIncidentRepository,
       auditLog:
         auditLogRepository,
     });
 
-  const wastePlanAdminRepository =
-    new MariaDbWastePlanAdminRepository({
-      database,
+  const wasteIncidentReplacementUseCase =
+    new AssignWasteIncidentReplacementUseCase({
+      incidentRepository:
+        wasteIncidentRepository,
+      planRepository:
+        wastePlanAdminRepository,
+      executionPolicy:
+        new WastePlanExecutionPolicy(),
+      auditLog:
+        auditLogRepository,
     });
 
   const wastePlanService =
@@ -224,17 +237,6 @@ export function createWasteManagementServices({
         }),
     });
 
-  const wasteDriverLineLinkService =
-    new WasteDriverLineLinkService({
-      repository:
-        new MariaDbWasteDriverLinkRepository({
-          database,
-        }),
-      auditLog:
-        auditLogRepository,
-      codeSecurity:
-        new DriverLinkCodeSecurity(),
-    });
 
   const wasteRoutePreviewService =
     new WasteRoutePreviewService({
@@ -335,12 +337,12 @@ export function createWasteManagementServices({
     wasteServiceUserService,
     wasteTrackingService,
     wasteIncidentService,
+    wasteIncidentReplacementUseCase,
     wastePlanService,
     wastePlanStatusService,
     wasteDashboardQueryService,
     wasteBillingService,
     wasteReportQueryService,
-    wasteDriverLineLinkService,
     wasteRoutePreviewService,
     wasteRouteOptimization,
     wastePlanPublicationService,

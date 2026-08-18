@@ -544,6 +544,55 @@ export class MariaDbWastePlanAdminRepository {
     );
   }
 
+  async setVehicleStatus(
+    database,
+    vehicleId,
+    status,
+  ) {
+    await database.execute(
+      `UPDATE waste_vehicles
+       SET status = ?
+       WHERE id = ?`,
+      [
+        status,
+        vehicleId,
+      ],
+    );
+  }
+
+  async replaceExecutionResources(
+    database,
+    {
+      id,
+      vehicleId,
+      driverId,
+      resumePlan,
+    },
+  ) {
+    await database.execute(
+      `UPDATE waste_operation_plans
+       SET
+         vehicle_id = ?,
+         driver_id = ?,
+         status = CASE
+           WHEN ? THEN 'IN_PROGRESS'
+           ELSE status
+         END,
+         actual_start_at = CASE
+           WHEN ? THEN COALESCE(actual_start_at, NOW())
+           ELSE actual_start_at
+         END
+       WHERE id = ?`,
+      [
+        vehicleId,
+        driverId,
+        resumePlan ? 1 : 0,
+        resumePlan ? 1 : 0,
+        id,
+      ],
+    );
+  }
+
   async releaseVehicle(
     database,
     vehicleId,

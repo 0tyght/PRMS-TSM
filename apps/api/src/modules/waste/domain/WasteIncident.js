@@ -27,6 +27,8 @@ export class WasteIncident {
     vehicleCode = null,
     replacementVehicleId = null,
     replacementVehicleCode = null,
+    replacementDriverId = null,
+    replacementDriverName = null,
     driverId = null,
     driverName = null,
     incidentType,
@@ -46,6 +48,10 @@ export class WasteIncident {
       replacementVehicleId;
     this.replacementVehicleCode =
       replacementVehicleCode;
+    this.replacementDriverId =
+      replacementDriverId;
+    this.replacementDriverName =
+      replacementDriverName;
     this.driverId = driverId;
     this.driverName = driverName;
     this.description = description;
@@ -130,6 +136,45 @@ export class WasteIncident {
     return this;
   }
 
+  assignReplacement({
+    replacementVehicleId = null,
+    replacementDriverId = null,
+    resolutionNote = null,
+  } = {}) {
+    if (
+      this.#status === "RESOLVED"
+    ) {
+      throw new DomainRuleViolation(
+        "WASTE_INCIDENT_ALREADY_RESOLVED",
+        "เหตุนี้ปิดการดำเนินการแล้ว จึงไม่สามารถมอบหมายทรัพยากรทดแทนได้",
+        { status: 409 },
+      );
+    }
+
+    if (
+      !replacementVehicleId &&
+      !replacementDriverId
+    ) {
+      throw new DomainRuleViolation(
+        "WASTE_INCIDENT_REPLACEMENT_REQUIRED",
+        "กรุณาเลือกรถเก็บขยะหรือพนักงานประจำรถขยะทดแทนอย่างน้อย 1 รายการ",
+        { status: 422 },
+      );
+    }
+
+    this.replacementVehicleId =
+      replacementVehicleId;
+    this.replacementDriverId =
+      replacementDriverId;
+    this.resolutionNote =
+      resolutionNote;
+    this.changeStatus(
+      "ACKNOWLEDGED",
+    );
+
+    return this;
+  }
+
   toObject() {
     return {
       id: this.id,
@@ -142,6 +187,10 @@ export class WasteIncident {
         this.replacementVehicleId,
       replacementVehicleCode:
         this.replacementVehicleCode,
+      replacementDriverId:
+        this.replacementDriverId,
+      replacementDriverName:
+        this.replacementDriverName,
       driverId: this.driverId,
       driverName: this.driverName,
       incidentType:

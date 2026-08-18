@@ -9,6 +9,7 @@ import BillingPage from "./pages/BillingPage.jsx";
 import IncidentsPage from "./pages/IncidentsPage.jsx";
 import ReportsPage from "./pages/ReportsPage.jsx";
 import DriverTrackingPage from "./pages/DriverTrackingPage.jsx";
+import LineSettingsPage from "./pages/LineSettingsPage.jsx";
 import { useHashPage } from "./lib/useHashPage.js";
 import { WasteApplicationController } from "./application/WasteApplicationController.js";
 import "./waste.css";
@@ -23,6 +24,7 @@ const PAGES = Object.freeze({
   billing: BillingPage,
   incidents: IncidentsPage,
   reports: ReportsPage,
+  "line-settings": LineSettingsPage,
 });
 
 const applicationController = new WasteApplicationController({ pageIds: Object.keys(PAGES) });
@@ -32,13 +34,14 @@ export default function WasteManagementApp() {
   const isDriverTracking = requestedPage === "driver-gps";
   const viewModel = useMemo(() => applicationController.createViewModel(requestedPage), [requestedPage]);
   const { token, user, page } = viewModel;
-  const Page = PAGES[page] || DashboardPage;
+  const permittedPage = page === "line-settings" && user?.role !== "ADMIN" ? "dashboard" : page;
+  const Page = PAGES[permittedPage] || DashboardPage;
 
   useEffect(() => { if (!isDriverTracking && !token) applicationController.redirectToLogin(); }, [isDriverTracking, token]);
   useEffect(() => {
     return applicationController.subscribeToExpiration(() => applicationController.logout());
   }, []);
-  useEffect(() => { if (!isDriverTracking && requestedPage !== page) navigate(page); }, [isDriverTracking, navigate, page, requestedPage]);
+  useEffect(() => { if (!isDriverTracking && requestedPage !== permittedPage) navigate(permittedPage); }, [isDriverTracking, navigate, permittedPage, requestedPage]);
   if (isDriverTracking) return <DriverTrackingPage trackingToken={query.get("token") || ""} />;
   if (!token) return <main className="waste-auth-check">กำลังตรวจสอบสิทธิ์เข้าใช้งาน</main>;
 

@@ -16,23 +16,6 @@ CREATE TABLE IF NOT EXISTS waste_line_sessions (
     INDEX idx_waste_line_session_expiry (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS waste_driver_link_codes (
-    id CHAR(36) NOT NULL,
-    driver_id CHAR(36) NOT NULL,
-    code_hash CHAR(64) NOT NULL,
-    expires_at DATETIME NOT NULL,
-    used_at DATETIME NULL,
-    created_by CHAR(36) NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_waste_driver_link_code_hash (code_hash),
-    CONSTRAINT fk_waste_driver_link_code_driver FOREIGN KEY (driver_id)
-        REFERENCES waste_drivers(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    CONSTRAINT fk_waste_driver_link_code_creator FOREIGN KEY (created_by)
-        REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL,
-    INDEX idx_waste_driver_link_expiry (driver_id, expires_at, used_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE IF NOT EXISTS waste_line_notifications (
     id CHAR(36) NOT NULL,
     line_user_id VARCHAR(100) NOT NULL,

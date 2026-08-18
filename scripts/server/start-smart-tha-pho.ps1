@@ -108,78 +108,24 @@ if (-not $healthReady) {
     throw "Public API ยังไม่พร้อม: $apiBaseUrl"
 }
 
-$envPath = Join-Path $ProjectPath ".env"
-if (-not (Test-Path -LiteralPath $envPath)) {
-    throw "ไม่พบ .env"
-}
-$token = Read-DotEnvValue -Path $envPath -Name "LINE_CHANNEL_ACCESS_TOKEN"
-if ([string]::IsNullOrWhiteSpace($token)) {
-    throw "LINE_CHANNEL_ACCESS_TOKEN ไม่มีค่า"
-}
-
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$headers = @{ Authorization = "Bearer $token" }
-$botInfo = Invoke-RestMethod `
-    -Method Get `
-    -Uri "https://api.line.me/v2/bot/info" `
-    -Headers $headers `
-    -TimeoutSec 20 `
-    -ErrorAction Stop
-$webhookInfo = Invoke-RestMethod `
-    -Method Get `
-    -Uri "https://api.line.me/v2/bot/channel/webhook/endpoint" `
-    -Headers $headers `
-    -TimeoutSec 20 `
-    -ErrorAction Stop
-
-if ([string]$webhookInfo.endpoint -ne $webhookUrl) {
-    Write-Host "อัปเดต LINE Webhook เป็น URL ใหม่..." -ForegroundColor Yellow
-    $body = @{ endpoint = $webhookUrl } | ConvertTo-Json -Compress
-    Invoke-RestMethod `
-        -Method Put `
-        -Uri "https://api.line.me/v2/bot/channel/webhook/endpoint" `
-        -Headers $headers `
-        -ContentType "application/json" `
-        -Body $body `
-        -TimeoutSec 20 `
-        -ErrorAction Stop | Out-Null
-}
-
-$deadline = (Get-Date).AddSeconds(70)
-do {
-    Start-Sleep -Seconds 3
-    $webhookInfo = Invoke-RestMethod `
-        -Method Get `
-        -Uri "https://api.line.me/v2/bot/channel/webhook/endpoint" `
-        -Headers $headers `
-        -TimeoutSec 20 `
-        -ErrorAction Stop
-} while ([string]$webhookInfo.endpoint -ne $webhookUrl -and (Get-Date) -lt $deadline)
-
-if ([string]$webhookInfo.endpoint -ne $webhookUrl) {
-    throw "LINE Webhook ยังไม่ตรงกับ URL ใหม่"
-}
-if (-not [bool]$webhookInfo.active) {
-    throw "Use webhook ยังปิดอยู่ใน LINE Developers"
-}
-
-$testResult = Invoke-RestMethod `
-    -Method Post `
-    -Uri "https://api.line.me/v2/bot/channel/webhook/test" `
-    -Headers $headers `
-    -ContentType "application/json" `
-    -Body (@{ endpoint = $webhookUrl } | ConvertTo-Json -Compress) `
-    -TimeoutSec 30 `
-    -ErrorAction Stop
-
-if (-not [bool]$testResult.success) {
-    throw "LINE Webhook test ไม่ผ่าน: $($testResult.reason)"
+$lineWebhookSync = Join-Path $ProjectPath "scripts\server\sync-line-webhooks.mjs"
+if (Test-Path -LiteralPath $lineWebhookSync) {
+    Write-Host "ซิงก์ LINE Webhook จากค่าที่บันทึกในระบบ..." -ForegroundColor Cyan
+    try {
+        & node $lineWebhookSync $apiBaseUrl
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "ซิงก์ LINE Webhook ไม่สำเร็จ แต่ระบบเว็บยังเปิดเพื่อให้แก้การตั้งค่าได้"
+        }
+    }
+    catch {
+        Write-Warning "ซิงก์ LINE Webhook ไม่สำเร็จ: $($_.Exception.Message)"
+    }
 }
 
 Write-Host ""
 Write-Host "Smart Tha Pho พร้อมใช้งาน" -ForegroundColor Green
-Write-Host "Bot: $($botInfo.displayName) ($($botInfo.basicId))" -ForegroundColor Green
 Write-Host "Web: $portalUrl" -ForegroundColor Green
 Write-Host "API: $apiBaseUrl" -ForegroundColor Green
-Write-Host "Webhook: $webhookUrl" -ForegroundColor Green
-Write-Host "Rich Menu: V12 cache + instant alias switch" -ForegroundColor Green
+Write-Host "LINE OA: จัดการจากเมนู ตั้งค่า LINE OA ในระบบเว็บ" -ForegroundColor Green
+Write-Host "Citizen webhook: /api/line/webhook" -ForegroundColor Green
+Write-Host "Driver webhook: /api/line/driver-webhook" -ForegroundColor Green

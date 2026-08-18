@@ -22,3 +22,19 @@ test("recognizes waste postbacks and parses identifiers", () => {
 test("normalizes spacing in Thai waste commands", () => {
   assert.equal(normalizeWasteCommand("  งานเก็บขยะ   ของฉัน  "), "งานเก็บขยะ ของฉัน");
 });
+
+test("LINE postback actions take precedence over a pending input step", async () => {
+  const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../src/modules/line/wasteLine.js", import.meta.url), "utf8"));
+  assert.match(
+    source,
+    /event\.type === "postback" && postbackParams\.waste[\s\S]*?clearSession\(lineUserId, audience\)[\s\S]*?handleWasteAction\(postbackParams, lineUserId, actors, audience\)/,
+  );
+});
+
+test("successful LINE registration replies with the citizen menu automatically", async () => {
+  const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../src/modules/line/wasteLine.js", import.meta.url), "utf8"));
+  assert.match(
+    source,
+    /ลงทะเบียนสำเร็จ[\s\S]*?wasteMenu\(nextActors, "CITIZEN"\)/,
+  );
+});

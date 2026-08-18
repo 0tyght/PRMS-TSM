@@ -22,6 +22,17 @@ export class WasteServiceUserPolicy {
       linkedToLine: activeUsers.filter((user) => Boolean(user.lineUserId)).length,
     });
   }
+
+  registrationStep(user = null) {
+    if (!user?.id) return 0;
+    if (
+      user.latitude == null ||
+      user.longitude == null
+    ) return 1;
+    if (!user.routeId) return 2;
+    if (!user.lineUserId) return 3;
+    return 4;
+  }
 }
 
 

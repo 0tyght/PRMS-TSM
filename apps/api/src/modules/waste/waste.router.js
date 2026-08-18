@@ -21,12 +21,12 @@ export function createWasteRouter(
     "wasteServiceUserService",
     "wasteTrackingService",
     "wasteIncidentService",
+    "wasteIncidentReplacementUseCase",
     "wastePlanService",
     "wastePlanStatusService",
     "wasteDashboardQueryService",
     "wasteBillingService",
     "wasteReportQueryService",
-    "wasteDriverLineLinkService",
     "wasteRoutePreviewService",
     "wasteRouteOptimization",
     "wastePlanPublicationService",
@@ -51,12 +51,12 @@ export function createWasteRouter(
     wasteServiceUserService,
     wasteTrackingService,
     wasteIncidentService,
+    wasteIncidentReplacementUseCase,
     wastePlanService,
     wastePlanStatusService,
     wasteDashboardQueryService,
     wasteBillingService,
     wasteReportQueryService,
-    wasteDriverLineLinkService,
     wasteRoutePreviewService,
     wasteRouteOptimization,
     wastePlanPublicationService,
@@ -77,12 +77,14 @@ const vehicleSchema = z.object({
   note: nullableText(500),
 });
 
-const driverSchema = z.object({
+const driverCreateSchema = z.object({
+  driverCode: z.string().trim().min(2).max(30),
   fullName: z.string().trim().min(2).max(150),
   phone: z.string().regex(/^0\d{9}$/),
-  lineUserId: nullableText(100),
   isActive: z.boolean().default(true),
-});
+}).strict();
+
+const driverUpdateSchema = driverCreateSchema.partial().strict();
 
 const routeSchema = z.object({
   routeCode: z.string().trim().min(2).max(30),
@@ -179,6 +181,21 @@ const incidentUpdateSchema = z.object({
   replacementVehicleId: z.string().uuid().optional().nullable(),
   resolutionNote: nullableText(1000),
 });
+
+const incidentReplacementSchema = z.object({
+  replacementVehicleId: z.string().uuid().optional().nullable(),
+  replacementDriverId: z.string().uuid().optional().nullable(),
+  resumePlan: z.boolean().default(true),
+  resolutionNote: nullableText(1000),
+}).refine(
+  (input) => Boolean(
+    input.replacementVehicleId ||
+    input.replacementDriverId,
+  ),
+  {
+    message: "กรุณาเลือกรถเก็บขยะหรือพนักงานประจำรถขยะทดแทนอย่างน้อย 1 รายการ",
+  },
+);
 
 const feeRateSchema = z.object({
   rateName: z.string().trim().min(2).max(150),
@@ -379,6 +396,38 @@ router.patch(
   },
 );
 
+router.post(
+  "/incidents/:id/replacement",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const input =
+        incidentReplacementSchema
+          .parse(req.body);
+
+      const data =
+        await wasteIncidentReplacementUseCase
+          .execute(
+            req.params.id,
+            input,
+            {
+              userId:
+                req.user.sub,
+              ipAddress:
+                req.ip,
+            },
+          );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 router.delete(
   "/vehicles/:id",
   requireRole("ADMIN", "OFFICER"),
@@ -419,7 +468,7 @@ router.post(
   async (req, res, next) => {
     try {
       const input =
-        driverSchema.parse(req.body);
+        driverCreateSchema.parse(req.body);
 
       const data =
         await wasteDriverService.create(
@@ -445,7 +494,7 @@ router.patch(
   async (req, res, next) => {
     try {
       const input =
-        driverSchema.partial().parse(req.body);
+        driverUpdateSchema.parse(req.body);
 
       if (!Object.keys(input).length) {
         throw httpError(
@@ -472,6 +521,22 @@ router.patch(
 );
 
 router.delete(
+  "/drivers/:id/line-link",
+  requireRole("ADMIN", "OFFICER"),
+  async (req, res, next) => {
+    try {
+      const data = await wasteDriverService.unlinkLine(
+        req.params.id,
+        { userId: req.user.sub, ipAddress: req.ip },
+      );
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
   "/drivers/:id",
   requireRole("ADMIN", "OFFICER"),
   async (req, res, next) => {
@@ -485,34 +550,6 @@ router.delete(
       );
 
       return res.status(204).end();
-    } catch (error) {
-      next(error);
-    }
-  },
-);
-router.post(
-  "/drivers/:id/line-link-code",
-  requireRole(
-    "ADMIN",
-    "OFFICER",
-  ),
-  async (req, res, next) => {
-    try {
-      const data =
-        await wasteDriverLineLinkService
-          .createLinkCode(
-            req.params.id,
-            {
-              userId:
-                req.user.sub,
-              ipAddress:
-                req.ip,
-            },
-          );
-
-      return res
-        .status(201)
-        .json({ data });
     } catch (error) {
       next(error);
     }

@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 
-import { LineChannelProfile } from "../../application/line/LineChannelProfile.js";
-import { config } from "../../core/config.js";
+import { lineChannelSettings } from "./lineChannelSettings.js";
 import {
   loadCitizenExperienceByLineUserId,
   syncRichMenuForLineUser,
@@ -19,20 +18,6 @@ import { smartThaPhoLineMenu } from "./SmartThaPhoLineMenu.js";
 import { handleWasteLineEvent } from "./wasteLine.js";
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
-
-const citizenChannel = new LineChannelProfile({
-  kind: "CITIZEN",
-  channelSecret: config.lineChannelSecret,
-  channelAccessToken: config.lineChannelAccessToken,
-  channelId: config.lineChannelId,
-});
-
-const driverChannel = new LineChannelProfile({
-  kind: "DRIVER",
-  channelSecret: config.lineDriverChannelSecret,
-  channelAccessToken: config.lineDriverChannelAccessToken,
-  channelId: config.lineDriverChannelId,
-});
 
 export function verifyLineWebhookSignature(rawBody, signature, channelSecret) {
   if (!Buffer.isBuffer(rawBody) || !signature || !channelSecret) return false;
@@ -281,10 +266,19 @@ async function processEvent(event, channel) {
     });
 
     if (event.replyToken) {
+      const recoveryActions = channel.kind === "DRIVER"
+        ? [
+            { type: "postback", label: "เมนูพนักงาน", data: "waste=menu", displayText: "กลับเมนูพนักงานประจำรถขยะ" },
+            { type: "message", label: "ยกเลิก", text: "ยกเลิกบริการขยะ" },
+          ]
+        : [smartThaPhoLineMenu.homeAction(), { type: "message", label: "ยกเลิก", text: "ยกเลิก" }];
+      const recoveryHint = channel.kind === "DRIVER"
+        ? "กด ‘เมนูพนักงาน’ เพื่อเริ่มใหม่ หรือกด ‘ยกเลิก’ เพื่อล้างรายการที่ค้างอยู่"
+        : "พิมพ์ “เมนู” เพื่อเลือกบริการใหม่ หรือพิมพ์ “ยกเลิก” เพื่อยกเลิกรายการที่ค้างอยู่";
       await reply(event.replyToken, [
         textMessage(
-          `${publicLineErrorMessage(error)}\n\nพิมพ์ “เมนู” เพื่อเลือกบริการใหม่ หรือพิมพ์ “ยกเลิก” เพื่อยกเลิกรายการที่ค้างอยู่`,
-          [smartThaPhoLineMenu.homeAction(), { type: "message", label: "ยกเลิก", text: "ยกเลิก" }],
+          `${publicLineErrorMessage(error)}\n\n${recoveryHint}`,
+          recoveryActions,
         ),
       ], channel).catch((replyError) => {
         console.error("[line-bot] error reply failed", replyError);
@@ -308,7 +302,8 @@ async function processEvents(events, channel) {
   }
 }
 
-function handleLineWebhookForChannel(req, res, channel) {
+async function handleLineWebhookForChannel(req, res, kind) {
+  const channel = await lineChannelSettings.get(kind);
   const rawBody = Buffer.isBuffer(req.body)
     ? req.body
     : Buffer.from(req.body || "");
@@ -344,11 +339,11 @@ function handleLineWebhookForChannel(req, res, channel) {
 }
 
 export function handleCitizenLineWebhook(req, res) {
-  return handleLineWebhookForChannel(req, res, citizenChannel);
+  return handleLineWebhookForChannel(req, res, "CITIZEN");
 }
 
 export function handleDriverLineWebhook(req, res) {
-  return handleLineWebhookForChannel(req, res, driverChannel);
+  return handleLineWebhookForChannel(req, res, "DRIVER");
 }
 
 export const handleLineWebhook = handleCitizenLineWebhook;

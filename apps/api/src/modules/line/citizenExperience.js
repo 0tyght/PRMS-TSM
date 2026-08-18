@@ -1,4 +1,4 @@
-import { config } from "../../core/config.js";
+import { lineChannelSettings } from "./lineChannelSettings.js";
 import { pool } from "../../core/db.js";
 import { authenticate, requireRole } from "../../core/middleware.js";
 
@@ -219,7 +219,8 @@ export async function syncRichMenuForLineUser(lineUserId, suppliedState = null) 
     return { status: "SKIPPED", reason: "INVALID_OR_DEMO_LINE_USER_ID" };
   }
 
-  if (!config.lineChannelAccessToken) {
+  const citizenChannel = await lineChannelSettings.get("CITIZEN");
+  if (!citizenChannel.channelAccessToken) {
     return { status: "SKIPPED", reason: "NO_CHANNEL_ACCESS_TOKEN" };
   }
 

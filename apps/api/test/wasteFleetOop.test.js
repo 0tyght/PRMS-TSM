@@ -132,6 +132,7 @@ test("WasteDriverService updates driver state through domain object", async () =
   const repository = {
     findById: async () => ({
       id: "driver-1",
+      driverCode: "DEMO-D01",
       fullName: "สมชาย ทดสอบ",
       phone: "0812345678",
       lineUserId: null,

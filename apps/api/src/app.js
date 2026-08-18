@@ -94,6 +94,14 @@ const staffCreateSchema = z.object({
   villageId: z.coerce.number().int().positive().nullable().optional().default(null),
 });
 
+const lineChannelKindSchema = z.enum(["CITIZEN", "DRIVER"]);
+const lineChannelSettingsSchema = z.object({
+  channelId: z.string().trim().max(80).optional().default(""),
+  channelSecret: z.string().trim().max(500).optional().default(""),
+  channelAccessToken: z.string().trim().max(5000).optional().default(""),
+  enabled: z.boolean().optional().default(true),
+});
+
 const villageCreateSchema = z.object({
   villageNo: z.coerce.number().int().min(1).max(99),
   name: z.string().trim().min(2).max(120),
@@ -1043,6 +1051,77 @@ export class SmartThaPhoApiApplication {
   });
 
   app.get("/api/openapi.json", (_req, res) => res.json(openApiDocument));
+
+  app.get(
+    "/api/admin/settings/line",
+    authenticate,
+    requireRole("ADMIN"),
+    async (_req, res, next) => {
+      try {
+        return res.json({ data: await lineBot.listChannelSettings() });
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/settings/line/:kind/test",
+    authenticate,
+    requireRole("ADMIN"),
+    async (req, res, next) => {
+      try {
+        const kind = lineChannelKindSchema.parse(req.params.kind);
+        const input = lineChannelSettingsSchema.parse(req.body || {});
+        return res.json({ data: await lineBot.testChannelSettings(kind, input) });
+      } catch (error) {
+        if (String(error?.code || "").startsWith("ER_")) return next(error);
+        return next(createHttpError(422, String(error?.message || "ไม่สามารถทดสอบ LINE OA ได้")));
+      }
+    },
+  );
+
+  app.put(
+    "/api/admin/settings/line/:kind",
+    authenticate,
+    requireRole("ADMIN"),
+    async (req, res, next) => {
+      try {
+        const kind = lineChannelKindSchema.parse(req.params.kind);
+        const input = lineChannelSettingsSchema.parse(req.body || {});
+        const data = await lineBot.saveChannelSettings(kind, input, {
+          userId: req.user.sub,
+          ipAddress: req.ip,
+        });
+        return res.json({ data });
+      } catch (error) {
+        if (String(error?.code || "").startsWith("ER_")) return next(error);
+        return next(createHttpError(422, String(error?.message || "ไม่สามารถบันทึกการตั้งค่า LINE OA ได้")));
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/settings/line/:kind/webhook",
+    authenticate,
+    requireRole("ADMIN"),
+    async (req, res, next) => {
+      try {
+        const kind = lineChannelKindSchema.parse(req.params.kind);
+        const host = String(req.get("host") || "").trim();
+        if (!host) throw createHttpError(422, "ไม่พบ public host ของ API");
+        const baseUrl = `${req.protocol}://${host}`;
+        const data = await lineBot.configureChannelWebhook(kind, baseUrl, {
+          userId: req.user.sub,
+          ipAddress: req.ip,
+        });
+        return res.json({ data });
+      } catch (error) {
+        if (error instanceof HttpError || String(error?.code || "").startsWith("ER_")) return next(error);
+        return next(createHttpError(422, String(error?.message || "ไม่สามารถตั้งค่า LINE Webhook ได้")));
+      }
+    },
+  );
 
   app.get("/api/health/live", (_req, res) => {
     res.json({

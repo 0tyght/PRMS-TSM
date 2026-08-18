@@ -53,12 +53,12 @@ test("waste composition root wires the complete application graph", () => {
     "wasteServiceUserService",
     "wasteTrackingService",
     "wasteIncidentService",
+    "wasteIncidentReplacementUseCase",
     "wastePlanService",
     "wastePlanStatusService",
     "wasteDashboardQueryService",
     "wasteBillingService",
     "wasteReportQueryService",
-    "wasteDriverLineLinkService",
     "wasteRoutePreviewService",
     "wasteRouteOptimization",
     "wastePlanPublicationService",
@@ -72,6 +72,15 @@ test("waste composition root wires the complete application graph", () => {
       `${name} must be wired`,
     );
   }
+
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(
+      services,
+      "wasteDriverLineLinkService",
+    ),
+    false,
+    "legacy six-digit LINE link service must not be wired",
+  );
 
   const module =
     new WasteHttpModule({

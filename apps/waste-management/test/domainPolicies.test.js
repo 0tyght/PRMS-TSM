@@ -27,6 +27,13 @@ test("WasteDashboardPolicy resolves routes and bounded progress", () => {
     "r1",
   );
   assert.equal(wasteDashboardPolicy.planProgress({ collectedStops: 6, stopTotal: 8 }), 75);
+  assert.equal(
+    wasteDashboardPolicy.collectionProgress({
+      collectedCollectionStops: 9,
+      collectionStopTotal: 12,
+    }),
+    75,
+  );
 });
 
 test("WasteReportPolicy summarizes operational completeness", () => {
@@ -67,6 +74,21 @@ test("WasteServiceUserPolicy filters by route and summarizes readiness", () => {
       { status: "ALL" },
     ).length,
     3,
+  );
+
+  assert.equal(
+    wasteServiceUserPolicy.registrationStep(null),
+    0,
+  );
+  assert.equal(
+    wasteServiceUserPolicy.registrationStep({
+      id: "user-1",
+      latitude: 16.7,
+      longitude: 100.2,
+      routeId: "route-1",
+      lineUserId: "U1",
+    }),
+    4,
   );
 
   assert.deepEqual(

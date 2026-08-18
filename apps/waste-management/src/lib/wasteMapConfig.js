@@ -40,12 +40,28 @@ export function isInsideThaPhoServiceBounds(
   );
 }
 
-export function routeMapColor(index = 0) {
-  const routeIndex =
-    Math.max(
+function stableRouteIndex(value) {
+  const numeric = Number(value);
+
+  if (
+    Number.isFinite(numeric) &&
+    String(value).trim() !== ""
+  ) {
+    return Math.max(0, numeric);
+  }
+
+  return Array.from(String(value || "route"))
+    .reduce(
+      (hash, character) => (
+        (hash * 31 + character.charCodeAt(0)) >>> 0
+      ),
       0,
-      Number(index) || 0,
     );
+}
+
+export function routeMapColor(routeKey = 0) {
+  const routeIndex =
+    stableRouteIndex(routeKey);
 
   const hue =
     (

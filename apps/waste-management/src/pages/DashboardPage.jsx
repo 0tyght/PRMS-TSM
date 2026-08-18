@@ -24,6 +24,7 @@ export default function DashboardPage({ token, navigate }) {
   const routes = data?.routes || [];
   const selectedRoute = wasteDashboardPolicy.selectedRoute(routes, selectedRouteId);
   const routesWithoutGeometry = wasteDashboardPolicy.routeWithoutGeometryCount(routes);
+  const collectionProgress = wasteDashboardPolicy.collectionProgress(summary);
 
   useEffect(() => {
     setSelectedRouteId((current) =>
@@ -39,11 +40,13 @@ export default function DashboardPage({ token, navigate }) {
     <PageHead eyebrow="ศูนย์ควบคุมการเก็บขยะ" title="ภาพรวมการเก็บขยะ" detail="ติดตามแผนปฏิบัติงานเก็บขยะ รถเก็บขยะ และเหตุที่ต้องดำเนินการจากข้อมูลจริง" actions={<label className="waste-date-field"><span>วันที่ปฏิบัติงาน</span><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>} />
     <ErrorNotice error={error} onRetry={load} />
     {loading ? <LoadingState /> : <>
-      <section className="waste-kpis">
+      <section className="waste-kpis waste-kpis--operational">
         <article><span>รถพร้อมใช้งาน</span><strong>{formatNumber(summary.availableVehicles)}</strong><small>คัน</small></article>
         <article><span>กำลังปฏิบัติงาน</span><strong>{formatNumber(summary.operatingPlans)}</strong><small>แผน</small></article>
         <article><span>เสร็จสิ้นวันนี้</span><strong>{formatNumber(summary.completedPlans)}</strong><small>แผน</small></article>
         <article className={summary.maintenanceVehicles ? "is-alert" : ""}><span>รถซ่อมบำรุง</span><strong>{formatNumber(summary.maintenanceVehicles)}</strong><small>คัน</small></article>
+        <article><span>จุดเก็บยืนยันแล้ว</span><strong>{formatNumber(summary.collectedCollectionStops)} / {formatNumber(summary.collectionStopTotal)}</strong><small>{collectionProgress}% ของรอบวันนี้</small></article>
+        <article className={summary.openIncidents ? "is-alert" : ""}><span>เหตุที่ยังไม่ปิด</span><strong>{formatNumber(summary.openIncidents)}</strong><small>รายการที่เจ้าหน้าที่ต้องติดตาม</small></article>
       </section>
       <section className="waste-readiness" aria-label="ความพร้อมในการวางแผนปฏิบัติงานเก็บขยะ">
         <button type="button" onClick={() => navigate("plans")}><span>แผนที่รอเริ่มวันนี้</span><strong>{formatNumber(summary.scheduledPlans)}</strong><small>เปิดแผนปฏิบัติงานเก็บขยะ</small></button>
@@ -152,7 +155,11 @@ export default function DashboardPage({ token, navigate }) {
           <i
             style={{
               backgroundColor:
-                routeMapColor(index),
+                routeMapColor(
+                  route.routeCode ||
+                  route.id ||
+                  index,
+                ),
             }}
           />
 
