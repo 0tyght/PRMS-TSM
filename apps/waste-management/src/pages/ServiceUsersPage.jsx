@@ -7,11 +7,18 @@ import { wasteServiceUserPolicy } from "../domain/WasteServiceUserPolicy.js";
 import { routeComparisonPolicy } from "../application/RouteComparisonPolicy.js";
 
 const SERVICE_USER_REGISTRATION_STEPS = Object.freeze([
-  "ทะเบียน",
-  "พิกัดบ้าน",
-  "กำหนดเส้นทาง",
-  "เชื่อม LINE",
-  "พร้อมบริการ",
+  "กรอกข้อมูลผู้ใช้บริการ",
+  "ระบุสถานที่รับบริการและพิกัด",
+  "ตรวจสอบข้อมูล",
+  "บันทึกทะเบียน",
+]);
+
+const ROUTE_ASSIGNMENT_STEPS = Object.freeze([
+  "ตรวจสอบพิกัดสถานที่รับบริการ",
+  "เลือกเส้นทางเก็บขยะ",
+  "คำนวณเส้นทางหลังเพิ่มจุดเก็บขยะ",
+  "เปรียบเทียบเส้นทาง",
+  "ยืนยันการกำหนดเส้นทาง",
 ]);
 
 function formatRouteDistance(value) {
@@ -42,8 +49,10 @@ function RouteAssignmentWorkspace({ user, routes, suggestions, loading, saving, 
   const comparison = useMemo(() => routeComparisonPolicy.compare({ currentRouteGeojson: selectedRoute?.routeGeojson, proposal }), [proposal, selectedRoute?.routeGeojson]);
   const hasLocation = user.latitude != null && user.longitude != null;
   const isSelectedRouteEligible = Boolean(selectedSuggestion?.eligible);
+  const assignmentStep = proposal ? 3 : selectedSuggestion ? 1 : 0;
 
   if (!hasLocation) return <section className="waste-assignment-missing-location">
+    <ProgressTracker steps={ROUTE_ASSIGNMENT_STEPS} currentStep={0} ariaLabel="ขั้นตอนกำหนดเส้นทางเก็บขยะให้สถานที่รับบริการ" />
     <div><b>1</b><strong>ต้องระบุตำแหน่งสถานที่รับบริการก่อน</strong></div>
     <p>ระบบต้องใช้ตำแหน่งบ้านเพื่อค้นหาเส้นทางที่ใกล้ที่สุดและสร้างจุดแวะบนเส้นทางเดินรถ</p>
     <button type="button" className="waste-button waste-button--primary" onClick={onEditLocation}>ระบุตำแหน่งบนแผนที่</button>
@@ -51,6 +60,7 @@ function RouteAssignmentWorkspace({ user, routes, suggestions, loading, saving, 
 
   return <section className="waste-assignment-workspace">
     <header><div><small>{user.serviceNo}</small><h3>{user.fullName}</h3><span>บ้านเลขที่ {user.houseNo} · หมู่ {user.villageNo} {user.villageName}</span></div><div className="waste-assignment-location-status"><i />มีตำแหน่งสถานที่รับบริการแล้ว</div></header>
+    <ProgressTracker steps={ROUTE_ASSIGNMENT_STEPS} currentStep={assignmentStep} ariaLabel="ขั้นตอนกำหนดเส้นทางเก็บขยะให้สถานที่รับบริการ" />
     <ErrorNotice error={error} />
     {loading && !suggestions.length ? <LoadingState label="กำลังค้นหาเส้นทางใกล้บ้าน" /> : !suggestions.length ? <EmptyState title="ยังไม่มีเส้นทางที่พร้อมแนะนำ" detail="ต้องคำนวณแนวถนนของเส้นทางเก็บขยะก่อน จึงจะเปรียบเทียบระยะห่างจากบ้านได้" /> : <div className="waste-assignment-grid">
       <div className="waste-assignment-route-list"><strong>เลือกเส้นทางรับผิดชอบ</strong>{suggestions.map((route, index) => <button type="button" key={route.id} disabled={saving} className={selectedRouteId === route.id ? "is-selected" : ""} onClick={() => { calculationSequence.current += 1; setSelectedRouteId(route.id); setProposal(null); }}><span>{index + 1}</span><div><b>{route.routeCode} · {route.routeName}</b><small>{route.id === user.routeId ? "เส้นทางปัจจุบัน" : route.requiresInitialSetup ? "เส้นทางใหม่ · ยังไม่มีแนวถนน" : `ห่างจากแนวเส้นทางประมาณ ${Number(route.distanceMeters).toLocaleString("th-TH")} เมตร`}</small></div>{route.recommended ? <em>แนะนำที่สุด</em> : route.requiresInitialSetup ? <em className="is-warning">เริ่มจัดจุด</em> : route.eligible ? <em className="is-warning">ต้องตรวจสอบ</em> : <em className="is-danger">ไกลเกินกำหนด</em>}</button>)}</div>
@@ -90,10 +100,10 @@ function ServiceUserForm({ initial, villages, onCancel, onSubmit, onUnlinkLine, 
     <div className="waste-form__wide">
       <ProgressTracker
         steps={SERVICE_USER_REGISTRATION_STEPS}
-        currentStep={wasteServiceUserPolicy.registrationStep(initial)}
-        ariaLabel="ขั้นตอนความพร้อมของผู้ใช้บริการเก็บขยะ"
+        currentStep={initial?.id ? (location.latitude == null || location.longitude == null ? 1 : 2) : 0}
+        ariaLabel="ขั้นตอนจัดการทะเบียนผู้ใช้บริการเก็บขยะ"
       />
-      <p className="waste-form__progress-note">บันทึกทะเบียนและพิกัดก่อน จากนั้นกำหนดเส้นทางโดยให้ระบบคำนวณรอบวิ่ง แล้วผู้ใช้บริการเชื่อมบัญชีผ่าน LINE</p>
+      <p className="waste-form__progress-note">กรอกข้อมูลและระบุพิกัดให้ครบ ตรวจสอบความถูกต้อง แล้วบันทึกทะเบียน จากนั้นจึงกำหนดเส้นทางเก็บขยะจากปุ่มในตาราง</p>
     </div>
     <label>เลขผู้ใช้บริการ<input name="serviceNo" required defaultValue={initial?.serviceNo || ""} placeholder="เช่น WU-0001" /></label>
     <label>ชื่อ-นามสกุล/ชื่อผู้ติดต่อ<input name="fullName" required defaultValue={initial?.fullName || ""} /></label>

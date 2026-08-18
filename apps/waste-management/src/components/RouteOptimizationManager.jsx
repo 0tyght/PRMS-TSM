@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { EmptyState, ErrorNotice, LoadingState, formatNumber } from "./ui.jsx";
+import { EmptyState, ErrorNotice, LoadingState, ProgressTracker, formatNumber } from "./ui.jsx";
 import WasteMap from "./WasteMap.jsx";
 import { routeComparisonPolicy } from "../application/RouteComparisonPolicy.js";
 
@@ -21,6 +21,14 @@ function formatDifference(value, formatter) {
 function stopLabel(stop) {
   return `${stop.sequenceNo}. ${stop.stopName}${stop.serviceNo ? ` (${stop.serviceNo})` : ""}`;
 }
+
+const ROUTE_OPTIMIZATION_STEPS = Object.freeze([
+  "ตรวจจุดเก็บขยะ",
+  "เลือกจุดเริ่มต้น/จุดสิ้นสุด",
+  "คำนวณเส้นทาง",
+  "ตรวจสอบแผนที่",
+  "ยืนยันเส้นทาง",
+]);
 
 export default function RouteOptimizationManager({ api, route, onClose, onSaved }) {
   const [stops, setStops] = useState([]);
@@ -111,9 +119,14 @@ export default function RouteOptimizationManager({ api, route, onClose, onSaved 
     markerRole: index === 0 ? "START" : index === proposal.stops.length - 1 && endStopId ? "END" : "STOP",
   })) || [];
   const comparison = useMemo(() => routeComparisonPolicy.compare({ currentRouteGeojson: route.routeGeojson, proposal }), [proposal, route.routeGeojson]);
+  const currentStep = proposal ? 3 : loading ? 0 : 1;
 
   return <>
-    <div className="waste-route-steps" aria-label="ขั้นตอนจัดเส้นทาง"><b>1</b><span>ตรวจจุดเก็บขยะที่ระบบดึงมา</span><b>2</b><span>เลือกจุดเริ่มและจุดจบถ้าต้องการ</span><b>3</b><span>คำนวณ ตรวจแผนที่ และยืนยัน</span></div>
+    <ProgressTracker
+      steps={ROUTE_OPTIMIZATION_STEPS}
+      currentStep={currentStep}
+      ariaLabel="ขั้นตอนจัดเส้นทางเก็บขยะ"
+    />
     <p className="waste-modal-intro">ระบบดึงเฉพาะจุดเก็บขยะที่เปิดใช้งานและยืนยันอยู่ใน <strong>{route.routeName}</strong> แล้วจัดลำดับและคำนวณแนวถนนให้อัตโนมัติ หากไม่เลือกจุดสิ้นสุด รถจะกลับมาที่จุดเริ่มต้น</p>
     <ErrorNotice error={error} />
     {loading ? <LoadingState label="กำลังโหลดจุดเก็บขยะ" /> : !stops.length ? <EmptyState title="เส้นทางนี้ยังไม่มีจุดเก็บขยะ" detail="ไปที่เมนูทะเบียนผู้ใช้บริการเก็บขยะ แล้วกำหนดเส้นทางและสถานที่รับบริการให้แต่ละรายก่อน" /> : <>
