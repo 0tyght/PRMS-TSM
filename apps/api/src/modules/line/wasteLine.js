@@ -515,9 +515,15 @@ async function driverJobs(driver, _lineUserId, scope = "ALL") {
   );
   if (!rows.length) {
     const label = scope === "TODAY" ? "วันนี้" : scope === "UPCOMING" ? "ใน 7 วันข้างหน้า" : "ใน 7 วัน";
-    return textMessage(
-      `ยังไม่มีงานเก็บขยะที่ได้รับมอบหมาย${label}\nเมื่อเจ้าหน้าที่ตรวจความพร้อมและประกาศแผน ระบบจะแจ้งงานมาที่ LINE นี้\nเลือก “งานล่วงหน้า” เพื่อตรวจรอบถัดไป หรือเปิดเมนูเพื่อทำรายการอื่น`,
+    return operationResultCard(
+      "ยังไม่มีงานที่ได้รับมอบหมาย",
+      [
+        lineCardText(`ไม่พบแผนปฏิบัติงานเก็บขยะ${label}สำหรับบัญชีนี้`, { weight: "bold" }),
+        lineCardText("เมื่อเจ้าหน้าที่ตรวจความพร้อมและประกาศแผน ระบบจะแจ้งงานมาที่ LINE นี้", { size: "xs", color: "#6B8179", margin: "md" }),
+        lineCardText("เลือก “งานล่วงหน้า” เพื่อตรวจรอบถัดไป หรือเปิดเมนูเพื่อทำรายการอื่น", { size: "xs", color: "#6B8179", margin: "md" }),
+      ],
       wasteLineShortcuts.driverMenu(),
+      LINE_CARD_COLORS.SLATE,
     );
   }
   return buildDriverJobsMessage(rows, scope);
