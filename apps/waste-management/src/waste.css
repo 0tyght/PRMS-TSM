@@ -423,3 +423,412 @@ html{font-size:16px}body{overflow-x:hidden;color:#213e34;background:#f2f6f3}.was
   .waste-kpis--operational article { min-width: 0; }
   .waste-kpis--operational strong { font-size: clamp(20px, 1.75vw, 28px); }
 }
+
+/* ===== Plans page redesign V1 START ===== */
+
+/* Filter area: one compact operational toolbar */
+.waste-plan-filters{
+  margin-bottom:18px;
+  border-color:#dbe7e0;
+  border-radius:16px;
+  box-shadow:0 8px 24px rgb(28 70 52 / .055);
+}
+.waste-plan-filters .waste-panel__head{
+  min-height:58px;
+  padding:11px 16px;
+  background:#fbfdfc;
+}
+.waste-plan-filters .waste-panel__head h2{
+  margin-top:2px;
+  font-size:14px;
+}
+.waste-plan-filters .waste-panel__head>div:last-child{
+  color:#6f8278;
+  font-size:11px;
+  white-space:nowrap;
+}
+.waste-plan-filters .waste-panel__head>div:last-child strong{
+  color:#1f5e3d;
+  font-family:"Prompt",sans-serif;
+  font-size:16px;
+}
+.waste-plan-filters>.waste-filter-row{
+  display:grid;
+  grid-template-columns:minmax(260px,1.75fr) repeat(4,minmax(135px,1fr)) auto;
+  gap:10px;
+  align-items:end;
+  padding:13px 16px 15px;
+}
+.waste-plan-filters>.waste-filter-row+ .waste-filter-row{
+  padding-top:0;
+}
+.waste-plan-filters .waste-filter-row label,
+.waste-plan-filters .waste-filter-row label:first-child,
+.waste-plan-filters .waste-filter-row label:last-child{
+  display:grid;
+  width:auto;
+  gap:5px;
+  color:#5f746a;
+  font-size:10px;
+  font-weight:700;
+}
+.waste-plan-filters .waste-filter-row input,
+.waste-plan-filters .waste-filter-row select{
+  height:40px;
+  border-color:#d3e1da;
+  border-radius:10px;
+  background:#fff;
+  font-size:12px;
+}
+.waste-plan-filters .waste-filter-row .waste-button{
+  min-height:40px;
+}
+
+/* Make the process explanation quiet; the actual process in every card is primary. */
+.waste-plan-guide{
+  margin-bottom:14px;
+  padding:7px 2px 11px;
+}
+.waste-plan-guide strong{
+  font-size:12px;
+}
+.waste-plan-guide span{
+  font-size:11px;
+}
+
+/* Plans become separated cards instead of table-like rows. */
+.waste-panel>.waste-plan-list{
+  display:grid;
+  gap:13px;
+  padding:14px;
+  background:#f5f8f6;
+}
+.waste-plan-list>article{
+  position:relative;
+  display:grid;
+  grid-template-columns:82px minmax(0,1fr) 190px;
+  gap:20px;
+  align-items:stretch;
+  padding:20px;
+  border:1px solid #dce7e1;
+  border-radius:16px;
+  background:#fff;
+  box-shadow:0 7px 20px rgb(29 69 52 / .045);
+  transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease;
+}
+.waste-plan-list>article:last-child{
+  border-bottom:1px solid #dce7e1;
+}
+.waste-plan-list>article:hover{
+  border-color:#bdd3c7;
+  box-shadow:0 12px 28px rgb(29 69 52 / .08);
+  transform:translateY(-1px);
+}
+.waste-plan-list>article:has(>.waste-plan-list__actions:empty){
+  grid-template-columns:82px minmax(0,1fr);
+}
+.waste-plan-list__actions:empty{
+  display:none;
+}
+
+/* Date becomes a compact anchor, not a detached box. */
+.waste-plan-list__date{
+  width:68px;
+  height:76px;
+  align-self:start;
+  border:1px solid #dceacb;
+  border-radius:14px;
+  color:#1c6638;
+  background:linear-gradient(180deg,#f2f9df 0%,#eaf6cf 100%);
+}
+.waste-plan-list__date strong{
+  font-size:25px;
+}
+.waste-plan-list__date span{
+  margin-top:5px;
+  color:#50735c;
+  font-size:11px;
+  font-weight:700;
+}
+
+/* Header and plan identity */
+.waste-plan-list__main{
+  min-width:0;
+}
+.waste-plan-list__main header{
+  align-items:flex-start;
+  gap:16px;
+  padding-bottom:13px;
+  border-bottom:1px solid #edf2ef;
+}
+.waste-plan-list__main header>div:first-child{
+  min-width:0;
+}
+.waste-plan-list__main small{
+  display:block;
+  color:#7e9188;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.02em;
+}
+.waste-plan-list__main h2{
+  margin-top:4px;
+  color:#1f4537;
+  font-size:18px;
+  line-height:1.35;
+}
+.waste-plan-statuses{
+  justify-content:flex-end;
+  flex:none;
+  gap:7px;
+}
+.waste-plan-statuses .waste-publication,
+.waste-plan-statuses .waste-status{
+  min-height:28px;
+  padding:4px 10px;
+  font-size:11px;
+}
+
+/* Operational facts are scannable blocks. */
+.waste-plan-list dl{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin:14px 0 0;
+}
+.waste-plan-list dl>div{
+  min-width:0;
+  padding:10px 12px;
+  border:1px solid #e7eeea;
+  border-radius:10px;
+  background:#f8fbf9;
+}
+.waste-plan-list dt{
+  color:#788c82;
+  font-size:10px;
+  font-weight:600;
+}
+.waste-plan-list dd{
+  overflow:hidden;
+  margin-top:4px;
+  color:#294f40;
+  font-size:13px;
+  font-weight:700;
+  line-height:1.4;
+  text-overflow:ellipsis;
+}
+
+/* Process Steps: larger markers and stronger current state. */
+.waste-plan-list .waste-progress-tracker{
+  margin:18px 0 4px;
+}
+.waste-plan-list .waste-progress-tracker li{
+  color:#7d9087;
+  font-size:11px;
+  line-height:1.35;
+}
+.waste-plan-list .waste-progress-tracker li:not(:last-child)::after{
+  top:15px;
+  left:calc(50% + 18px);
+  right:calc(-50% + 18px);
+  height:3px;
+  border-radius:999px;
+  background:#e1e9e5;
+}
+.waste-plan-list .waste-progress-tracker li.is-done:not(:last-child)::after{
+  background:#5f9b7e;
+}
+.waste-plan-list .waste-progress-tracker__marker{
+  width:32px;
+  height:32px;
+  border-width:2px;
+  font-size:11px;
+  box-shadow:0 0 0 4px #fff;
+}
+.waste-plan-list .waste-progress-tracker .is-done .waste-progress-tracker__marker{
+  border-color:#277755;
+  background:#277755;
+}
+.waste-plan-list .waste-progress-tracker .is-current .waste-progress-tracker__marker{
+  border:3px solid #b5651d;
+  background:#fff7ec;
+  color:#8b4a10;
+  box-shadow:0 0 0 4px #fff,0 0 0 6px rgb(181 101 29 / .11);
+}
+.waste-plan-list .waste-progress-tracker .is-current .waste-progress-tracker__label{
+  color:#804511;
+  font-weight:800;
+}
+
+/* LINE delivery is supporting information, kept below the workflow. */
+.waste-plan-list .waste-line-delivery{
+  margin-top:13px;
+  padding-top:11px;
+  border-top:1px dashed #dfe8e3;
+}
+.waste-plan-list .waste-line-delivery span{
+  padding:5px 9px;
+  font-size:10px;
+}
+
+/* One predictable action rail. Primary action is always visually first. */
+.waste-plan-list__actions{
+  display:flex;
+  max-width:none;
+  min-width:0;
+  flex-direction:column;
+  justify-content:center;
+  align-items:stretch;
+  gap:8px;
+  padding-left:18px;
+  border-left:1px solid #e8efeb;
+}
+.waste-plan-list__actions .waste-button{
+  width:100%;
+  min-height:42px;
+  padding-inline:12px;
+  font-size:12px;
+}
+.waste-plan-list__actions .waste-button--primary{
+  order:-3;
+  box-shadow:0 8px 18px rgb(198 109 22 / .16);
+}
+.waste-plan-list__actions .waste-button--secondary{
+  order:-2;
+}
+.waste-plan-list__actions .waste-button--quiet{
+  order:1;
+  min-height:32px;
+}
+
+/* Mid-size desktop: keep cards readable without squeezing facts. */
+@media(max-width:1366px){
+  .waste-plan-filters>.waste-filter-row{
+    grid-template-columns:minmax(230px,1.5fr) repeat(2,minmax(145px,1fr));
+  }
+  .waste-plan-filters>.waste-filter-row .waste-button{
+    width:max-content;
+  }
+  .waste-plan-list>article{
+    grid-template-columns:72px minmax(0,1fr) 176px;
+    gap:16px;
+    padding:17px;
+  }
+  .waste-plan-list>article:has(>.waste-plan-list__actions:empty){
+    grid-template-columns:72px minmax(0,1fr);
+  }
+  .waste-plan-list dl{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+/* Tablet: actions move below content while staying grouped. */
+@media(max-width:1100px){
+  .waste-plan-filters>.waste-filter-row{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .waste-plan-filters>.waste-filter-row label:first-child{
+    grid-column:1/-1;
+  }
+  .waste-plan-list>article,
+  .waste-plan-list>article:has(>.waste-plan-list__actions:empty){
+    grid-template-columns:70px minmax(0,1fr);
+  }
+  .waste-plan-list__actions{
+    grid-column:2;
+    flex-direction:row;
+    justify-content:flex-end;
+    flex-wrap:wrap;
+    padding:13px 0 0;
+    border-top:1px solid #edf2ef;
+    border-left:0;
+  }
+  .waste-plan-list__actions .waste-button{
+    width:auto;
+  }
+}
+
+/* Mobile: preserve hierarchy and make touch targets full-width when needed. */
+@media(max-width:700px){
+  .waste-plan-filters .waste-panel__head{
+    align-items:center;
+    flex-direction:row;
+  }
+  .waste-plan-filters>.waste-filter-row{
+    grid-template-columns:1fr;
+    padding-inline:13px;
+  }
+  .waste-plan-filters>.waste-filter-row label:first-child{
+    grid-column:auto;
+  }
+  .waste-panel>.waste-plan-list{
+    gap:10px;
+    padding:10px;
+  }
+  .waste-plan-list>article,
+  .waste-plan-list>article:has(>.waste-plan-list__actions:empty){
+    grid-template-columns:54px minmax(0,1fr);
+    gap:11px;
+    padding:14px;
+    border-radius:14px;
+  }
+  .waste-plan-list__date{
+    width:50px;
+    height:58px;
+    border-radius:11px;
+  }
+  .waste-plan-list__date strong{
+    font-size:20px;
+  }
+  .waste-plan-list__main header{
+    display:grid;
+    gap:9px;
+  }
+  .waste-plan-statuses{
+    justify-content:flex-start;
+  }
+  .waste-plan-list__main h2{
+    font-size:16px;
+  }
+  .waste-plan-list dl{
+    grid-template-columns:1fr 1fr;
+  }
+  .waste-plan-list dl>div{
+    padding:9px 10px;
+  }
+  .waste-plan-list .waste-progress-tracker{
+    margin-top:15px;
+    padding-bottom:7px;
+  }
+  .waste-plan-list .waste-progress-tracker li{
+    min-width:104px;
+  }
+  .waste-plan-list__actions{
+    grid-column:1/-1;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+  }
+  .waste-plan-list__actions .waste-button{
+    width:100%;
+  }
+  .waste-plan-list__actions .waste-button--primary{
+    grid-column:1/-1;
+  }
+  .waste-plan-list__actions .waste-button--quiet{
+    grid-column:1/-1;
+  }
+}
+
+@media(max-width:460px){
+  .waste-plan-list dl{
+    grid-template-columns:1fr;
+  }
+  .waste-plan-list__actions{
+    grid-template-columns:1fr;
+  }
+  .waste-plan-list__actions .waste-button{
+    grid-column:1!important;
+  }
+}
+
+/* ===== Plans page redesign V1 END ===== */
