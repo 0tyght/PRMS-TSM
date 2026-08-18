@@ -116,6 +116,101 @@ function formatMoney(value) {
   return Number(value || 0).toLocaleString("th-TH", { style: "currency", currency: "THB" });
 }
 
+const LINE_CARD_COLORS = Object.freeze({
+  GREEN: "#087F5B",
+  BLUE: "#126E9C",
+  ORANGE: "#B86108",
+  RED: "#B63A32",
+  SLATE: "#415B53",
+});
+
+function lineCardText(text, options = {}) {
+  return {
+    type: "text",
+    text: String(text || "-").slice(0, options.maxLength || 900),
+    size: options.size || "sm",
+    color: options.color || "#28463C",
+    ...(options.weight ? { weight: options.weight } : {}),
+    wrap: options.wrap !== false,
+    ...(options.align ? { align: options.align } : {}),
+    ...(options.flex != null ? { flex: options.flex } : {}),
+    ...(options.margin ? { margin: options.margin } : {}),
+  };
+}
+
+function lineCardRow(label, value) {
+  return {
+    type: "box",
+    layout: "horizontal",
+    margin: "md",
+    contents: [
+      lineCardText(label, { size: "xs", color: "#6B8179", flex: 3 }),
+      lineCardText(value, { size: "sm", color: "#173B2F", weight: "bold", align: "end", flex: 5 }),
+    ],
+  };
+}
+
+function lineCardButton(label, action, { color = LINE_CARD_COLORS.GREEN, style = "primary" } = {}) {
+  return { type: "button", style, height: "sm", color, action };
+}
+
+function lineCardBubble({ eyebrow = "SMART THA PHO", title, accent = LINE_CARD_COLORS.GREEN, rows = [], footerActions = [] }) {
+  return {
+    type: "bubble",
+    size: "mega",
+    header: {
+      type: "box",
+      layout: "vertical",
+      backgroundColor: accent,
+      paddingAll: "16px",
+      contents: [
+        lineCardText(eyebrow, { size: "xxs", color: "#DDF6E6", weight: "bold" }),
+        lineCardText(title, { size: "lg", color: "#FFFFFF", weight: "bold", maxLength: 120 }),
+      ],
+    },
+    body: { type: "box", layout: "vertical", paddingAll: "18px", contents: rows },
+    ...(footerActions.length
+      ? { footer: { type: "box", layout: "vertical", spacing: "sm", contents: footerActions } }
+      : {}),
+  };
+}
+
+function flexMessage(altText, contents, quickReplyItems = []) {
+  const actions = wasteLineShortcuts.normalize(quickReplyItems);
+  return {
+    type: "flex",
+    altText: String(altText || "ข้อมูลบริการเก็บขยะ").slice(0, 400),
+    contents,
+    ...(actions.length ? { quickReply: { items: actions.map((action) => ({ type: "action", action })) } } : {}),
+  };
+}
+
+function planStatusLabel(status) {
+  return {
+    SCHEDULED: "รอเริ่มงาน",
+    IN_PROGRESS: "กำลังปฏิบัติงาน",
+    INTERRUPTED: "หยุดชะงัก",
+    COMPLETED: "เสร็จสิ้น",
+  }[status] || String(status || "ไม่ระบุ");
+}
+
+function planStatusColor(status) {
+  return {
+    SCHEDULED: LINE_CARD_COLORS.BLUE,
+    IN_PROGRESS: LINE_CARD_COLORS.GREEN,
+    INTERRUPTED: LINE_CARD_COLORS.ORANGE,
+    COMPLETED: LINE_CARD_COLORS.SLATE,
+  }[status] || LINE_CARD_COLORS.SLATE;
+}
+
+function operationResultCard(title, rows, quickReplyItems = [], accent = LINE_CARD_COLORS.GREEN) {
+  return flexMessage(
+    title,
+    lineCardBubble({ eyebrow: "ผลการดำเนินงาน", title, accent, rows }),
+    quickReplyItems,
+  );
+}
+
 async function getSession(lineUserId, channelType) {
   const [rows] = await pool.execute(
     `SELECT actor_type AS actorType, flow_type AS flowType, current_step AS currentStep,
@@ -227,6 +322,7 @@ function wasteMenu(actors, audience = "CITIZEN") {
 async function citizenSchedule(citizen) {
   const result = await citizenScheduleService.upcomingFor(citizen);
   const actions = result.state === "UNREGISTERED" ? wasteLineShortcuts.unregistered() : wasteLineShortcuts.citizen();
+  if (result.state === "READY") return buildCitizenScheduleMessage(result, actions);
   return textMessage(citizenScheduleService.toLineText(result), actions);
 }
 
@@ -267,9 +363,7 @@ async function citizenCharges(citizen) {
     [citizen.id],
   );
   if (!rows.length) return textMessage("ยังไม่มีรายการค่าบริการเก็บขยะในทะเบียนของคุณ", wasteLineShortcuts.citizen());
-  const labels = { PENDING: "รอชำระ", PAID: "ชำระแล้ว", OVERDUE: "ค้างชำระ", VOID: "ยกเลิก" };
-  const lines = rows.map((row) => `• รอบ ${formatThaiDate(row.billingPeriod)} · ${formatMoney(row.amount)}\n  ${labels[row.status] || row.status}${["PENDING", "OVERDUE"].includes(row.status) ? ` · กำหนด ${formatThaiDate(row.dueDate)}` : ""}`);
-  return textMessage(`ค่าบริการเก็บขยะ\n${lines.join("\n")}`, wasteLineShortcuts.citizen());
+  return buildCitizenChargesMessage(rows, wasteLineShortcuts.citizen());
 }
 
 export function buildDriverJobsMessage(plans, scope = "ALL") {
@@ -278,16 +372,125 @@ export function buildDriverJobsMessage(plans, scope = "ALL") {
     : scope === "UPCOMING"
       ? "งานเก็บขยะล่วงหน้า 7 วัน"
       : "งานเก็บขยะของฉันใน 7 วัน";
-  const lines = plans.map((plan, index) => {
-    const status = { SCHEDULED: "รอเริ่มงาน", IN_PROGRESS: "กำลังปฏิบัติงาน", INTERRUPTED: "หยุดชะงัก", COMPLETED: "เสร็จสิ้น" }[plan.status] || plan.status;
-    return [
-      `${index + 1}. ${plan.planNo} · ${status}`,
-      `${formatThaiDate(plan.scheduledDate)} · รอบ ${formatThaiTimeRange(plan.scheduledStartAt, plan.scheduledEndAt)}`,
-      `รถ ${plan.vehicleCode} · ${plan.routeName}`,
-      `จุดเก็บขยะ ${Number(plan.stopTotal || 0).toLocaleString("th-TH")} จุด`,
-    ].join("\n");
-  });
-  return textMessage(`${title}\n\n${lines.join("\n\n")}`, wasteLineShortcuts.jobs(plans));
+  return flexMessage(
+    title,
+    {
+      type: "carousel",
+      contents: plans.map((plan) => lineCardBubble({
+        eyebrow: planStatusLabel(plan.status),
+        title: plan.planNo,
+        accent: planStatusColor(plan.status),
+        rows: [
+          lineCardRow("วันปฏิบัติงาน", formatThaiDate(plan.scheduledDate)),
+          lineCardRow("เวลา", formatThaiTimeRange(plan.scheduledStartAt, plan.scheduledEndAt)),
+          lineCardRow("รถเก็บขยะ", plan.vehicleCode),
+          lineCardRow("เส้นทาง", plan.routeName),
+          lineCardRow("จุดเก็บขยะ", `${Number(plan.stopTotal || 0).toLocaleString("th-TH")} จุด`),
+        ],
+        footerActions: [
+          lineCardButton("ดูรายละเอียดงาน", postbackAction("ดูรายละเอียดงาน", `waste=driver_plan&planId=${plan.id}`, `ดูงาน ${plan.planNo}`)),
+        ],
+      })),
+    },
+    wasteLineShortcuts.driverMenu(),
+  );
+}
+
+export function buildCitizenScheduleMessage(result, quickReplyItems = []) {
+  return flexMessage(
+    "ตารางกำหนดการเก็บขยะประจำพื้นที่",
+    {
+      type: "carousel",
+      contents: result.schedules.map((schedule) => lineCardBubble({
+        eyebrow: schedule.routeCode || "ตารางเก็บขยะ",
+        title: schedule.routeName,
+        accent: planStatusColor(schedule.status),
+        rows: [
+          lineCardRow("วันเก็บขยะ", formatThaiDate(schedule.scheduledDate)),
+          lineCardRow("เวลาโดยประมาณ", formatThaiTimeRange(schedule.scheduledStartAt, schedule.scheduledEndAt)),
+          lineCardRow("สถานะ", planStatusLabel(schedule.status)),
+        ],
+      })),
+    },
+    quickReplyItems,
+  );
+}
+
+export function buildCitizenChargesMessage(charges, quickReplyItems = []) {
+  const labels = { PENDING: "รอชำระ", PAID: "ชำระแล้ว", OVERDUE: "ค้างชำระ", VOID: "ยกเลิก" };
+  const colors = { PENDING: LINE_CARD_COLORS.ORANGE, PAID: LINE_CARD_COLORS.GREEN, OVERDUE: LINE_CARD_COLORS.RED, VOID: LINE_CARD_COLORS.SLATE };
+  return flexMessage(
+    "ค่าบริการเก็บขยะ",
+    {
+      type: "carousel",
+      contents: charges.map((charge) => lineCardBubble({
+        eyebrow: labels[charge.status] || charge.status,
+        title: formatMoney(charge.amount),
+        accent: colors[charge.status] || LINE_CARD_COLORS.SLATE,
+        rows: [
+          lineCardRow("รอบค่าบริการ", formatThaiDate(charge.billingPeriod)),
+          lineCardRow("สถานะ", labels[charge.status] || charge.status),
+          ...(["PENDING", "OVERDUE"].includes(charge.status)
+            ? [lineCardRow("กำหนดชำระ", formatThaiDate(charge.dueDate))]
+            : []),
+          ...(charge.paidAt ? [lineCardRow("ชำระเมื่อ", formatThaiDate(charge.paidAt))] : []),
+        ],
+      })),
+    },
+    quickReplyItems,
+  );
+}
+
+function buildDriverPlanDetailMessage({ plan, status, collectedStops, stopTotal, stops, page, totalPages, primaryAction }, quickReplyItems = []) {
+  const stopPreview = stops.length
+    ? stops.map((stop) => `${stop.sequenceNo}. ${stop.stopName} · ${stop.collectionStatus === "COLLECTED" ? "เก็บแล้ว" : "รอดำเนินการ"}`).join("\n")
+    : "ยังไม่มีจุดเก็บขยะในเส้นทางนี้";
+  return flexMessage(
+    `รายละเอียดงาน ${plan.planNo}`,
+    lineCardBubble({
+      eyebrow: status,
+      title: plan.planNo,
+      accent: planStatusColor(plan.status),
+      rows: [
+        lineCardRow("วันปฏิบัติงาน", formatThaiDate(plan.scheduledDate)),
+        lineCardRow("เวลา", formatThaiTimeRange(plan.scheduledStartAt, plan.scheduledEndAt)),
+        lineCardRow("รถเก็บขยะ", plan.vehicleCode),
+        lineCardRow("เส้นทาง", plan.routeName),
+        lineCardRow("ความคืบหน้า", `${collectedStops}/${stopTotal} จุด`),
+        { type: "separator", margin: "lg" },
+        lineCardText(`จุดเก็บขยะตามลำดับ${totalPages > 1 ? ` · หน้า ${page}/${totalPages}` : ""}`, { size: "xs", color: "#6B8179", weight: "bold", margin: "lg" }),
+        lineCardText(stopPreview, { size: "xs", color: "#28463C" }),
+      ],
+      footerActions: primaryAction ? [lineCardButton(primaryAction.label, primaryAction.action, { color: primaryAction.color })] : [],
+    }),
+    quickReplyItems,
+  );
+}
+
+function buildCollectionStopsMessage(plan, stops, quickReplyItems = []) {
+  return flexMessage(
+    `ยืนยันจุดเก็บขยะ ${plan.planNo}`,
+    {
+      type: "carousel",
+      contents: stops.map((stop) => lineCardBubble({
+        eyebrow: `จุดเก็บขยะลำดับ ${stop.sequenceNo}`,
+        title: stop.stopName,
+        accent: LINE_CARD_COLORS.GREEN,
+        rows: [lineCardRow("สถานะ", "รอยืนยันการเก็บขยะ")],
+        footerActions: [
+          lineCardButton(
+            "ยืนยันเก็บขยะแล้ว",
+            postbackAction(
+              "ยืนยันเก็บขยะแล้ว",
+              `waste=driver_confirm_stop&planId=${plan.id}&stopId=${stop.id}`,
+              `ยืนยันจุด ${stop.sequenceNo} ${stop.stopName}`,
+            ),
+          ),
+        ],
+      })),
+    },
+    quickReplyItems,
+  );
 }
 
 async function driverJobs(driver, _lineUserId, scope = "ALL") {
@@ -412,36 +615,27 @@ async function driverPlanDetails(driver, planId, lineUserId, pageValue = 1) {
   const collectedStops = stops.filter(
     (stop) => stop.collectionStatus === "COLLECTED",
   ).length;
-  const stopLines = visible.length
-    ? visible.map((stop) => `${stop.sequenceNo}. ${stop.stopName} · ${stop.collectionStatus === "COLLECTED" ? "เก็บแล้ว" : "รอดำเนินการ"}`).join("\n")
-    : "ยังไม่มีจุดเก็บขยะในเส้นทางนี้";
-  const details = [
-    `งาน ${plan.planNo}`,
-    `สถานะ: ${status}`,
-    wasteLineShortcuts.driverOperationProgress(plan, {
-      collectedStops,
-      stopTotal: stops.length,
-    }),
-    `วันที่ ${formatThaiDate(plan.scheduledDate)}`,
-    `เวลา/รอบ ${formatThaiTimeRange(plan.scheduledStartAt, plan.scheduledEndAt)}`,
-    `รถ ${plan.vehicleCode}`,
-    `เส้นทาง ${plan.routeName}`,
-    `จุดเก็บขยะ ${Number(plan.stopTotal || stops.length).toLocaleString("th-TH")} จุด`,
-    "",
-    `รายการจุดเก็บขยะตามลำดับ${totalPages > 1 ? ` · หน้า ${page}/${totalPages}` : ""}`,
-    stopLines,
-  ].join("\n");
   const paging = [];
   if (page > 1) paging.push(postbackAction("ก่อนหน้า", `waste=driver_plan&planId=${plan.id}&page=${page - 1}`, `ดูจุดเก็บก่อนหน้า ${plan.planNo}`));
   if (page < totalPages) paging.push(postbackAction("ถัดไป", `waste=driver_plan&planId=${plan.id}&page=${page + 1}`, `ดูจุดเก็บถัดไป ${plan.planNo}`));
   let actions;
+  let primaryAction;
   if (plan.status === "SCHEDULED") {
+    primaryAction = {
+      label: "เริ่มงาน",
+      action: postbackAction("เริ่มงาน", `waste=driver_start&planId=${plan.id}`, `เริ่มงาน ${plan.planNo}`),
+      color: LINE_CARD_COLORS.GREEN,
+    };
     actions = wasteLineShortcuts.normalize([
       ...paging,
-      postbackAction("เริ่มงาน", `waste=driver_start&planId=${plan.id}`, `เริ่มงาน ${plan.planNo}`),
       ...wasteLineShortcuts.driverMenu(),
     ]);
   } else if (["IN_PROGRESS", "INTERRUPTED"].includes(plan.status)) {
+    primaryAction = {
+      label: "ยืนยันจุดเก็บขยะ",
+      action: postbackAction("ยืนยันจุดเก็บขยะ", `waste=driver_stops&planId=${plan.id}`, `ยืนยันการเก็บขยะ ${plan.planNo}`),
+      color: plan.status === "INTERRUPTED" ? LINE_CARD_COLORS.ORANGE : LINE_CARD_COLORS.GREEN,
+    };
     actions = wasteLineShortcuts.normalize([
       ...paging,
       uriAction("เปิด GPS ต่อเนื่อง", trackingUrl(plan, lineUserId, driver.id)),
@@ -450,7 +644,16 @@ async function driverPlanDetails(driver, planId, lineUserId, pageValue = 1) {
   } else {
     actions = wasteLineShortcuts.normalize([...paging, ...wasteLineShortcuts.driverMenu()]);
   }
-  return textMessage(details, actions);
+  return buildDriverPlanDetailMessage({
+    plan,
+    status,
+    collectedStops,
+    stopTotal: stops.length,
+    stops: visible,
+    page,
+    totalPages,
+    primaryAction,
+  }, actions);
 }
 
 async function queueCollectionStatusNotices(
@@ -791,8 +994,13 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
       },
     );
 
-    return textMessage(
-      `เริ่มปฏิบัติงาน ${plan.planNo} แล้ว\nกด “เปิด GPS ต่อเนื่อง” และอนุญาตตำแหน่ง โดยคงหน้าติดตามไว้ระหว่างปฏิบัติงาน`,
+    return operationResultCard(
+      "เริ่มปฏิบัติงานแล้ว",
+      [
+        lineCardRow("เลขที่แผนปฏิบัติงานเก็บขยะ", plan.planNo),
+        lineCardRow("เส้นทาง", plan.routeName),
+        lineCardText("เปิด GPS ต่อเนื่องและอนุญาตตำแหน่ง โดยคงหน้าติดตามไว้ระหว่างปฏิบัติงาน", { size: "xs", color: "#49665C" }),
+      ],
       [
         uriAction(
           "เปิด GPS ต่อเนื่อง",
@@ -810,8 +1018,8 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
                 action.data || "",
               ).startsWith(
                 "waste=driver_gps",
-              ),
           ),
+        ),
       ],
     );
   }
@@ -852,8 +1060,13 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
       },
     );
 
-    return textMessage(
-      `บันทึกงาน ${plan.planNo} เสร็จสิ้นแล้ว`,
+    return operationResultCard(
+      "บันทึกงานเสร็จสิ้นแล้ว",
+      [
+        lineCardRow("เลขที่แผนปฏิบัติงานเก็บขยะ", plan.planNo),
+        lineCardRow("เส้นทาง", plan.routeName),
+        lineCardText("ระบบแจ้งสถานะการเก็บขยะเสร็จสิ้นให้ประชาชนในพื้นที่แล้ว", { size: "xs", color: "#49665C" }),
+      ],
       wasteLineShortcuts.driverMenu(),
     );
   }
@@ -892,7 +1105,7 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
       [plan.id, plan.routeId],
     );
     if (!rows.length) return textMessage("ยืนยันจุดเก็บครบแล้ว หรือเส้นทางนี้ยังไม่มีจุดเก็บ", wasteLineShortcuts.activePlan(plan));
-    return textMessage(`เลือกจุดที่เก็บขยะแล้ว (${plan.planNo})`, wasteLineShortcuts.normalize([...rows.map((stop) => postbackAction(`${stop.sequenceNo}. ${stop.stopName}`.slice(0, 20), `waste=driver_confirm_stop&planId=${plan.id}&stopId=${stop.id}`, `ยืนยันจุด ${stop.sequenceNo} ${stop.stopName}`)), ...wasteLineShortcuts.activePlan(plan)]));
+    return buildCollectionStopsMessage(plan, rows, wasteLineShortcuts.activePlan(plan));
   }
   if (params.waste === "driver_confirm_stop") {
     const plan = await ensureDriverPlan(actors.driver, params.planId, ["IN_PROGRESS", "INTERRUPTED"]);
@@ -904,7 +1117,17 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
        ON DUPLICATE KEY UPDATE status = 'COLLECTED', confirmed_at = NOW()`,
       [crypto.randomUUID(), plan.id, params.stopId],
     );
-    return textMessage(`ยืนยันเก็บขยะแล้ว\n${stops[0].stopName}`, wasteLineShortcuts.normalize([postbackAction("จุดถัดไป", `waste=driver_stops&planId=${plan.id}`, `ดูจุดเก็บถัดไป ${plan.planNo}`), ...wasteLineShortcuts.activePlan(plan)]));
+    return operationResultCard(
+      "ยืนยันเก็บขยะแล้ว",
+      [
+        lineCardRow("จุดเก็บขยะ", stops[0].stopName),
+        lineCardRow("เลขที่แผนปฏิบัติงานเก็บขยะ", plan.planNo),
+      ],
+      wasteLineShortcuts.normalize([
+        postbackAction("จุดถัดไป", `waste=driver_stops&planId=${plan.id}`, `ดูจุดเก็บถัดไป ${plan.planNo}`),
+        ...wasteLineShortcuts.activePlan(plan),
+      ]),
+    );
   }
   return wasteMenu(actors, audience);
 }

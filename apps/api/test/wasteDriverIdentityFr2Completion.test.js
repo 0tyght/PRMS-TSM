@@ -48,15 +48,17 @@ test("FR10 assigned job summary includes date round vehicle route and stop count
     routeName: "เส้นทางหมู่ 1",
     stopTotal: 12,
   }]);
-  assert.match(result.text, /เวลา|รอบ/);
-  assert.match(result.text, /W-01/);
-  assert.match(result.text, /เส้นทางหมู่ 1/);
-  assert.match(result.text, /12 จุด/);
+  assert.equal(result.type, "flex");
+  const card = JSON.stringify(result.contents);
+  assert.match(card, /เวลา/);
+  assert.match(card, /W-01/);
+  assert.match(card, /เส้นทางหมู่ 1/);
+  assert.match(card, /12 จุด/);
 });
 
 test("FR10 plan details support ordered stops and current collection status", () => {
   const line = read("src/modules/line/wasteLine.js");
-  assert.match(line, /รายการจุดเก็บขยะตามลำดับ/);
+  assert.match(line, /จุดเก็บขยะตามลำดับ/);
   assert.match(line, /ORDER BY s\.sequence_no/);
   assert.match(line, /collectionStatus/);
   assert.match(line, /driver_jobs_today/);

@@ -1,13 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildDriverJobsMessage } from "../src/modules/line/wasteLine.js";
+import {
+  buildCitizenChargesMessage,
+  buildCitizenScheduleMessage,
+  buildDriverJobsMessage,
+} from "../src/modules/line/wasteLine.js";
 import { WasteLineShortcutCatalog } from "../src/modules/waste/application/WasteLineShortcutCatalog.js";
 
 const catalog = new WasteLineShortcutCatalog();
 
 function actionsOf(message) {
   return (message.quickReply?.items || []).map((item) => item.action);
+}
+
+function cardActionsOf(message) {
+  const bubbles = message.contents?.type === "carousel" ? message.contents.contents : [message.contents];
+  return bubbles.flatMap((bubble) => bubble?.footer?.contents || []).map((item) => item.action).filter(Boolean);
 }
 
 function assertValidActions(actions) {
@@ -71,7 +80,7 @@ test("covers active driver work without exceeding LINE limits", () => {
   assert.match(catalog.registrationProgress("LOCATION"), /ขั้นตอน 6\/7/);
 });
 
-test("renders up to eight driver plans as one LINE message with complete shortcuts", () => {
+test("renders up to eight driver plans as swipeable LINE cards with one unambiguous action each", () => {
   const plans = [
     { id: "active", planNo: "WST-20260813-001", status: "IN_PROGRESS", scheduledDate: "2026-08-13", routeName: "หมู่ 1", vehicleCode: "W-01" },
     ...Array.from({ length: 7 }, (_, index) => ({
@@ -84,12 +93,38 @@ test("renders up to eight driver plans as one LINE message with complete shortcu
     })),
   ];
   const message = buildDriverJobsMessage(plans);
-  assert.equal(message.type, "text");
-  assert.match(message.text, /WST-20260813-001/);
-  assert.match(message.text, /WST-20260820-001/);
+  assert.equal(message.type, "flex");
+  assert.equal(message.contents.type, "carousel");
+  assert.equal(message.contents.contents.length, 8);
+  assert.match(JSON.stringify(message.contents), /WST-20260813-001/);
+  assert.match(JSON.stringify(message.contents), /WST-20260820-001/);
   assertValidActions(actionsOf(message));
-  assert.equal(actionsOf(message).length, 13);
-  assert.equal(actionsOf(message).filter((action) => String(action.data || "").includes("waste=driver_plan")).length, 8);
+  assert.equal(actionsOf(message).length, 5);
+  assert.equal(cardActionsOf(message).filter((action) => String(action.data || "").includes("waste=driver_plan")).length, 8);
+});
+
+test("renders citizen schedules and charges as concise LINE cards", () => {
+  const schedule = buildCitizenScheduleMessage({
+    schedules: [{
+      routeCode: "THP-01",
+      routeName: "หมู่ 1",
+      scheduledDate: "2026-08-19",
+      scheduledStartAt: "2026-08-19T03:00:00+07:00",
+      scheduledEndAt: "2026-08-19T05:00:00+07:00",
+      status: "SCHEDULED",
+    }],
+  }, catalog.citizen());
+  const charges = buildCitizenChargesMessage([{
+    billingPeriod: "2026-08-01",
+    dueDate: "2026-08-31",
+    amount: 30,
+    status: "PENDING",
+  }], catalog.citizen());
+  for (const message of [schedule, charges]) {
+    assert.equal(message.type, "flex");
+    assert.equal(message.contents.type, "carousel");
+    assertValidActions(actionsOf(message));
+  }
 });
 
 test("deduplicates repeated shortcuts before sending them to LINE", () => {
