@@ -15,7 +15,10 @@ import {
   handleWizardControl,
 } from "./lineRichMenuWizard.js";
 import { smartThaPhoLineMenu } from "./SmartThaPhoLineMenu.js";
-import { handleWasteLineEvent } from "./wasteLine.js";
+import {
+  buildWasteLineTextCard,
+  handleWasteLineEvent,
+} from "./wasteLine.js";
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
 
@@ -275,11 +278,20 @@ async function processEvent(event, channel) {
       const recoveryHint = channel.kind === "DRIVER"
         ? "กด ‘เมนูพนักงาน’ เพื่อเริ่มใหม่ หรือกด ‘ยกเลิก’ เพื่อล้างรายการที่ค้างอยู่"
         : "พิมพ์ “เมนู” เพื่อเลือกบริการใหม่ หรือพิมพ์ “ยกเลิก” เพื่อยกเลิกรายการที่ค้างอยู่";
+
+      const recoveryMessage =
+        channel.kind === "DRIVER"
+          ? buildWasteLineTextCard(
+              `${publicLineErrorMessage(error)}\n\n${recoveryHint}`,
+              recoveryActions,
+            )
+          : textMessage(
+              `${publicLineErrorMessage(error)}\n\n${recoveryHint}`,
+              recoveryActions,
+            );
+
       await reply(event.replyToken, [
-        textMessage(
-          `${publicLineErrorMessage(error)}\n\n${recoveryHint}`,
-          recoveryActions,
-        ),
+        recoveryMessage,
       ], channel).catch((replyError) => {
         console.error("[line-bot] error reply failed", replyError);
       });

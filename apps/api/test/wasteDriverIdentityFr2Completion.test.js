@@ -17,7 +17,9 @@ test("FR2 API never accepts generic lineUserId and exposes audited unlink recove
 
 test("FR2 identity differentiates mismatch and suspended account and retires six-digit flow", () => {
   const line = read("src/modules/line/wasteLine.js");
-  assert.match(line, /รหัสพนักงานหรือหมายเลขโทรศัพท์ไม่ตรง/);
+  assert.match(line, /ไม่พบรหัสพนักงาน/);
+  assert.match(line, /หมายเลขโทรศัพท์ไม่ตรงกับข้อมูลของรหัสพนักงาน/);
+  assert.match(line, /เชื่อมต่อ LINE แล้ว/);
   assert.match(line, /ถูกระงับหรือยกเลิกการใช้งาน/);
   assert.match(line, /LINK_WASTE_DRIVER_LINE/);
   assert.doesNotMatch(line, /รหัสเชื่อมบัญชี.*6 หลัก/);

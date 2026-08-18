@@ -27,7 +27,7 @@ test(
 );
 
 test(
-  "FR2 LINE verifies driver code phone and active status",
+  "FR2 LINE verifies driver code before phone and distinguishes identity states",
   async () => {
     const source =
       await fs.readFile(
@@ -40,7 +40,17 @@ test(
 
     assert.match(
       source,
-      /DRIVER_CODE/,
+      /session\.currentStep === "DRIVER_CODE"/,
+    );
+
+    assert.match(
+      source,
+      /WHERE driver_code = \?/,
+    );
+
+    assert.match(
+      source,
+      /classifyDriverCodeCheckpoint/,
     );
 
     assert.match(
@@ -50,22 +60,38 @@ test(
 
     assert.match(
       source,
-      /driver_code = \?/,
+      /classifyDriverPhoneCheckpoint/,
     );
 
     assert.match(
       source,
-      /phone = \?/,
+      /PHONE_MISMATCH/,
     );
 
     assert.match(
       source,
-      /is_active = 1/,
+      /Boolean\(Number\(driver\.isActive\)\)/,
     );
 
     assert.match(
       source,
       /SET line_user_id = \?/,
+    );
+
+    const codeStep =
+      source.match(
+        /session\.currentStep === "DRIVER_CODE"[\s\S]*?session\.currentStep === "PHONE"/,
+      )?.[0] || "";
+
+    assert.ok(
+      codeStep.indexOf("WHERE driver_code = ?") >= 0,
+      "driver code must be looked up during DRIVER_CODE step",
+    );
+
+    assert.doesNotMatch(
+      codeStep,
+      /driver_code = \? AND phone = \?/,
+      "DRIVER_CODE step must not wait for phone before validating employee code",
     );
 
     assert.doesNotMatch(
@@ -75,7 +101,7 @@ test(
 
     assert.doesNotMatch(
       source,
-      /ยืนยันพนักงานประจำรถขยะ\\s\*\\d/,
+      /ยืนยันพนักงานประจำรถขยะ\\s*\\d/,
     );
 
     assert.doesNotMatch(
@@ -84,7 +110,6 @@ test(
     );
   },
 );
-
 test(
   "FR2 repository persists driver code",
   async () => {

@@ -182,12 +182,17 @@ function flexMessage(altText, contents, quickReplyItems = []) {
 
 function textCardAccent(value) {
   const text = String(value || "");
-  if (/(ไม่พบ|ไม่สามารถ|ไม่ถูกต้อง|ถูกระงับ|ยกเลิกการใช้งาน|ไม่ตรงกับ)/.test(text)) return LINE_CARD_COLORS.RED;
-  if (/(ยังไม่มี|รอเจ้าหน้าที่|ตรวจสอบ)/.test(text)) return LINE_CARD_COLORS.ORANGE;
-  if (/(สำเร็จ|เรียบร้อย|เสร็จสิ้น|ยืนยันเก็บขยะแล้ว)/.test(text)) return LINE_CARD_COLORS.GREEN;
+  if (/(ไม่พบ|ไม่สามารถ|ไม่ถูกต้อง|ถูกระงับ|ยกเลิกการใช้งาน|ไม่ตรงกับ|เชื่อมต่อ LINE แล้ว|เชื่อมกับบัญชี LINE อื่น|เชื่อมกับพนักงานประจำรถขยะรายอื่น|เชื่อมกับบัญชี LINE อื่นอยู่)/.test(text)) {
+    return LINE_CARD_COLORS.RED;
+  }
+  if (/(ต้องมี \d|ต้องมี 2–30|ต้องมี 10 หลัก|กรุณาตรวจสอบ|กรุณาพิมพ์|กรุณาส่ง|รอเจ้าหน้าที่|ยังไม่มี)/.test(text)) {
+    return LINE_CARD_COLORS.ORANGE;
+  }
+  if (/(สำเร็จ|เรียบร้อย|เสร็จสิ้น|ยืนยันเก็บขยะแล้ว|ยืนยันตัวตนแล้ว)/.test(text)) {
+    return LINE_CARD_COLORS.GREEN;
+  }
   return LINE_CARD_COLORS.BLUE;
 }
-
 function textCardTitle(lines) {
   const first = String(lines[0] || "").trim();
   if (lines.some((line) => /ลงทะเบียนผู้ใช้บริการเก็บขยะ/.test(line))) return "ลงทะเบียนผู้ใช้บริการเก็บขยะ";
@@ -203,7 +208,15 @@ export function buildWasteLineTextCard(text, quickReplyItems = []) {
   const source = String(text || "").trim() || "ไม่มีข้อมูลสำหรับแสดง";
   const lines = source.split("\n").map((line) => line.trim()).filter(Boolean);
   const title = textCardTitle(lines);
-  const bodyText = lines.length > 1 ? lines.join("\n") : source;
+  const bodyLines = lines.filter((line, index) =>
+    index !== 0 &&
+    line !== title
+  );
+  const bodyText = bodyLines.length
+    ? bodyLines.join("\n")
+    : lines.length > 1
+      ? lines.slice(1).join("\n")
+      : source;
   return flexMessage(
     source,
     lineCardBubble({
@@ -878,61 +891,320 @@ async function handleRegistrationStep(event, lineUserId, session) {
   return textMessage("ไม่พบขั้นตอนลงทะเบียน กรุณายกเลิกรายการแล้วเริ่มใหม่", wasteLineShortcuts.cancelFlow());
 }
 
+function normalizeDriverPhone(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+export function classifyDriverCodeCheckpoint(driver, lineUserId) {
+  if (!driver) return "NOT_FOUND";
+  if (!Boolean(Number(driver.isActive))) return "INACTIVE";
+  if (driver.lineUserId === lineUserId) return "ALREADY";
+  if (driver.lineUserId) return "DRIVER_USED";
+  return "PHONE_REQUIRED";
+}
+
+export function classifyDriverPhoneCheckpoint({
+  driver,
+  lineUserId,
+  phone,
+  usedByLine = null,
+}) {
+  if (!driver) return "NOT_FOUND";
+  if (!Boolean(Number(driver.isActive))) return "INACTIVE";
+  if (usedByLine) return "LINE_USED";
+  if (driver.lineUserId === lineUserId) return "ALREADY";
+  if (driver.lineUserId) return "DRIVER_USED";
+  if (normalizeDriverPhone(driver.phone) !== normalizeDriverPhone(phone)) {
+    return "PHONE_MISMATCH";
+  }
+  return "LINK";
+}
+
 async function handleDriverSession(event, lineUserId, session, actors) {
   if (session.flowType === "DRIVER_LINK") {
-    if (session.currentStep === "DRIVER_CODE") {
-      if (event.message?.type !== "text") return textMessage("กรุณาพิมพ์รหัสพนักงาน", wasteLineShortcuts.driverIdentity());
-      const driverCode = normalizeText(event.message.text).toUpperCase();
-      if (driverCode.length < 2 || driverCode.length > 30) return textMessage("รหัสพนักงานต้องมี 2–30 ตัวอักษร", wasteLineShortcuts.driverIdentity());
-      await saveSession(lineUserId, "DRIVER", "DRIVER", "DRIVER_LINK", "PHONE", { driverCode });
-      return textMessage(`รหัสพนักงาน ${driverCode}\nกรุณาพิมพ์หมายเลขโทรศัพท์ 10 หลักที่เทศบาลบันทึกไว้`, wasteLineShortcuts.driverIdentity());
+    if (actors.driverRecord) {
+      await clearSession(lineUserId, "DRIVER");
+      if (!actors.driverRecord.isActive) {
+        return textMessage(
+          `บัญชี LINE นี้เชื่อมกับพนักงาน ${actors.driverRecord.fullName} แต่บัญชีพนักงานถูกระงับหรือยกเลิกการใช้งาน กรุณาติดต่อเจ้าหน้าที่เทศบาล`,
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+      return [
+        textMessage(
+          `บัญชี LINE นี้ยืนยันตัวตนแล้ว\n${actors.driverRecord.fullName}\nรหัสพนักงาน ${actors.driverRecord.driverCode || "-"}`,
+          wasteLineShortcuts.driverMenu(),
+        ),
+        wasteMenu(actors, "DRIVER"),
+      ];
     }
+
+    if (session.currentStep === "DRIVER_CODE") {
+      if (event.message?.type !== "text") {
+        return textMessage(
+          "กรุณาพิมพ์รหัสพนักงาน",
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
+      const driverCode = normalizeText(event.message.text).toUpperCase();
+      if (driverCode.length < 2 || driverCode.length > 30) {
+        return textMessage(
+          "รูปแบบรหัสพนักงานไม่ถูกต้อง รหัสพนักงานต้องมี 2–30 ตัวอักษร",
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
+      const [rows] = await pool.execute(
+        `SELECT id, driver_code AS driverCode, full_name AS fullName, phone,
+                line_user_id AS lineUserId, is_active AS isActive
+         FROM waste_drivers
+         WHERE driver_code = ?
+         LIMIT 1`,
+        [driverCode],
+      );
+      const driver = rows[0] || null;
+      const checkpoint = classifyDriverCodeCheckpoint(driver, lineUserId);
+
+      if (checkpoint === "NOT_FOUND") {
+        return textMessage(
+          `ไม่พบรหัสพนักงาน ${driverCode} ในระบบ กรุณาตรวจสอบรหัสพนักงานแล้วกรอกใหม่`,
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
+      if (checkpoint === "INACTIVE") {
+        return textMessage(
+          `บัญชีพนักงาน ${driver.fullName} รหัส ${driver.driverCode} ถูกระงับหรือยกเลิกการใช้งาน กรุณาติดต่อเจ้าหน้าที่เทศบาล`,
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
+      if (checkpoint === "DRIVER_USED") {
+        return textMessage(
+          `พนักงาน ${driver.fullName} รหัส ${driver.driverCode} เชื่อมต่อ LINE แล้ว กรุณาติดต่อเจ้าหน้าที่เทศบาลหากต้องการเปลี่ยนบัญชี LINE`,
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
+      if (checkpoint === "ALREADY") {
+        await clearSession(lineUserId, "DRIVER");
+        const nextActors = await loadActors(lineUserId);
+        return [
+          textMessage(
+            `บัญชี LINE นี้ยืนยันตัวตนกับ ${driver.fullName} อยู่แล้ว\nรหัสพนักงาน ${driver.driverCode}`,
+            wasteLineShortcuts.driverMenu(),
+          ),
+          wasteMenu(nextActors, "DRIVER"),
+        ];
+      }
+
+      await saveSession(
+        lineUserId,
+        "DRIVER",
+        "DRIVER",
+        "DRIVER_LINK",
+        "PHONE",
+        { driverId: driver.id, driverCode: driver.driverCode },
+      );
+      return textMessage(
+        `พบรหัสพนักงาน ${driver.driverCode}\nชื่อ ${driver.fullName}\nกรุณาพิมพ์หมายเลขโทรศัพท์ 10 หลักที่เทศบาลบันทึกไว้`,
+        wasteLineShortcuts.driverIdentity(),
+      );
+    }
+
     if (session.currentStep === "PHONE") {
-      if (event.message?.type !== "text") return textMessage("กรุณาพิมพ์หมายเลขโทรศัพท์ 10 หลัก", wasteLineShortcuts.driverIdentity());
-      const phone = normalizeText(event.message.text).replace(/\D/g, "");
-      if (!/^0\d{9}$/.test(phone)) return textMessage("หมายเลขโทรศัพท์ต้องมี 10 หลักและขึ้นต้นด้วย 0", wasteLineShortcuts.driverIdentity());
+      if (event.message?.type !== "text") {
+        return textMessage(
+          "กรุณาพิมพ์หมายเลขโทรศัพท์ 10 หลัก",
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
+      const phone = normalizeDriverPhone(normalizeText(event.message.text));
+      if (!/^0\d{9}$/.test(phone)) {
+        return textMessage(
+          "รูปแบบหมายเลขโทรศัพท์ไม่ถูกต้อง หมายเลขโทรศัพท์ต้องมี 10 หลักและขึ้นต้นด้วย 0",
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
       const outcome = await withTransaction(async (db) => {
         const [rows] = await db.execute(
           `SELECT id, driver_code AS driverCode, full_name AS fullName, phone,
                   line_user_id AS lineUserId, is_active AS isActive
            FROM waste_drivers
-           WHERE driver_code = ? AND phone = ?
+           WHERE driver_code = ?
            LIMIT 1 FOR UPDATE`,
-          [session.draft.driverCode, phone],
+          [session.draft.driverCode],
         );
-        const driver = rows[0];
-        if (!driver) return { type: "MISMATCH" };
-        if (!Boolean(Number(driver.isActive))) return { type: "INACTIVE", driver };
-        const [usedByLine] = await db.execute(
-          `SELECT id, full_name AS fullName FROM waste_drivers WHERE line_user_id = ? AND id <> ? LIMIT 1`,
+        const driver = rows[0] || null;
+
+        let usedByLine = null;
+        if (driver) {
+          const [usedRows] = await db.execute(
+            `SELECT id, driver_code AS driverCode, full_name AS fullName
+             FROM waste_drivers
+             WHERE line_user_id = ? AND id <> ?
+             LIMIT 1`,
+            [lineUserId, driver.id],
+          );
+          usedByLine = usedRows[0] || null;
+        }
+
+        const checkpoint = classifyDriverPhoneCheckpoint({
+          driver,
+          lineUserId,
+          phone,
+          usedByLine,
+        });
+
+        if (checkpoint !== "LINK") {
+          return {
+            type: checkpoint,
+            driver,
+            usedByLine,
+          };
+        }
+
+        await db.execute(
+          `DELETE FROM waste_line_sessions
+           WHERE channel_type = 'DRIVER' AND line_user_id = ?`,
+          [lineUserId],
+        );
+        await db.execute(
+          `UPDATE waste_drivers
+           SET line_user_id = ?
+           WHERE id = ?`,
           [lineUserId, driver.id],
         );
-        if (usedByLine.length) return { type: "LINE_USED", driver: usedByLine[0] };
-        if (driver.lineUserId && driver.lineUserId !== lineUserId) return { type: "DRIVER_USED", driver };
-        await db.execute(`DELETE FROM waste_line_sessions WHERE channel_type = 'DRIVER' AND line_user_id = ?`, [lineUserId]);
-        if (driver.lineUserId === lineUserId) return { type: "ALREADY", driver };
-        await db.execute(`UPDATE waste_drivers SET line_user_id = ? WHERE id = ?`, [lineUserId, driver.id]);
         await db.execute(
-          `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+          `INSERT INTO audit_logs
+            (id, user_id, action, entity_type, entity_id, new_value, ip_address)
            VALUES (?, NULL, 'LINK_WASTE_DRIVER_LINE', 'WASTE_DRIVER', ?, ?, NULL)`,
-          [crypto.randomUUID(), driver.id, JSON.stringify({ lineUserId, driverCode: driver.driverCode, source: "LINE_DRIVER_OA" })],
+          [
+            crypto.randomUUID(),
+            driver.id,
+            JSON.stringify({
+              lineUserId,
+              driverCode: driver.driverCode,
+              source: "LINE_DRIVER_OA",
+            }),
+          ],
         );
         return { type: "LINKED", driver };
       });
-      if (outcome.type === "MISMATCH") return textMessage("รหัสพนักงานหรือหมายเลขโทรศัพท์ไม่ตรงกับข้อมูลที่เทศบาลบันทึกไว้ กรุณาตรวจสอบแล้วเริ่มใหม่", wasteLineShortcuts.driverIdentity());
-      if (outcome.type === "INACTIVE") return textMessage(`บัญชีพนักงาน ${outcome.driver.fullName} ถูกระงับหรือยกเลิกการใช้งาน กรุณาติดต่อเจ้าหน้าที่เทศบาล`);
-      if (outcome.type === "LINE_USED") return textMessage("บัญชี LINE นี้เชื่อมกับพนักงานประจำรถขยะรายอื่นแล้ว กรุณาให้เจ้าหน้าที่เทศบาลตรวจสอบการเชื่อมบัญชี");
-      if (outcome.type === "DRIVER_USED") return textMessage("พนักงานรายนี้เชื่อมกับบัญชี LINE อื่นอยู่ กรุณาให้เจ้าหน้าที่เทศบาลยกเลิกการเชื่อมเดิมก่อน");
+
+      if (outcome.type === "NOT_FOUND") {
+        await saveSession(
+          lineUserId,
+          "DRIVER",
+          "DRIVER",
+          "DRIVER_LINK",
+          "DRIVER_CODE",
+          {},
+        );
+        return textMessage(
+          "ไม่พบรหัสพนักงานที่เลือกไว้แล้ว ข้อมูลอาจมีการเปลี่ยนแปลง กรุณากรอกรหัสพนักงานใหม่",
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
+      if (outcome.type === "INACTIVE") {
+        await saveSession(
+          lineUserId,
+          "DRIVER",
+          "DRIVER",
+          "DRIVER_LINK",
+          "DRIVER_CODE",
+          {},
+        );
+        return textMessage(
+          `บัญชีพนักงาน ${outcome.driver.fullName} รหัส ${outcome.driver.driverCode} ถูกระงับหรือยกเลิกการใช้งาน กรุณาติดต่อเจ้าหน้าที่เทศบาล`,
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
+      if (outcome.type === "LINE_USED") {
+        await clearSession(lineUserId, "DRIVER");
+        const nextActors = await loadActors(lineUserId);
+        return [
+          textMessage(
+            `บัญชี LINE นี้เชื่อมกับพนักงาน ${outcome.usedByLine.fullName} รหัส ${outcome.usedByLine.driverCode || "-"} อยู่แล้ว ไม่สามารถนำไปเชื่อมกับพนักงานรายอื่นได้`,
+            nextActors.driver ? wasteLineShortcuts.driverMenu() : wasteLineShortcuts.driverIdentity(),
+          ),
+          wasteMenu(nextActors, "DRIVER"),
+        ];
+      }
+
+      if (outcome.type === "DRIVER_USED") {
+        await saveSession(
+          lineUserId,
+          "DRIVER",
+          "DRIVER",
+          "DRIVER_LINK",
+          "DRIVER_CODE",
+          {},
+        );
+        return textMessage(
+          `พนักงาน ${outcome.driver.fullName} รหัส ${outcome.driver.driverCode} เชื่อมต่อ LINE แล้ว กรุณาติดต่อเจ้าหน้าที่เทศบาลหากต้องการเปลี่ยนบัญชี LINE`,
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
+      if (outcome.type === "ALREADY") {
+        await clearSession(lineUserId, "DRIVER");
+        const nextActors = await loadActors(lineUserId);
+        return [
+          textMessage(
+            `บัญชี LINE นี้ยืนยันตัวตนกับ ${outcome.driver.fullName} อยู่แล้ว\nรหัสพนักงาน ${outcome.driver.driverCode}`,
+            wasteLineShortcuts.driverMenu(),
+          ),
+          wasteMenu(nextActors, "DRIVER"),
+        ];
+      }
+
+      if (outcome.type === "PHONE_MISMATCH") {
+        await saveSession(
+          lineUserId,
+          "DRIVER",
+          "DRIVER",
+          "DRIVER_LINK",
+          "PHONE",
+          {
+            driverId: outcome.driver.id,
+            driverCode: outcome.driver.driverCode,
+          },
+        );
+        return textMessage(
+          `หมายเลขโทรศัพท์ไม่ตรงกับข้อมูลของรหัสพนักงาน ${outcome.driver.driverCode} กรุณาตรวจสอบหมายเลขโทรศัพท์แล้วกรอกใหม่`,
+          wasteLineShortcuts.driverIdentity(),
+        );
+      }
+
       const nextActors = await loadActors(lineUserId);
       return [
-        textMessage(outcome.type === "ALREADY" ? `บัญชี LINE นี้ยืนยันตัวตนกับ ${outcome.driver.fullName} อยู่แล้ว` : `ยืนยันตัวตนพนักงานประจำรถขยะสำเร็จ\n${outcome.driver.fullName}\nรหัสพนักงาน ${outcome.driver.driverCode}`),
+        textMessage(
+          `ยืนยันตัวตนพนักงานประจำรถขยะสำเร็จ\n${outcome.driver.fullName}\nรหัสพนักงาน ${outcome.driver.driverCode}`,
+          wasteLineShortcuts.driverMenu(),
+        ),
         wasteMenu(nextActors, "DRIVER"),
       ];
     }
-    await saveSession(lineUserId, "DRIVER", "DRIVER", "DRIVER_LINK", "DRIVER_CODE", {});
-    return textMessage("เริ่มยืนยันตัวตนใหม่ กรุณาพิมพ์รหัสพนักงาน", wasteLineShortcuts.driverIdentity());
-  }
 
+    await saveSession(
+      lineUserId,
+      "DRIVER",
+      "DRIVER",
+      "DRIVER_LINK",
+      "DRIVER_CODE",
+      {},
+    );
+    return textMessage(
+      "ไม่พบขั้นตอนยืนยันตัวตนที่ค้างอยู่ ระบบเริ่มขั้นตอนใหม่แล้ว กรุณาพิมพ์รหัสพนักงาน",
+      wasteLineShortcuts.driverIdentity(),
+    );
+  }
   const plan = await ensureDriverPlan(actors.driver, session.draft.planId, ["IN_PROGRESS", "INTERRUPTED"]);
   if (session.flowType === "DRIVER_LOCATION") {
     if (event.message?.type !== "location") return textMessage("กรุณากดปุ่ม “ส่งตำแหน่งรถ” ด้านล่าง", wasteLineShortcuts.driverLocation());
@@ -1071,7 +1343,7 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
         ],
       );
 
-    await withTransaction(
+    const noticeResult = await withTransaction(
       async (db) => {
         await db.execute(
           `UPDATE waste_operation_plans
@@ -1089,20 +1361,69 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
           [plan.vehicleId],
         );
 
-        await queueCollectionStatusNotices(
-          db,
-          plan,
-          "COMPLETED",
-        );
+        let recipientCount = 0;
+        if (plan.publicationStatus === "PUBLISHED") {
+          const [recipientRows] = await db.execute(
+            `SELECT COUNT(*) AS recipientCount
+             FROM waste_service_users
+             WHERE route_id = ?
+               AND is_active = 1
+               AND line_user_id IS NOT NULL
+               AND line_user_id <> ''`,
+            [plan.routeId],
+          );
+          recipientCount = Number(
+            recipientRows[0]?.recipientCount || 0,
+          );
+        }
+
+        const queued =
+          await queueCollectionStatusNotices(
+            db,
+            plan,
+            "COMPLETED",
+          );
+
+        return {
+          queued,
+          recipientCount,
+        };
       },
     );
+
+    let noticeText;
+    if (plan.publicationStatus !== "PUBLISHED") {
+      noticeText =
+        "แผนนี้ไม่ได้อยู่ในสถานะประกาศ จึงไม่มีการส่งแจ้งเตือนสถานะเสร็จสิ้นให้ประชาชน";
+    } else if (noticeResult.recipientCount === 0) {
+      noticeText =
+        "ไม่พบผู้ใช้บริการที่เชื่อม LINE ในเส้นทางนี้ จึงไม่มีผู้รับแจ้งเตือนสถานะเสร็จสิ้น";
+    } else if (noticeResult.queued === 0) {
+      noticeText =
+        "สถานะเสร็จสิ้นของงานนี้ถูกจัดคิวแจ้งประชาชนไว้แล้ว ระบบจึงไม่สร้างการแจ้งเตือนซ้ำ";
+    } else {
+      noticeText =
+        `ระบบจัดคิวแจ้งสถานะเสร็จสิ้นให้ประชาชน ${noticeResult.queued.toLocaleString("th-TH")} รายแล้ว`;
+    }
 
     return operationResultCard(
       "บันทึกงานเสร็จสิ้นแล้ว",
       [
-        lineCardRow("เลขที่แผนปฏิบัติงานเก็บขยะ", plan.planNo),
-        lineCardRow("เส้นทาง", plan.routeName),
-        lineCardText("ระบบแจ้งสถานะการเก็บขยะเสร็จสิ้นให้ประชาชนในพื้นที่แล้ว", { size: "xs", color: "#49665C" }),
+        lineCardRow(
+          "เลขที่แผนปฏิบัติงานเก็บขยะ",
+          plan.planNo,
+        ),
+        lineCardRow(
+          "เส้นทาง",
+          plan.routeName,
+        ),
+        lineCardText(
+          noticeText,
+          {
+            size: "xs",
+            color: "#49665C",
+          },
+        ),
       ],
       wasteLineShortcuts.driverMenu(),
     );
@@ -1132,17 +1453,77 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
     return textMessage(`แจ้งเหตุ: ${DRIVER_INCIDENT_LABELS[params.incidentType]}\nกรุณาพิมพ์รายละเอียดที่เกิดขึ้นอย่างน้อย 4 ตัวอักษร`, wasteLineShortcuts.driverCancelFlow());
   }
   if (params.waste === "driver_stops") {
-    const plan = await ensureDriverPlan(actors.driver, params.planId, ["IN_PROGRESS", "INTERRUPTED"]);
+    const plan = await ensureDriverPlan(
+      actors.driver,
+      params.planId,
+      ["IN_PROGRESS", "INTERRUPTED"],
+    );
+
+    const [countRows] = await pool.execute(
+      `SELECT COUNT(*) AS totalStops
+       FROM waste_route_stops
+       WHERE route_id = ? AND is_active = 1`,
+      [plan.routeId],
+    );
+    const totalStops = Number(countRows[0]?.totalStops || 0);
+    const withoutStopAction = wasteLineShortcuts
+      .activePlan(plan)
+      .filter(
+        (action) =>
+          !String(action.data || "").startsWith("waste=driver_stops"),
+      );
+
+    if (!totalStops) {
+      return operationResultCard(
+        "เส้นทางนี้ยังไม่มีจุดเก็บขยะ",
+        [
+          lineCardRow("เลขที่แผนปฏิบัติงานเก็บขยะ", plan.planNo),
+          lineCardRow("เส้นทาง", plan.routeName),
+          lineCardText(
+            "ไม่พบจุดเก็บขยะที่เปิดใช้งานในเส้นทางนี้ กรุณาแจ้งเจ้าหน้าที่เทศบาลตรวจสอบข้อมูลเส้นทาง",
+            { size: "xs", color: "#6B8179" },
+          ),
+        ],
+        withoutStopAction,
+        LINE_CARD_COLORS.ORANGE,
+      );
+    }
+
     const [rows] = await pool.execute(
       `SELECT s.id, s.sequence_no AS sequenceNo, s.stop_name AS stopName
        FROM waste_route_stops s
-       LEFT JOIN waste_stop_confirmations c ON c.stop_id = s.id AND c.plan_id = ?
-       WHERE s.route_id = ? AND s.is_active = 1 AND c.id IS NULL
-       ORDER BY s.sequence_no LIMIT 8`,
+       LEFT JOIN waste_stop_confirmations c
+         ON c.stop_id = s.id AND c.plan_id = ?
+       WHERE s.route_id = ?
+         AND s.is_active = 1
+         AND c.id IS NULL
+       ORDER BY s.sequence_no
+       LIMIT 8`,
       [plan.id, plan.routeId],
     );
-    if (!rows.length) return textMessage("ยืนยันจุดเก็บครบแล้ว หรือเส้นทางนี้ยังไม่มีจุดเก็บ", wasteLineShortcuts.activePlan(plan));
-    return buildCollectionStopsMessage(plan, rows, wasteLineShortcuts.activePlan(plan));
+
+    if (!rows.length) {
+      return operationResultCard(
+        "ยืนยันจุดเก็บขยะครบแล้ว",
+        [
+          lineCardRow("เลขที่แผนปฏิบัติงานเก็บขยะ", plan.planNo),
+          lineCardRow("เส้นทาง", plan.routeName),
+          lineCardRow("จุดเก็บขยะทั้งหมด", `${totalStops.toLocaleString("th-TH")} จุด`),
+          lineCardText(
+            "ไม่มีจุดเก็บขยะที่รอยืนยันในงานนี้แล้ว",
+            { size: "xs", color: "#49665C" },
+          ),
+        ],
+        withoutStopAction,
+        LINE_CARD_COLORS.GREEN,
+      );
+    }
+
+    return buildCollectionStopsMessage(
+      plan,
+      rows,
+      wasteLineShortcuts.activePlan(plan),
+    );
   }
   if (params.waste === "driver_confirm_stop") {
     const plan = await ensureDriverPlan(actors.driver, params.planId, ["IN_PROGRESS", "INTERRUPTED"]);

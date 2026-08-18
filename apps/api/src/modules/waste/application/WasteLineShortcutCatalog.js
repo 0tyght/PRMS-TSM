@@ -31,7 +31,6 @@ export class WasteLineShortcutCatalog {
   driverGuest() {
     return this.normalize([
       this.postback("ยืนยันตัวตน", "waste=driver_link", "ยืนยันตัวตนพนักงานประจำรถขยะ"),
-      this.postback("วิธีใช้งาน", "waste=driver_help", "วิธีใช้งานระบบพนักงานประจำรถขยะ"),
     ]);
   }
   driverIdentity() {

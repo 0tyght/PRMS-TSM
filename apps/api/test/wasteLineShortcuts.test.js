@@ -45,7 +45,7 @@ test("covers every citizen waste menu with visible postback shortcuts", () => {
 test("keeps driver shortcuts separate from citizen and Smart Tha Pho menus", () => {
   assert.deepEqual(
     catalog.driverGuest().map((action) => action.data),
-    ["waste=driver_link", "waste=driver_help"],
+    ["waste=driver_link"],
   );
   assert.deepEqual(
     catalog.driverMenu().map((action) => action.data),
