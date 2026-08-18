@@ -15,7 +15,6 @@ import {
   handleWizardControl,
 } from "./lineRichMenuWizard.js";
 import { smartThaPhoLineMenu } from "./SmartThaPhoLineMenu.js";
-import { ensureWasteDriverRichMenu } from "./wasteDriverRichMenu.js";
 import { handleWasteLineEvent } from "./wasteLine.js";
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
@@ -156,9 +155,6 @@ async function processEvent(event, channel) {
       if (event.replyToken && wasteResult.messages?.length) {
         await reply(event.replyToken, wasteResult.messages, channel);
       }
-      // The persistent menu is configured after replying so a first message is
-      // never delayed by an image upload or a LINE Rich Menu API call.
-      continueRichMenuTask(ensureWasteDriverRichMenu(), event);
       await completeLineWebhookEvent(event);
       return;
     }
