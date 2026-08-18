@@ -111,7 +111,7 @@ test(
 );
 
 test(
-  "publication readiness blocks zero LINE recipients",
+  "publication readiness allows zero LINE recipients",
   () => {
     const policy =
       new WastePlanPolicy();
@@ -128,16 +128,23 @@ test(
 
     assert.equal(
       result.ready,
-      false,
+      true,
     );
 
-    assert.match(
-      result.blockers.join(" "),
-      /LINE/u,
+    assert.deepEqual(
+      result.blockers,
+      [],
+    );
+
+    assert.equal(
+      result.checks.some(
+        (item) =>
+          item.key === "line",
+      ),
+      false,
     );
   },
 );
-
 test(
   "publication readiness uses collection-point wording",
   () => {

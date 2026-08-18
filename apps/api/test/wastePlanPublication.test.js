@@ -45,3 +45,36 @@ test("withdrawal produces a clear citizen notice before staff edits the plan", a
   const useCase = new WithdrawWasteOperationPlanUseCase({ repository, noticeFactory: new WastePlanNoticeFactory() });
   assert.deepEqual(await useCase.execute({ planId: "plan-1", officerId: "officer-1", reason: "รถขัดข้อง" }), { publicationStatus: "WITHDRAWN", publicationVersion: 2, recipientCount: 2 });
 });
+
+test("publishing succeeds with zero linked LINE recipients", async () => {
+  const calls = [];
+  const repository = {
+    transaction: (work) => work({}),
+    findPublicationContext: async () => record(),
+    markPublished: async (_db, input) => calls.push(["published", input]),
+    enqueueRouteNotices: async (_db, input) => {
+      calls.push(["notices", input]);
+      return 0;
+    },
+  };
+  const useCase = new PublishWasteOperationPlanUseCase({
+    repository,
+    noticeFactory: new WastePlanNoticeFactory(),
+    now: () => new Date("2026-08-14T00:00:00.000Z"),
+  });
+
+  const result = await useCase.execute({
+    planId: "plan-1",
+    officerId: "officer-1",
+    publicNote: null,
+  });
+
+  assert.deepEqual(result, {
+    publicationStatus: "PUBLISHED",
+    publicationVersion: 1,
+    recipientCount: 0,
+  });
+  assert.equal(calls[0][0], "published");
+  assert.equal(calls[1][0], "notices");
+  assert.equal(calls[1][1].type, "SCHEDULE_PUBLISHED");
+});

@@ -552,7 +552,8 @@ async function driverJobs(driver, _lineUserId, scope = "ALL") {
      FROM waste_operation_plans p
      INNER JOIN waste_routes r ON r.id = p.route_id
      INNER JOIN waste_vehicles v ON v.id = p.vehicle_id
-     WHERE p.driver_id = ? AND ${dateClause} AND p.status <> 'CANCELLED'
+     WHERE p.driver_id = ? AND ${dateClause}
+       AND p.publication_status = 'PUBLISHED' AND p.status <> 'CANCELLED'
      ORDER BY FIELD(p.status, 'IN_PROGRESS', 'INTERRUPTED', 'SCHEDULED', 'COMPLETED'), p.scheduled_date, p.scheduled_start_at
      LIMIT 8`,
     [driver.id],
@@ -612,6 +613,7 @@ async function ensureDriverPlan(driver, planId, statuses) {
          ON r.id = p.route_id
        WHERE p.id = ?
          AND p.driver_id = ?
+         AND p.publication_status = 'PUBLISHED'
          AND p.status IN (${placeholders})`,
       [
         planId,
@@ -644,6 +646,7 @@ async function driverPlanDetails(driver, planId, lineUserId, pageValue = 1) {
     INNER JOIN waste_routes r ON r.id = p.route_id
     INNER JOIN waste_vehicles v ON v.id = p.vehicle_id
     WHERE p.id = ? AND p.driver_id = ?
+      AND p.publication_status = 'PUBLISHED'
       AND p.status IN ('SCHEDULED', 'IN_PROGRESS', 'INTERRUPTED', 'COMPLETED')
     LIMIT 1`, [planId, driver.id]);
   const plan = planRows[0];

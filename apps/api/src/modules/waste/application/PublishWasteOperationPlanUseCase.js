@@ -57,20 +57,6 @@ export class PublishWasteOperationPlanUseCase {
         throw error;
       }
 
-      const recipientCount =
-        await this.repository.countRecipients(
-          db,
-          record.routeId
-        );
-
-      if (recipientCount < 1) {
-        const error = new Error(
-          "ยังไม่มีผู้ใช้บริการเก็บขยะที่ใช้งานและเชื่อม LINE อยู่ในเส้นทางนี้ กรุณาตรวจทะเบียนผู้ใช้บริการเก็บขยะก่อนประกาศ"
-        );
-        error.status = 422;
-        throw error;
-      }
-
       const plan = new WasteOperationPlan(record).publish({
         hasSchedule,
         activeStopCount: record.activeStopCount,

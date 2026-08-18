@@ -465,7 +465,22 @@ function PublicationModal({ plan, mode, saving, onCancel, onConfirm, error = "" 
   const [note, setNote] = useState(plan.publicNote || "");
   const [reason, setReason] = useState("");
   if (mode === "withdraw") return <div className="waste-confirmation"><strong>{plan.planNo} · {plan.routeName}</strong><p>ระบบจะถอนตารางกำหนดการเก็บขยะประจำพื้นที่จาก LINE และส่งเหตุผลให้ผู้ใช้บริการที่ผูก LINE ในเส้นทางนี้</p><ErrorNotice error={error} /><label className="waste-dialog-field">เหตุผลการถอนประกาศ<textarea rows="3" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="เช่น รถขัดข้อง ต้องจัดรอบใหม่" /></label><footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>กลับไปตรวจสอบ</button><button type="button" className="waste-button waste-button--danger" disabled={saving || reason.trim().length < 4} onClick={() => onConfirm({ reason })}>ถอนประกาศและแจ้ง LINE</button></footer></div>;
-  return <div className="waste-confirmation"><strong>{plan.planNo} · {plan.routeName}</strong><p>ขั้นที่ 2 · ตรวจความพร้อมก่อนประกาศ</p><ErrorNotice error={error} /><ul className="waste-plan-checks">{readiness.checks.map((check) => <li className={check.ready ? "is-ready" : "is-missing"} key={check.key}><b>{check.ready ? "✓" : "!"}</b><span>{check.label}</span></li>)}</ul><div className="waste-notice-preview"><b>ผู้รับ LINE ในเส้นทางนี้</b><strong>{formatNumber(plan.lineRecipientCount)} ราย</strong><small>ผู้ใช้บริการที่ยังไม่ผูก LINE จะตรวจตารางผ่านเมนูไม่ได้จนกว่าจะเชื่อมบัญชี</small></div><label className="waste-dialog-field">ข้อความเพิ่มเติมถึงประชาชน<textarea rows="3" value={note} onChange={(event) => setNote(event.target.value)} placeholder="ไม่บังคับ เช่น โปรดนำขยะมาวางก่อนเวลา 03:00 น." /></label><footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>กลับไปแก้ไข</button><button type="button" className="waste-button waste-button--primary" disabled={saving || !readiness.ready} onClick={() => onConfirm({ publicNote: note || null })}>ประกาศตารางกำหนดการและส่ง LINE</button></footer></div>;
+  return <div className="waste-confirmation"><strong>{plan.planNo} · {plan.routeName}</strong><p>ขั้นที่ 2 · ตรวจความพร้อมก่อนประกาศ</p><ErrorNotice error={error} /><ul className="waste-plan-checks">{readiness.checks.map((check) => <li className={check.ready ? "is-ready" : "is-missing"} key={check.key}><b>{check.ready ? "✓" : "!"}</b><span>{check.label}</span></li>)}</ul><div className="waste-notice-preview">
+  <div>
+    <b>จุดเก็บขยะในเส้นทางนี้</b>
+    <strong>{formatNumber(plan.stopTotal)} จุด</strong>
+  </div>
+  <div>
+    <b>ผู้รับแจ้งเตือน LINE ที่เชื่อมบัญชีแล้ว</b>
+    <strong>{formatNumber(plan.lineRecipientCount)} ราย</strong>
+  </div>
+  <small>
+    {Number(plan.lineRecipientCount || 0) > 0
+      ? "เมื่อยืนยันและประกาศแผน ระบบจะส่งการแจ้งเตือนให้ผู้รับ LINE ในเส้นทางนี้ทันที"
+      : "ยังไม่มีผู้ใช้บริการเชื่อม LINE ในเส้นทางนี้ แต่สามารถยืนยันและประกาศแผนได้ตามปกติ โดยจะไม่มีข้อความ LINE ที่ต้องส่ง"}
+  </small>
+  <small>หลังยืนยันและประกาศแผน งานจึงจะแสดงใน LINE ของพนักงานประจำรถขยะที่ได้รับมอบหมาย</small>
+</div><label className="waste-dialog-field">ข้อความเพิ่มเติมถึงประชาชน<textarea rows="3" value={note} onChange={(event) => setNote(event.target.value)} placeholder="ไม่บังคับ เช่น โปรดนำขยะมาวางก่อนเวลา 03:00 น." /></label><footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>กลับไปแก้ไข</button><button type="button" className="waste-button waste-button--primary" disabled={saving || !readiness.ready} onClick={() => onConfirm({ publicNote: note || null })}>ยืนยันและประกาศแผน + ส่ง LINE</button></footer></div>;
 }
 
 export default function PlansPage({ token, navigate }) {

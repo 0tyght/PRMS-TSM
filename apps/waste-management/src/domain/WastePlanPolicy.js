@@ -95,20 +95,6 @@ export class WastePlanPolicy {
             plan?.driverId,
           ),
       },
-      {
-        key: "line",
-        label:
-          "มีผู้รับ LINE อย่างน้อย 1 ราย",
-        ready:
-          plan?.lineRecipientCount ===
-          undefined
-            ? true
-            : Number(
-                plan
-                  .lineRecipientCount ||
-                0,
-              ) > 0,
-      },
     ];
 
     return {

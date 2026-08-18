@@ -248,3 +248,31 @@ test("driver edge states have distinct replies and global DRIVER recovery uses F
   assert.match(bot, /const recoveryMessage/);
   assert.match(bot, /channel\.kind === "DRIVER"/);
 });
+test("driver work is visible only after publication", async () => {
+  const source = fs.readFileSync(
+    new URL(
+      "../src/modules/line/wasteLine.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  const publishedGuards = source.match(
+    /p\.publication_status\s*=\s*'PUBLISHED'/g,
+  ) || [];
+
+  assert.ok(
+    publishedGuards.length >= 3,
+    "driver jobs, plan details, and driver actions must require PUBLISHED",
+  );
+
+  assert.match(
+    source,
+    /WHERE p\.driver_id = \?[\s\S]*?p\.publication_status = 'PUBLISHED'[\s\S]*?p\.status <> 'CANCELLED'/u,
+  );
+
+  assert.match(
+    source,
+    /WHERE p\.id = \?[\s\S]*?p\.driver_id = \?[\s\S]*?p\.publication_status = 'PUBLISHED'[\s\S]*?p\.status IN/u,
+  );
+});
