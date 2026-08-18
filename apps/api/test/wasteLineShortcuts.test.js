@@ -5,6 +5,7 @@ import {
   buildCitizenChargesMessage,
   buildCitizenScheduleMessage,
   buildDriverJobsMessage,
+  buildWasteLineTextCard,
 } from "../src/modules/line/wasteLine.js";
 import { WasteLineShortcutCatalog } from "../src/modules/waste/application/WasteLineShortcutCatalog.js";
 
@@ -125,6 +126,17 @@ test("renders citizen schedules and charges as concise LINE cards", () => {
     assert.equal(message.contents.type, "carousel");
     assertValidActions(actionsOf(message));
   }
+});
+
+test("renders every ordinary waste LINE response as a readable Flex card", () => {
+  const message = buildWasteLineTextCard(
+    "ขั้นตอน 2/7 · หมายเลขโทรศัพท์\nลงทะเบียนผู้ใช้บริการเก็บขยะ\nกรุณาพิมพ์หมายเลขโทรศัพท์ 10 หลัก",
+    catalog.registration("PHONE"),
+  );
+  assert.equal(message.type, "flex");
+  assert.equal(message.contents.type, "bubble");
+  assert.match(JSON.stringify(message.contents), /ลงทะเบียนผู้ใช้บริการเก็บขยะ/);
+  assertValidActions(actionsOf(message));
 });
 
 test("deduplicates repeated shortcuts before sending them to LINE", () => {

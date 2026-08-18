@@ -25,12 +25,7 @@ const citizenScheduleService = new WasteCitizenScheduleService({ database: pool 
 const trackingTokenService = new WasteTrackingTokenService({ secret: config.jwtSecret });
 
 function textMessage(text, quickReplyItems = []) {
-  const actions = wasteLineShortcuts.normalize(quickReplyItems);
-  return {
-    type: "text",
-    text: String(text || "").slice(0, 5000),
-    ...(actions.length ? { quickReply: { items: actions.map((action) => ({ type: "action", action })) } } : {}),
-  };
+  return buildWasteLineTextCard(text, quickReplyItems);
 }
 
 function postbackAction(label, data, displayText = label) {
@@ -183,6 +178,42 @@ function flexMessage(altText, contents, quickReplyItems = []) {
     contents,
     ...(actions.length ? { quickReply: { items: actions.map((action) => ({ type: "action", action })) } } : {}),
   };
+}
+
+function textCardAccent(value) {
+  const text = String(value || "");
+  if (/(ไม่พบ|ไม่สามารถ|ไม่ถูกต้อง|ถูกระงับ|ยกเลิกการใช้งาน|ไม่ตรงกับ)/.test(text)) return LINE_CARD_COLORS.RED;
+  if (/(ยังไม่มี|รอเจ้าหน้าที่|ตรวจสอบ)/.test(text)) return LINE_CARD_COLORS.ORANGE;
+  if (/(สำเร็จ|เรียบร้อย|เสร็จสิ้น|ยืนยันเก็บขยะแล้ว)/.test(text)) return LINE_CARD_COLORS.GREEN;
+  return LINE_CARD_COLORS.BLUE;
+}
+
+function textCardTitle(lines) {
+  const first = String(lines[0] || "").trim();
+  if (lines.some((line) => /ลงทะเบียนผู้ใช้บริการเก็บขยะ/.test(line))) return "ลงทะเบียนผู้ใช้บริการเก็บขยะ";
+  if (lines.some((line) => /ยืนยันตัวตนพนักงานประจำรถขยะ/.test(line))) return "ยืนยันตัวตนพนักงานประจำรถขยะ";
+  if (/^ขั้นตอน\s+\d+\/\d+/.test(first)) return "ข้อมูลที่ต้องดำเนินการ";
+  return first.slice(0, 120) || "บริการเก็บขยะ";
+}
+
+// Every outbound waste text is intentionally rendered as a Flex card.  Free-text
+// input still goes through LINE's normal composer; only the municipal response
+// gains a consistent, readable visual hierarchy.
+export function buildWasteLineTextCard(text, quickReplyItems = []) {
+  const source = String(text || "").trim() || "ไม่มีข้อมูลสำหรับแสดง";
+  const lines = source.split("\n").map((line) => line.trim()).filter(Boolean);
+  const title = textCardTitle(lines);
+  const bodyText = lines.length > 1 ? lines.join("\n") : source;
+  return flexMessage(
+    source,
+    lineCardBubble({
+      eyebrow: "บริการเก็บขยะ · เทศบาลท่าโพธิ์",
+      title,
+      accent: textCardAccent(source),
+      rows: [lineCardText(bodyText, { size: "sm", color: "#28463C", maxLength: 1600 })],
+    }),
+    quickReplyItems,
+  );
 }
 
 function planStatusLabel(status) {
