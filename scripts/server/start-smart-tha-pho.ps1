@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$ProjectPath = "",
     [switch]$SkipGitPush
@@ -119,6 +119,20 @@ if (Test-Path -LiteralPath $lineWebhookSync) {
     }
     catch {
         Write-Warning "ซิงก์ LINE Webhook ไม่สำเร็จ: $($_.Exception.Message)"
+    }
+}
+
+$lineRichMenuDefaultSync = Join-Path $ProjectPath "scripts\server\sync-line-rich-menu-default.mjs"
+if (Test-Path -LiteralPath $lineRichMenuDefaultSync) {
+    Write-Host "ซิงก์ Default Rich Menu ของ Citizen OA เป็น Smart Tha Pho..." -ForegroundColor Cyan
+    try {
+        & node $lineRichMenuDefaultSync
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "ซิงก์ Default Rich Menu ไม่สำเร็จ แต่ API และ Webhook ยังพร้อมใช้งาน"
+        }
+    }
+    catch {
+        Write-Warning "ซิงก์ Default Rich Menu ไม่สำเร็จ: $($_.Exception.Message)"
     }
 }
 

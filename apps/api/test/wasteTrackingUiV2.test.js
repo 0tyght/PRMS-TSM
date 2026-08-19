@@ -38,6 +38,15 @@ const richMenuWizard =
     "utf8",
   );
 
+const citizenSystemMenus =
+  fs.readFileSync(
+    new URL(
+      "../src/modules/line/CitizenSystemRichMenus.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
 const wasteNotificationQueue =
   fs.readFileSync(
     new URL(
@@ -102,11 +111,11 @@ test(
 );
 
 test(
-  "PET rich menu unlink removes LINE binding and PET runtime",
+  "Smart Tha Pho and waste citizen use standalone persistent Rich Menus outside PET runtime",
   () => {
     assert.match(
       richMenuWizard,
-      /export async function clearWizardRichMenuForLineUser/,
+      /export async function showStandaloneRichMenuForLineUser/,
     );
 
     assert.match(
@@ -115,46 +124,59 @@ test(
     );
 
     assert.match(
-      richMenuWizard,
-      /\/v2\/bot\/user\/\$\{encodeURIComponent\(normalizedLineUserId\)\}\/richmenu/,
+      citizenSystemMenus,
+      /key:\s*"smart-tha-pho-main-v1"/,
+    );
+
+    assert.match(
+      citizenSystemMenus,
+      /key:\s*"smart-tha-pho-waste-citizen-v1"/,
     );
   },
 );
 
 test(
-  "Smart home non-PET systems and handled waste actions clear PET rich menu",
+  "Smart home and citizen waste actions bind the correct persistent system menu",
   () => {
     assert.match(
       lineBot,
-      /smartMenuRequest\?\.action === "menu"[\s\S]*?"SMART_HOME"/,
+      /smartMenuRequest\?\.action === "menu"[\s\S]*?showSmartThaPhoMainRichMenu/,
     );
 
     assert.match(
       lineBot,
-      /smartMenuRequest\.system !==[\s\S]*?"pet"[\s\S]*?clearCitizenPetRichMenu/,
+      /smartMenuRequest\.system === "waste"[\s\S]*?showWasteCitizenRichMenu/,
     );
 
     assert.match(
       lineBot,
-      /if\s*\(wasteResult\.handled\)[\s\S]*?"WASTE_HANDLED"/,
+      /if\s*\(wasteResult\.handled\)[\s\S]*?showWasteCitizenRichMenu/,
+    );
+
+    assert.doesNotMatch(
+      lineBot,
+      /clearCitizenPetRichMenu/,
     );
   },
 );
 
 test(
-  "citizen waste push clears PET menu before the waste notification",
+  "citizen waste push binds waste Rich Menu before the waste notification",
   () => {
     assert.match(
       wasteNotificationQueue,
-      /channelKind === "CITIZEN"[\s\S]*?clearWizardRichMenuForLineUser[\s\S]*?"WASTE_PUSH"/,
+      /channelKind === "CITIZEN"[\s\S]*?showWasteCitizenRichMenu[\s\S]*?"WASTE_PUSH"/,
     );
 
-    const clearIndex =
+    const citizenBlock =
       wasteNotificationQueue.indexOf(
-        "clearWizardRichMenuForLineUser",
-        wasteNotificationQueue.indexOf(
-          'channelKind === "CITIZEN"',
-        ),
+        'channelKind === "CITIZEN"',
+      );
+
+    const menuIndex =
+      wasteNotificationQueue.indexOf(
+        "showWasteCitizenRichMenu",
+        citizenBlock,
       );
 
     const pushIndex =
@@ -162,8 +184,22 @@ test(
         "https://api.line.me/v2/bot/message/push",
       );
 
-    assert.ok(clearIndex >= 0);
-    assert.ok(pushIndex > clearIndex);
+    assert.ok(
+      citizenBlock >= 0,
+    );
+
+    assert.ok(
+      menuIndex > citizenBlock,
+    );
+
+    assert.ok(
+      pushIndex > menuIndex,
+    );
+
+    assert.doesNotMatch(
+      wasteNotificationQueue,
+      /clearWizardRichMenuForLineUser/,
+    );
   },
 );
 

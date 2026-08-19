@@ -1521,6 +1521,163 @@ async function showWizardMenuInternal(lineUserId, definition, options = {}) {
   return true;
 }
 
+export async function showStandaloneRichMenuForLineUser(
+  lineUserId,
+  definition,
+) {
+  const normalizedLineUserId =
+    String(lineUserId || "").trim();
+
+  if (
+    !/^U[0-9a-f]{32}$/i.test(
+      normalizedLineUserId,
+    )
+  ) {
+    return false;
+  }
+
+  await ensureWizardSchema();
+
+  const page =
+    buildWizardPage(
+      {
+        ...definition,
+        isMain: true,
+        cacheScope:
+          definition?.cacheScope ||
+          "static",
+      },
+      0,
+      false,
+    );
+
+  const fingerprint =
+    fingerprintWizardPage(page);
+
+  let asset =
+    await getOrCreateAsset(
+      page,
+      fingerprint,
+    );
+
+  try {
+    await linkMenuToUser(
+      normalizedLineUserId,
+      asset.richMenuId,
+    );
+  } catch (error) {
+    if (
+      Number(error?.status) !==
+      404
+    ) {
+      throw error;
+    }
+
+    await invalidateAsset(
+      fingerprint,
+      asset.richMenuId,
+    );
+
+    asset =
+      await getOrCreateAsset(
+        page,
+        fingerprint,
+      );
+
+    await linkMenuToUser(
+      normalizedLineUserId,
+      asset.richMenuId,
+    );
+  }
+
+  // Standalone Smart Tha Pho / Waste menus must never be treated as
+  // an active PET wizard runtime. PET creates its own runtime again
+  // when the user explicitly enters the PET system.
+  await pool.execute(
+    "DELETE FROM line_runtime_rich_menus WHERE line_user_id = ?",
+    [normalizedLineUserId],
+  );
+
+  await touchAsset(
+    fingerprint,
+    Boolean(asset.isStatic),
+  );
+
+  return true;
+}
+
+export async function setDefaultStandaloneRichMenu(
+  definition,
+) {
+  await ensureWizardSchema();
+
+  const page =
+    buildWizardPage(
+      {
+        ...definition,
+        isMain: true,
+        cacheScope:
+          definition?.cacheScope ||
+          "static",
+      },
+      0,
+      false,
+    );
+
+  const fingerprint =
+    fingerprintWizardPage(page);
+
+  let asset =
+    await getOrCreateAsset(
+      page,
+      fingerprint,
+    );
+
+  try {
+    await lineRequest(
+      "POST",
+      `/v2/bot/user/all/richmenu/${encodeURIComponent(asset.richMenuId)}`,
+    );
+  } catch (error) {
+    if (
+      Number(error?.status) !==
+      404
+    ) {
+      throw error;
+    }
+
+    await invalidateAsset(
+      fingerprint,
+      asset.richMenuId,
+    );
+
+    asset =
+      await getOrCreateAsset(
+        page,
+        fingerprint,
+      );
+
+    await lineRequest(
+      "POST",
+      `/v2/bot/user/all/richmenu/${encodeURIComponent(asset.richMenuId)}`,
+    );
+  }
+
+  await touchAsset(
+    fingerprint,
+    Boolean(asset.isStatic),
+  );
+
+  return {
+    richMenuId:
+      asset.richMenuId,
+    fingerprint,
+    key:
+      definition?.key ||
+      "standalone",
+  };
+}
+
 export async function clearWizardRichMenuForLineUser(lineUserId) {
   const normalizedLineUserId = String(lineUserId || "").trim();
 

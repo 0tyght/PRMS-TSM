@@ -11,11 +11,14 @@ import {
   handleNativeCitizenEvent,
 } from "./lineNativeCitizen.js";
 import {
-  clearWizardRichMenuForLineUser,
   decorateNativeCitizenResultWithRichMenu,
   handleWizardControl,
 } from "./lineRichMenuWizard.js";
 import { smartThaPhoLineMenu } from "./SmartThaPhoLineMenu.js";
+import {
+  showSmartThaPhoMainRichMenu,
+  showWasteCitizenRichMenu,
+} from "./CitizenSystemRichMenus.js";
 import {
   buildWasteLineTextCard,
   handleWasteLineEvent,
@@ -97,19 +100,6 @@ function continueRichMenuTask(task, event) {
   });
 }
 
-async function clearCitizenPetRichMenu(lineUserId, reason) {
-  if (!lineUserId) return;
-
-  try {
-    await clearWizardRichMenuForLineUser(lineUserId);
-  } catch (error) {
-    console.error("[line-bot] clear PET rich menu failed", {
-      reason,
-      lineUserId: String(lineUserId).slice(0, 8),
-      error: String(error?.message || error),
-    });
-  }
-}
 
 async function loadState(lineUserId) {
   try {
@@ -180,11 +170,22 @@ async function processEvent(event, channel) {
     const smartMenuRequest = smartThaPhoLineMenu.parse(event);
     if (smartMenuRequest?.action === "menu") {
       await smartThaPhoLineMenu.clearPendingFlows(lineUserId);
-      await clearCitizenPetRichMenu(
-        lineUserId,
-        "SMART_HOME",
+
+      continueRichMenuTask(
+        showSmartThaPhoMainRichMenu(
+          lineUserId,
+        ),
+        event,
       );
-      if (event.replyToken) await reply(event.replyToken, [smartThaPhoLineMenu.message()], channel);
+
+      if (event.replyToken) {
+        await reply(
+          event.replyToken,
+          [smartThaPhoLineMenu.message()],
+          channel,
+        );
+      }
+
       await completeLineWebhookEvent(event);
       return;
     }
@@ -192,33 +193,64 @@ async function processEvent(event, channel) {
     if (smartMenuRequest?.action === "system") {
       await smartThaPhoLineMenu.clearPendingFlows(lineUserId);
 
-      if (
-        smartMenuRequest.system !==
-        "pet"
-      ) {
-        await clearCitizenPetRichMenu(
-          lineUserId,
-          `SYSTEM_${smartMenuRequest.system}`,
-        );
-      }
-
       if (smartMenuRequest.system === "waste") {
-        const wasteResult = await handleWasteLineEvent({
-          ...event,
-          type: "postback",
-          postback: { data: "waste=menu" },
-        }, { audience: "CITIZEN", force: true });
-        if (event.replyToken && wasteResult.messages?.length) {
-          await reply(event.replyToken, wasteResult.messages, channel);
+        continueRichMenuTask(
+          showWasteCitizenRichMenu(
+            lineUserId,
+          ),
+          event,
+        );
+
+        const wasteResult =
+          await handleWasteLineEvent(
+            {
+              ...event,
+              type: "postback",
+              postback: {
+                data: "waste=menu",
+              },
+            },
+            {
+              audience: "CITIZEN",
+              force: true,
+            },
+          );
+
+        if (
+          event.replyToken &&
+          wasteResult.messages?.length
+        ) {
+          await reply(
+            event.replyToken,
+            wasteResult.messages,
+            channel,
+          );
         }
+
         await completeLineWebhookEvent(event);
         return;
       }
 
       if (smartMenuRequest.system !== "pet") {
+        continueRichMenuTask(
+          showSmartThaPhoMainRichMenu(
+            lineUserId,
+          ),
+          event,
+        );
+
         if (event.replyToken) {
-          await reply(event.replyToken, [smartThaPhoLineMenu.unavailableMessage(smartMenuRequest.system)], channel);
+          await reply(
+            event.replyToken,
+            [
+              smartThaPhoLineMenu.unavailableMessage(
+                smartMenuRequest.system,
+              ),
+            ],
+            channel,
+          );
         }
+
         await completeLineWebhookEvent(event);
         return;
       }
@@ -226,19 +258,32 @@ async function processEvent(event, channel) {
       event = {
         ...event,
         type: "postback",
-        postback: { data: "action=menu" },
+        postback: {
+          data: "action=menu",
+        },
       };
     }
 
     const wasteResult = await handleWasteLineEvent(event, { audience: "CITIZEN" });
     if (wasteResult.handled) {
-      await clearCitizenPetRichMenu(
-        lineUserId,
-        "WASTE_HANDLED",
+      continueRichMenuTask(
+        showWasteCitizenRichMenu(
+          lineUserId,
+        ),
+        event,
       );
-      if (event.replyToken && wasteResult.messages?.length) {
-        await reply(event.replyToken, wasteResult.messages, channel);
+
+      if (
+        event.replyToken &&
+        wasteResult.messages?.length
+      ) {
+        await reply(
+          event.replyToken,
+          wasteResult.messages,
+          channel,
+        );
       }
+
       await completeLineWebhookEvent(event);
       return;
     }

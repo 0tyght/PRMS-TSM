@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { lineChannelSettings } from "../../line/lineChannelSettings.js";
-import { clearWizardRichMenuForLineUser } from "../../line/lineRichMenuWizard.js";
+import { showWasteCitizenRichMenu } from "../../line/CitizenSystemRichMenus.js";
 
 
 const THEMES = Object.freeze({
@@ -88,16 +88,18 @@ export class WasteLineNotificationQueue {
       channelKind === "CITIZEN" &&
       !this.accessTokenOverride
     ) {
-      await clearWizardRichMenuForLineUser(
+      await showWasteCitizenRichMenu(
         row.lineUserId,
       ).catch((error) => {
         console.error(
-          "[waste-line-notification] clear PET rich menu failed",
+          "[waste-line-notification] waste Rich Menu sync failed",
           {
             reason: "WASTE_PUSH",
             lineUserId:
-              String(row.lineUserId || "")
-                .slice(0, 8),
+              String(
+                row.lineUserId ||
+                "",
+              ).slice(0, 8),
             error:
               String(
                 error?.message ||
