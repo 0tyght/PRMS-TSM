@@ -135,6 +135,10 @@ const serviceUserSchema = z.object({
 
 const routeAssignmentProposalSchema = z.object({ routeId: z.string().uuid() });
 const routeAssignmentConfirmationSchema = z.object({ proposalId: z.string().uuid() });
+const routeServiceUsersProposalSchema = z.object({
+  serviceUserIds: z.array(z.string().uuid()).min(1).max(50),
+});
+const routeServiceUsersConfirmationSchema = z.object({ proposalId: z.string().uuid() });
 
 const planSchema = z.object({
   planNo: z.string().trim().min(4).max(30).optional(),
@@ -764,6 +768,46 @@ router.post("/routes/:id/optimization-confirmations", requireRole("ADMIN", "OFFI
     });
   } catch (error) { next(routeOptimizationError(error)); }
 });
+
+router.post(
+  "/routes/:id/service-user-proposals",
+  requireRole("ADMIN", "OFFICER"),
+  async (req, res, next) => {
+    try {
+      const input = routeServiceUsersProposalSchema.parse(req.body);
+      const proposal = await wasteRouteOptimization.proposeServiceUsers.execute({
+        routeId: req.params.id,
+        serviceUserIds: input.serviceUserIds,
+      });
+      return res.status(201).json({ data: {
+        proposalId: proposal.id,
+        routeId: proposal.routeId,
+        stops: proposal.stops.map((stop, index) => ({ ...stop, sequenceNo: index + 1 })),
+        routeGeojson: proposal.toGeoJson(),
+        distanceMeters: proposal.distanceMeters,
+        durationSeconds: proposal.durationSeconds,
+        expiresAt: proposal.expiresAt,
+      }});
+    } catch (error) { next(error); }
+  },
+);
+
+router.post(
+  "/routes/:id/service-user-confirmations",
+  requireRole("ADMIN", "OFFICER"),
+  async (req, res, next) => {
+    try {
+      const input = routeServiceUsersConfirmationSchema.parse(req.body);
+      const data = await wasteRouteOptimization.confirmServiceUsers.execute({
+        routeId: req.params.id,
+        proposalId: input.proposalId,
+        confirmedBy: req.user.sub,
+        ipAddress: req.ip,
+      });
+      return res.json({ data });
+    } catch (error) { next(error); }
+  },
+);
 
 router.put(
   "/routes/:id/stops",

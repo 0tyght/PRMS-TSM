@@ -31,6 +31,23 @@ export class MariaDbWasteRouteRepository {
     return rows.map((row) => ({ ...row, sequenceNo: Number(row.sequenceNo) }));
   }
 
+  async findActiveUnassignedServiceUsersByIds(serviceUserIds) {
+    const ids = [...new Set(serviceUserIds || [])];
+    if (!ids.length) return [];
+    const placeholders = ids.map(() => "?").join(", ");
+    const [rows] = await this.database.execute(
+      `SELECT id, service_no AS serviceNo, full_name AS fullName, phone,
+              house_no AS houseNo, village_id AS villageId,
+              CAST(latitude AS DOUBLE) AS latitude, CAST(longitude AS DOUBLE) AS longitude
+       FROM waste_service_users
+       WHERE id IN (${placeholders})
+         AND is_active = 1
+         AND route_id IS NULL`,
+      ids,
+    );
+    return rows;
+  }
+
   async findActiveServiceUserById(serviceUserId) {
     const [rows] = await this.database.execute(
       `SELECT id, route_id AS routeId, full_name AS fullName, house_no AS houseNo,
@@ -186,5 +203,113 @@ export class MariaDbWasteRouteRepository {
         [crypto.randomUUID(), confirmedBy, serviceUser.id, JSON.stringify({ previousRouteId, routeId: proposal.routeId, orderedStopIds: proposal.stopIds, distanceMeters: proposal.distanceMeters }), ipAddress || null],
       );
     });
+  }
+  async confirmServiceUserBatchAssignment({ proposal, routeGeojson, confirmedBy, ipAddress }) {
+    const candidates = proposal.stops.filter((stop) => stop.assignmentCandidate === true);
+    const candidateUserIds = candidates.map((stop) => stop.serviceUserId);
+
+    await this.database.transaction(async (db) => {
+      const [storedProposalRows] = await db.execute(
+        `SELECT id, confirmed_at AS confirmedAt, expires_at AS expiresAt
+         FROM waste_route_proposals WHERE id = ? FOR UPDATE`,
+        [proposal.id],
+      );
+      const storedProposal = storedProposalRows[0];
+      if (!storedProposal || storedProposal.confirmedAt || new Date(storedProposal.expiresAt) <= new Date()) {
+        throw new Error("PROPOSAL_EXPIRED");
+      }
+
+      const [routeRows] = await db.execute(
+        `SELECT id FROM waste_routes WHERE id = ? AND is_active = 1 FOR UPDATE`,
+        [proposal.routeId],
+      );
+      if (!routeRows[0]) throw new Error("ROUTE_NOT_FOUND");
+
+      const [currentStops] = await db.execute(
+        `SELECT id FROM waste_route_stops WHERE route_id = ? AND is_active = 1 FOR UPDATE`,
+        [proposal.routeId],
+      );
+      const expectedCurrentIds = new Set(
+        proposal.stops.filter((stop) => !stop.assignmentCandidate).map((stop) => stop.id),
+      );
+      const actualCurrentIds = currentStops.map((stop) => stop.id);
+      if (actualCurrentIds.length !== expectedCurrentIds.size || actualCurrentIds.some((id) => !expectedCurrentIds.has(id))) {
+        throw new Error("ROUTE_STOPS_CHANGED");
+      }
+
+      const placeholders = candidateUserIds.map(() => "?").join(", ");
+      const [lockedUsers] = await db.execute(
+        `SELECT id, route_id AS routeId, CAST(latitude AS DOUBLE) AS latitude,
+                CAST(longitude AS DOUBLE) AS longitude
+         FROM waste_service_users
+         WHERE id IN (${placeholders}) AND is_active = 1 FOR UPDATE`,
+        candidateUserIds,
+      );
+      const userById = new Map(lockedUsers.map((user) => [user.id, user]));
+      for (const candidate of candidates) {
+        const user = userById.get(candidate.serviceUserId);
+        if (!user || user.routeId) throw new Error("SERVICE_USER_ROUTE_CHANGED");
+        if (
+          Math.abs(Number(user.latitude) - Number(candidate.latitude)) > 0.0000001 ||
+          Math.abs(Number(user.longitude) - Number(candidate.longitude)) > 0.0000001
+        ) throw new Error("SERVICE_USER_LOCATION_CHANGED");
+      }
+
+      await db.execute(
+        `UPDATE waste_route_stops SET sequence_no = sequence_no + 1000
+         WHERE route_id = ? AND is_active = 1`,
+        [proposal.routeId],
+      );
+
+      const stopIdByProposalId = new Map();
+      for (const candidate of candidates) {
+        const stopId = crypto.randomUUID();
+        stopIdByProposalId.set(candidate.id, stopId);
+        const [updated] = await db.execute(
+          `UPDATE waste_service_users
+           SET route_id = ?, route_assignment_status = 'CONFIRMED',
+               route_assignment_distance_m = NULL, route_assigned_at = NOW(), route_assigned_by = ?
+           WHERE id = ? AND route_id IS NULL`,
+          [proposal.routeId, confirmedBy, candidate.serviceUserId],
+        );
+        if (!updated.affectedRows) throw new Error("SERVICE_USER_ROUTE_CHANGED");
+        await db.execute(
+          `INSERT INTO waste_route_stops
+            (id, route_id, service_user_id, sequence_no, stop_name, latitude, longitude, is_active)
+           VALUES (?, ?, ?, 60000, ?, ?, ?, 1)`,
+          [stopId, proposal.routeId, candidate.serviceUserId, candidate.stopName,
+           candidate.latitude, candidate.longitude],
+        );
+      }
+
+      for (const [index, stop] of proposal.stops.entries()) {
+        const actualStopId = stop.assignmentCandidate
+          ? stopIdByProposalId.get(stop.id)
+          : stop.id;
+        await db.execute(
+          `UPDATE waste_route_stops SET sequence_no = ? WHERE id = ? AND route_id = ?`,
+          [index + 1, actualStopId, proposal.routeId],
+        );
+      }
+
+      routeGeojson.properties.geometryStatus = "CONFIRMED_OSRM_OPTIMIZED";
+      routeGeojson.properties.confirmedAt = new Date().toISOString();
+      routeGeojson.properties.confirmedBy = confirmedBy;
+      routeGeojson.properties.routingWaypoints = routeGeojson.properties.routingWaypoints.map((waypoint) => ({
+        ...waypoint,
+        stopId: stopIdByProposalId.get(waypoint.stopId) || waypoint.stopId,
+      }));
+      await db.execute(`UPDATE waste_routes SET route_geojson = ? WHERE id = ?`, [JSON.stringify(routeGeojson), proposal.routeId]);
+      await db.execute(`UPDATE waste_route_proposals SET confirmed_at = NOW(), confirmed_by = ? WHERE id = ?`, [confirmedBy, proposal.id]);
+      await db.execute(
+        `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, ip_address)
+         VALUES (?, ?, 'ASSIGN_WASTE_SERVICE_USERS_TO_ROUTE', 'WASTE_ROUTE', ?, ?, ?)`,
+        [crypto.randomUUID(), confirmedBy, proposal.routeId,
+         JSON.stringify({ serviceUserIds: candidateUserIds, orderedStopIds: proposal.stopIds, distanceMeters: proposal.distanceMeters }),
+         ipAddress || null],
+      );
+    });
+
+    return { assignedServiceUserCount: candidates.length };
   }
 }

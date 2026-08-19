@@ -29,6 +29,8 @@ import { ProposeWasteRouteUseCase } from "../modules/waste/application/ProposeWa
 import { ConfirmWasteRouteProposalUseCase } from "../modules/waste/application/ConfirmWasteRouteProposalUseCase.js";
 import { ProposeWasteServiceUserRouteAssignmentUseCase } from "../modules/waste/application/ProposeWasteServiceUserRouteAssignmentUseCase.js";
 import { ConfirmWasteServiceUserRouteAssignmentUseCase } from "../modules/waste/application/ConfirmWasteServiceUserRouteAssignmentUseCase.js";
+import { ProposeWasteRouteServiceUsersUseCase } from "../modules/waste/application/ProposeWasteRouteServiceUsersUseCase.js";
+import { ConfirmWasteRouteServiceUsersUseCase } from "../modules/waste/application/ConfirmWasteRouteServiceUsersUseCase.js";
 import { PublishWasteOperationPlanUseCase } from "../modules/waste/application/PublishWasteOperationPlanUseCase.js";
 import { WithdrawWasteOperationPlanUseCase } from "../modules/waste/application/WithdrawWasteOperationPlanUseCase.js";
 import { WastePlanPublicationService } from "../modules/waste/application/WastePlanPublicationService.js";
@@ -289,6 +291,17 @@ export function createWasteManagementServices({
         new ConfirmWasteServiceUserRouteAssignmentUseCase({
           routeRepository:
             wasteRouteRepository,
+        }),
+
+      proposeServiceUsers:
+        new ProposeWasteRouteServiceUsersUseCase({
+          routeRepository: wasteRouteRepository,
+          routeOptimizer: wasteRouteOptimizer,
+        }),
+
+      confirmServiceUsers:
+        new ConfirmWasteRouteServiceUsersUseCase({
+          routeRepository: wasteRouteRepository,
         }),
     });
 
