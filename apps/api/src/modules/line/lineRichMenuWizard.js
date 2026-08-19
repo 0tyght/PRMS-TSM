@@ -1,4 +1,4 @@
-import crypto from "node:crypto";
+﻿import crypto from "node:crypto";
 
 import sharp from "sharp";
 
@@ -553,6 +553,59 @@ async function linkMenuToUser(lineUserId, richMenuId) {
     "POST",
     `/v2/bot/user/${encodeURIComponent(lineUserId)}/richmenu/${encodeURIComponent(richMenuId)}`,
   );
+}
+
+async function getLinkedRichMenuId(lineUserId) {
+  try {
+    const payload = await lineRequest(
+      "GET",
+      `/v2/bot/user/${encodeURIComponent(lineUserId)}/richmenu`,
+    );
+    return String(payload?.richMenuId || "").trim();
+  } catch (error) {
+    if (Number(error?.status) === 404) {
+      return "";
+    }
+    throw error;
+  }
+}
+
+async function verifyRichMenuBinding(
+  lineUserId,
+  expectedRichMenuId,
+) {
+  let actualRichMenuId =
+    await getLinkedRichMenuId(
+      lineUserId,
+    );
+
+  if (
+    actualRichMenuId !==
+    expectedRichMenuId
+  ) {
+    // One retry is intentional: if an older per-user task finished at nearly
+    // the same moment, the requested system context must win deterministically.
+    await linkMenuToUser(
+      lineUserId,
+      expectedRichMenuId,
+    );
+
+    actualRichMenuId =
+      await getLinkedRichMenuId(
+        lineUserId,
+      );
+  }
+
+  if (
+    actualRichMenuId !==
+    expectedRichMenuId
+  ) {
+    throw new Error(
+      `LINE_RICH_MENU_BINDING_MISMATCH expected=${expectedRichMenuId} actual=${actualRichMenuId || "NONE"}`,
+    );
+  }
+
+  return actualRichMenuId;
 }
 
 async function ensureRichMenuAlias(richMenuAliasId, richMenuId) {
@@ -1521,7 +1574,7 @@ async function showWizardMenuInternal(lineUserId, definition, options = {}) {
   return true;
 }
 
-export async function showStandaloneRichMenuForLineUser(
+async function showStandaloneRichMenuForLineUserInternal(
   lineUserId,
   definition,
 ) {
@@ -1596,6 +1649,24 @@ export async function showStandaloneRichMenuForLineUser(
   await pool.execute(
     "DELETE FROM line_runtime_rich_menus WHERE line_user_id = ?",
     [normalizedLineUserId],
+  );
+
+  await verifyRichMenuBinding(
+    normalizedLineUserId,
+    asset.richMenuId,
+  );
+
+  console.info(
+    "[line-rich-menu-scope] bound",
+    {
+      lineUserId:
+        `${normalizedLineUserId.slice(0, 8)}...`,
+      key:
+        definition?.key ||
+        "standalone",
+      richMenuId:
+        asset.richMenuId,
+    },
   );
 
   await touchAsset(
@@ -1678,6 +1749,40 @@ export async function setDefaultStandaloneRichMenu(
   };
 }
 
+export async function showStandaloneRichMenuForLineUser(
+  lineUserId,
+  definition,
+) {
+  const normalizedLineUserId =
+    String(lineUserId || "").trim();
+
+  if (
+    !/^U[0-9a-f]{32}$/i.test(
+      normalizedLineUserId,
+    )
+  ) {
+    return false;
+  }
+
+  await ensureWizardSchema();
+
+  // Mark PET as inactive before waiting for the shared per-user queue.
+  // This prevents a concurrent PET notification from scheduling another
+  // PET menu after the citizen has already switched to Smart Tha Pho/Waste.
+  await pool.execute(
+    "DELETE FROM line_runtime_rich_menus WHERE line_user_id = ?",
+    [normalizedLineUserId],
+  );
+
+  return enqueueUser(
+    normalizedLineUserId,
+    () =>
+      showStandaloneRichMenuForLineUserInternal(
+        normalizedLineUserId,
+        definition,
+      ),
+  );
+}
 export async function clearWizardRichMenuForLineUser(lineUserId) {
   const normalizedLineUserId = String(lineUserId || "").trim();
 

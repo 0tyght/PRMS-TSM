@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
@@ -92,6 +92,50 @@ test(
   },
 );
 
+test(
+  "standalone Smart and waste menus share the same per-user queue as PET",
+  () => {
+    assert.match(
+      wizard,
+      /export async function showStandaloneRichMenuForLineUser[\s\S]*?DELETE FROM line_runtime_rich_menus[\s\S]*?return enqueueUser\(/,
+    );
+
+    assert.match(
+      wizard,
+      /showStandaloneRichMenuForLineUserInternal/,
+    );
+
+    assert.match(
+      wizard,
+      /export async function showWizardMenu[\s\S]*?return enqueueUser\(/,
+    );
+  },
+);
+
+test(
+  "standalone system menu verifies the final LINE per-user binding",
+  () => {
+    assert.match(
+      wizard,
+      /async function getLinkedRichMenuId/,
+    );
+
+    assert.match(
+      wizard,
+      /async function verifyRichMenuBinding/,
+    );
+
+    assert.match(
+      wizard,
+      /showStandaloneRichMenuForLineUserInternal[\s\S]*?verifyRichMenuBinding\([\s\S]*?asset\.richMenuId/,
+    );
+
+    assert.match(
+      wizard,
+      /LINE_RICH_MENU_BINDING_MISMATCH/,
+    );
+  },
+);
 test(
   "standalone Smart and waste menus are not PET wizard runtimes",
   () => {
