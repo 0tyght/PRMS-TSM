@@ -973,3 +973,58 @@ html{font-size:16px}body{overflow-x:hidden;color:#213e34;background:#f2f6f3}.was
 .waste-tracking-map-legend small{margin-left:auto;color:#83948c;font-size:9px}
 @media(max-width:1100px){.waste-tracking-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.waste-tracking-summary{grid-template-columns:1fr}.waste-tracking-map-legend small{width:100%;margin-left:0}}
+
+/* ===== Tracking Page V3 route-first map START ===== */
+.waste-map-shell{position:relative;isolation:isolate}
+.waste-map-shell>.waste-map{position:relative;z-index:1}
+.waste-map-floating-controls{position:absolute;z-index:500;right:12px;top:12px;display:flex;gap:7px;pointer-events:none}
+.waste-map-floating-controls button{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;border:1px solid rgb(28 77 59 / .16);border-radius:9px;color:#315448;background:rgb(255 255 255 / .94);box-shadow:0 5px 18px rgb(17 57 43 / .12);backdrop-filter:blur(7px);font-size:10px;font-weight:700;pointer-events:auto}
+.waste-map-floating-controls button:hover{border-color:#88b49e;color:#176b50;background:#fff}
+.waste-map-floating-controls button.is-primary{color:#fff;border-color:#176b50;background:#176b50}
+.waste-map-floating-controls button.is-primary:hover{background:#11583f}
+.waste-map-floating-controls button span{font-size:13px;line-height:1}
+
+.leaflet-overlay-pane path.waste-route-flow{animation:waste-route-flow 1.15s linear infinite;stroke-linecap:round}
+.leaflet-overlay-pane path.waste-route-flow.is-paused{animation:none;opacity:.55}
+.leaflet-overlay-pane path.waste-route-travelled{filter:drop-shadow(0 1px 1px rgb(10 65 45 / .16))}
+@keyframes waste-route-flow{to{stroke-dashoffset:-50}}
+
+.waste-truck-div-icon,.waste-stop-div-icon{border:0!important;background:transparent!important}
+.waste-truck-marker{position:relative;display:grid;width:52px;height:52px;place-items:center;filter:drop-shadow(0 5px 8px rgb(8 45 32 / .24))}
+.waste-truck-marker__body{position:relative;z-index:2;display:grid;width:45px;height:39px;place-items:center;border:3px solid #fff;border-radius:13px;color:#176b50;background:#eef8f2;box-shadow:0 0 0 1px rgb(23 107 80 / .24)}
+.waste-truck-marker__body svg{width:35px;height:28px;overflow:visible}
+.waste-truck-marker__halo{position:absolute;z-index:1;width:42px;height:42px;border-radius:50%;background:rgb(23 107 80 / .16)}
+.waste-truck-marker.is-active .waste-truck-marker__halo{animation:waste-truck-pulse 1.8s ease-out infinite}
+@keyframes waste-truck-pulse{0%{transform:scale(.72);opacity:.8}70%,100%{transform:scale(1.55);opacity:0}}
+
+.waste-stop-marker{display:grid;width:30px;height:30px;place-items:center;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgb(23 66 50 / .2),0 0 0 1px rgb(60 93 78 / .18);font-family:"Prompt",sans-serif;font-size:10px;font-weight:700}
+.waste-stop-marker.is-pending{color:#486b5c;background:#e1eee7}
+.waste-stop-marker.is-completed{color:#fff;background:#176b50}
+.waste-stop-marker.is-next{color:#fff;background:#d97618;box-shadow:0 2px 8px rgb(117 61 10 / .2),0 0 0 5px rgb(217 118 24 / .16);animation:waste-next-stop-pulse 1.7s ease-in-out infinite}
+.waste-stop-marker.is-skipped{color:#8a4b3d;background:#f7dfda}
+@keyframes waste-next-stop-pulse{50%{box-shadow:0 2px 8px rgb(117 61 10 / .2),0 0 0 9px rgb(217 118 24 / .04)}}
+
+.waste-panel__head--tracking-map{align-items:center}
+.waste-tracking-map-context{display:flex;min-width:0;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.waste-next-stop-pill{display:inline-flex;max-width:min(390px,38vw);align-items:center;overflow:hidden;padding:5px 8px;border-radius:7px;color:#9a520e;background:#fff0de;font-size:10px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.waste-next-stop-pill.is-complete{color:#177354;background:#e8f7ef}
+
+.waste-tracking-stops li{position:relative;transition:background .18s ease,padding .18s ease}
+.waste-tracking-stops li.is-next{margin-inline:-9px;padding-inline:9px;border-radius:9px;background:#fff8ef}
+.waste-tracking-stops li.is-next::before{position:absolute;inset:7px auto 7px 0;width:3px;border-radius:99px;background:#d97618;content:""}
+.waste-tracking-stops li.is-next>span{color:#fff;background:#d97618}
+.waste-tracking-stops li.is-collected>span{color:#fff;background:#176b50}
+.waste-tracking-stops li.is-collected strong{color:#42685a}
+.waste-tracking-stops li.is-skipped{opacity:.72}
+
+.waste-tracking-map-legend--v3{gap:16px}
+.waste-tracking-map-legend--v3>span{display:inline-flex;align-items:center;gap:6px}
+.waste-tracking-map-legend--v3 i.is-route-planned{width:24px;height:6px;border-radius:99px;background:#a9cbb8;position:relative;overflow:hidden}
+.waste-tracking-map-legend--v3 i.is-route-planned::after{position:absolute;inset:1px 0;background:repeating-linear-gradient(90deg,#3f956c 0 5px,transparent 5px 9px);content:""}
+.waste-tracking-map-legend--v3 i.is-route-travelled{width:24px;height:6px;border-radius:99px;background:#176b50}
+.waste-tracking-map-legend--v3 i.is-next-stop{width:11px;height:11px;border:2px solid #fff;border-radius:50%;background:#d97618;box-shadow:0 0 0 2px rgb(217 118 24 / .24)}
+.waste-tracking-map-legend--v3 i.is-truck{width:18px;height:12px;border:2px solid #fff;border-radius:4px;background:#176b50;box-shadow:0 0 0 1px rgb(23 107 80 / .25)}
+
+@media(prefers-reduced-motion:reduce){.leaflet-overlay-pane path.waste-route-flow,.waste-truck-marker.is-active .waste-truck-marker__halo,.waste-stop-marker.is-next{animation:none!important}}
+@media(max-width:700px){.waste-map-floating-controls{top:auto;right:8px;bottom:8px}.waste-map-floating-controls button{min-height:32px;padding-inline:8px;font-size:9px}.waste-panel__head--tracking-map{align-items:flex-start;flex-direction:column}.waste-tracking-map-context{width:100%;justify-content:flex-start}.waste-next-stop-pill{max-width:100%}.waste-tracking-map-legend--v3{gap:9px 13px}}
+/* ===== Tracking Page V3 route-first map END ===== */

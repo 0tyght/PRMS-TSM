@@ -109,6 +109,9 @@ export default function TrackingPage({ token, planId }) {
 
   useEffect(() => { void loadPlans(); }, [loadPlans]);
   useEffect(() => {
+    setTrack(null);
+  }, [selectedId]);
+  useEffect(() => {
     void loadTrack();
     if (!selectedId) return undefined;
     const timer = window.setInterval(() => {
@@ -123,6 +126,10 @@ export default function TrackingPage({ token, planId }) {
     [track?.locations],
   );
   const progress = useMemo(() => collectionProgress(track?.stops || []), [track?.stops]);
+  const nextStop = useMemo(
+    () => (track?.stops || []).find((stop) => !["COLLECTED", "SKIPPED"].includes(String(stop.confirmationStatus || "").toUpperCase())) || null,
+    [track?.stops],
+  );
   const gps = useMemo(() => gpsPresentation(track), [track?.lastGpsAt, track?.status]);
 
   const hasPlanGps = Boolean(
@@ -192,9 +199,12 @@ export default function TrackingPage({ token, planId }) {
 
         <section className="waste-tracking-grid">
           <article className="waste-panel waste-panel--map">
-            <header className="waste-panel__head">
-              <div><p>ตำแหน่งของแผนที่เลือก</p><h2>{track.vehicleCode} · {track.routeName}</h2></div>
-              <span className={`waste-last-gps is-${gps.key}`}>{gps.label}</span>
+            <header className="waste-panel__head waste-panel__head--tracking-map">
+              <div><p>เส้นทางปฏิบัติงานของแผนที่เลือก</p><h2>{track.vehicleCode} · {track.routeName}</h2></div>
+              <div className="waste-tracking-map-context">
+                {nextStop ? <span className="waste-next-stop-pill">จุดถัดไป · {nextStop.sequenceNo} {nextStop.stopName}</span> : <span className="waste-next-stop-pill is-complete">ไม่มีจุดค้างในเส้นทาง</span>}
+                <span className={`waste-last-gps is-${gps.key}`}>{gps.label}</span>
+              </div>
             </header>
             <WasteMap
               plans={hasPlanGps ? [{ ...track, driverName: track.driverName || chosen?.driverName }] : []}
@@ -202,12 +212,17 @@ export default function TrackingPage({ token, planId }) {
               routeStops={track.stops || []}
               history={track.locations || []}
               historySegments={historySegments}
+              trackingMode
+              trackingStatus={track.status}
+              activeStopId={nextStop?.id || ""}
+              focusKey={`${selectedId}:${track.routeName || ""}`}
             />
-            <div className="waste-tracking-map-legend">
-              <span><i className="is-route" />เส้นทางที่วางแผน</span>
-              <span><i className="is-stop" />จุดเก็บขยะตามลำดับ</span>
-              <span><i className="is-gps" />พิกัด/รอยวิ่ง GPS ของแผนนี้</span>
-              <small>ไม่ใช้ตำแหน่งล่าสุดจากงานอื่นของรถ และไม่ลากเส้นเชื่อมข้อมูลที่ขาดช่วงเกิน 5 นาที</small>
+            <div className="waste-tracking-map-legend waste-tracking-map-legend--v3">
+              <span><i className="is-route-planned" />เส้นทางตามแผน · สีอ่อน</span>
+              <span><i className="is-route-travelled" />รอยวิ่งจริง · สีเข้ม</span>
+              <span><i className="is-next-stop" />จุดถัดไป</span>
+              <span><i className="is-truck" />รถเก็บขยะ</span>
+              <small>เส้นประเคลื่อนไหวแสดงแนวเส้นทางขณะกำลังปฏิบัติงาน ส่วนสีเข้มวาดจาก GPS ของแผนนี้จริง และไม่เชื่อมช่วงข้อมูลที่ห่างเกิน 5 นาที</small>
             </div>
           </article>
 
@@ -217,14 +232,18 @@ export default function TrackingPage({ token, planId }) {
               <span>{progress.collected}/{progress.total} จุด</span>
             </header>
             {track.stops.length ? <ol>
-              {track.stops.map((stop) => <li key={stop.id}>
-                <span>{stop.sequenceNo}</span>
-                <div>
-                  <strong>{stop.stopName}</strong>
-                  <small>{stop.confirmedAt ? `ยืนยัน ${formatDate(stop.confirmedAt, { hour: "2-digit", minute: "2-digit" })}` : "ยังไม่ยืนยัน"}</small>
-                </div>
-                <StatusBadge value={stop.confirmationStatus || "SCHEDULED"} />
-              </li>)}
+              {track.stops.map((stop) => {
+                const stopStatus = String(stop.confirmationStatus || "SCHEDULED").toUpperCase();
+                const isNext = nextStop?.id === stop.id;
+                return <li key={stop.id} className={`${stopStatus === "COLLECTED" ? "is-collected" : ""}${isNext ? " is-next" : ""}${stopStatus === "SKIPPED" ? " is-skipped" : ""}`}>
+                  <span>{stopStatus === "COLLECTED" ? "✓" : stop.sequenceNo}</span>
+                  <div>
+                    <strong>{stop.stopName}</strong>
+                    <small>{isNext ? "จุดถัดไปในลำดับการปฏิบัติงาน" : stop.confirmedAt ? `ยืนยัน ${formatDate(stop.confirmedAt, { hour: "2-digit", minute: "2-digit" })}` : stopStatus === "SKIPPED" ? "ข้ามจุดนี้ระหว่างปฏิบัติงาน" : "ยังไม่ถึงจุดนี้"}</small>
+                  </div>
+                  <StatusBadge value={stop.confirmationStatus || "SCHEDULED"} />
+                </li>;
+              })}
             </ol> : <EmptyState title="ยังไม่ได้กำหนดจุดเก็บขยะ" detail="เพิ่มผู้ใช้บริการและกำหนดจุดในเส้นทางก่อนเริ่มติดตาม" />}
           </aside>
         </section>
