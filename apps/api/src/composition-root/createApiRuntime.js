@@ -20,7 +20,7 @@ export function createApiRuntime({ logger = console } = {}) {
   const wastePaymentReminders = new WastePaymentReminderScanner({ database });
   const notificationQueue = new ScheduledTask({
     name: "line-notification",
-    intervalMs: 60_000,
+    intervalMs: 2_000,
     logger,
     action: async () => {
       const [petResults, wasteResults] = await Promise.all([
