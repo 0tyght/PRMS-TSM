@@ -36,10 +36,9 @@ function planProgressStep(plan) {
     return 2;
   }
 
-  if (wastePlanPolicy.readiness(plan).ready) {
-    return 1;
-  }
-
+  // A draft only completes "จัดทำแผน". "ตรวจความพร้อม" is the next
+  // workflow action and must not be marked complete merely because all
+  // required fields happen to be present.
   return 0;
 }
 
@@ -513,7 +512,13 @@ export default function PlansPage({ token, navigate }) {
 
     try {
       if (silent) {
-        setPlans(await api.get("/api/waste/plans"));
+        const nextPlans = await api.get("/api/waste/plans");
+
+        setPlans((current) =>
+          JSON.stringify(current) === JSON.stringify(nextPlans)
+            ? current
+            : nextPlans
+        );
         setError("");
         return;
       }

@@ -131,11 +131,16 @@ export function ProgressTracker({
 export function Modal({ title, children, onClose }) {
   const titleId = useId();
   const modalRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     const previousFocus = document.activeElement;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKeyDown = (event) => { if (event.key === "Escape") onClose(); };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onCloseRef.current?.();
+    };
     window.addEventListener("keydown", onKeyDown);
     const frame = window.requestAnimationFrame(() => {
       modalRef.current?.querySelector("input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])")?.focus();
@@ -146,7 +151,7 @@ export function Modal({ title, children, onClose }) {
       document.body.style.overflow = previousOverflow;
       previousFocus?.focus?.();
     };
-  }, [onClose]);
+  }, []);
   return <div className="waste-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={modalRef} className="waste-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}><header><h2 id={titleId}>{title}</h2><button type="button" onClick={onClose} aria-label="ปิด">×</button></header>{children}</section></div>;
 }
 
