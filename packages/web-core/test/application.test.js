@@ -52,6 +52,25 @@ test("SessionStore owns shared authentication state", () => {
   assert.equal(session.getAccessToken(), "");
 });
 
+test("SessionStore migrates an existing tab session to persistent storage", () => {
+  const persistentStorage = new MemoryStorage();
+  const transientStorage = new MemoryStorage();
+  transientStorage.setItem("smart_thapho_access_token", "tab-token");
+  transientStorage.setItem("smart_thapho_active_system", "waste");
+
+  const session = new SessionStore({
+    storage: persistentStorage,
+    transientStorage,
+    windowObject: createWindow(),
+  });
+
+  assert.equal(session.getAccessToken(), "tab-token");
+  assert.equal(session.getActiveSystem(), "waste");
+  assert.equal(persistentStorage.getItem("smart_thapho_access_token"), "tab-token");
+  assert.equal(transientStorage.getItem("smart_thapho_access_token"), null);
+  assert.equal(transientStorage.getItem("smart_thapho_active_system"), null);
+});
+
 test("SystemApplicationController coordinates logout and navigation", () => {
   const windowObject = createWindow();
   const session = new SessionStore({ storage: new MemoryStorage(), windowObject });

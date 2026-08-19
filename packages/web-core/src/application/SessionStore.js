@@ -4,14 +4,35 @@ const LEGACY_ACCESS_TOKEN_KEY = "prms_access_token";
 const LOCAL_SESSION_PARAM = "smart_thapho_session";
 const LOCAL_SYSTEM_PARAM = "smart_thapho_system";
 
+function readBrowserStorage(name) {
+  try {
+    return globalThis?.[name] || null;
+  } catch {
+    return null;
+  }
+}
+
 export class SessionStore {
-  constructor({ storage = sessionStorage, windowObject = window } = {}) {
-    this.storage = storage;
+  constructor({
+    storage,
+    transientStorage,
+    windowObject = globalThis.window,
+  } = {}) {
+    const persistentStorage = storage ?? readBrowserStorage("localStorage");
+    const currentTabStorage = transientStorage ?? readBrowserStorage("sessionStorage");
+
+    this.storage = persistentStorage || currentTabStorage;
+    this.transientStorage =
+      currentTabStorage && currentTabStorage !== this.storage
+        ? currentTabStorage
+        : null;
     this.windowObject = windowObject;
   }
 
   isLocalhost() {
-    return ["localhost", "127.0.0.1"].includes(this.windowObject.location.hostname);
+    return ["localhost", "127.0.0.1"].includes(
+      this.windowObject?.location?.hostname,
+    );
   }
 
   importLocalDevelopmentSession() {
@@ -27,33 +48,61 @@ export class SessionStore {
     this.windowObject.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
   }
 
+  migrateTransientSession() {
+    if (!this.transientStorage || !this.storage) return;
+
+    const token =
+      this.transientStorage.getItem(ACCESS_TOKEN_KEY) ||
+      this.transientStorage.getItem(LEGACY_ACCESS_TOKEN_KEY);
+    const systemId = this.transientStorage.getItem(ACTIVE_SYSTEM_KEY);
+
+    if (token && !this.storage.getItem(ACCESS_TOKEN_KEY)) {
+      this.storage.setItem(ACCESS_TOKEN_KEY, token);
+    }
+
+    if (systemId && !this.storage.getItem(ACTIVE_SYSTEM_KEY)) {
+      this.storage.setItem(ACTIVE_SYSTEM_KEY, systemId);
+    }
+
+    this.transientStorage.removeItem(ACCESS_TOKEN_KEY);
+    this.transientStorage.removeItem(ACTIVE_SYSTEM_KEY);
+    this.transientStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+  }
+
   getAccessToken() {
     this.importLocalDevelopmentSession();
-    const token = this.storage.getItem(ACCESS_TOKEN_KEY);
+    this.migrateTransientSession();
+
+    const token = this.storage?.getItem(ACCESS_TOKEN_KEY);
     if (token) return token;
-    const legacyToken = this.storage.getItem(LEGACY_ACCESS_TOKEN_KEY);
+
+    const legacyToken = this.storage?.getItem(LEGACY_ACCESS_TOKEN_KEY);
     if (!legacyToken) return "";
+
     this.setAccessToken(legacyToken);
-    this.storage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+    this.storage?.removeItem(LEGACY_ACCESS_TOKEN_KEY);
     return legacyToken;
   }
 
   setAccessToken(token) {
-    this.storage.setItem(ACCESS_TOKEN_KEY, String(token || ""));
+    this.storage?.setItem(ACCESS_TOKEN_KEY, String(token || ""));
   }
 
   setActiveSystem(systemId) {
-    this.storage.setItem(ACTIVE_SYSTEM_KEY, systemId);
+    this.storage?.setItem(ACTIVE_SYSTEM_KEY, systemId);
   }
 
   getActiveSystem() {
-    return this.storage.getItem(ACTIVE_SYSTEM_KEY) || "";
+    this.migrateTransientSession();
+    return this.storage?.getItem(ACTIVE_SYSTEM_KEY) || "";
   }
 
   clear() {
-    this.storage.removeItem(ACCESS_TOKEN_KEY);
-    this.storage.removeItem(ACTIVE_SYSTEM_KEY);
-    this.storage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+    for (const target of [this.storage, this.transientStorage]) {
+      target?.removeItem(ACCESS_TOKEN_KEY);
+      target?.removeItem(ACTIVE_SYSTEM_KEY);
+      target?.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+    }
   }
 
   readUser(token) {
@@ -69,4 +118,3 @@ export class SessionStore {
     }
   }
 }
-

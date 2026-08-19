@@ -3,6 +3,7 @@ import { createWasteApplication } from "../composition-root/createWasteApplicati
 import WasteMap from "../components/WasteMap.jsx";
 import { EmptyState, ErrorNotice, LoadingState, PageHead, StatusBadge, formatDate, formatNumber, toDateInput } from "../components/ui.jsx";
 import { LocationHistoryPolicy } from "../application/LocationHistoryPolicy.js";
+import { useSilentPolling } from "../lib/useSilentPolling.js";
 
 const locationHistoryPolicy = new LocationHistoryPolicy({ maximumGapMinutes: 5 });
 
@@ -72,9 +73,12 @@ export default function TrackingPage({ token, planId }) {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [error, setError] = useState("");
 
-  const loadPlans = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const loadPlans = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
+
     try {
       const response = await api.get(`/api/waste/plans?date=${date}`);
       const nextPlans = response.filter((plan) => plan.publicationStatus === "PUBLISHED");
@@ -84,22 +88,26 @@ export default function TrackingPage({ token, planId }) {
           ? current
           : nextPlans.find((plan) => plan.id === planId)?.id || nextPlans[0]?.id || ""
       );
+      setError("");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [api, date, planId]);
 
-  const loadTrack = useCallback(async (showProgress = false) => {
+  const loadTrack = useCallback(async ({ showProgress = false } = {}) => {
     if (!selectedId) {
       setTrack(null);
       return;
     }
+
     if (showProgress) setRefreshing(true);
+
     try {
       setTrack(await api.get(`/api/waste/plans/${selectedId}/track`));
       setLastRefresh(new Date());
+      setError("");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -107,18 +115,16 @@ export default function TrackingPage({ token, planId }) {
     }
   }, [api, selectedId]);
 
-  useEffect(() => { void loadPlans(); }, [loadPlans]);
+  useSilentPolling(loadPlans, { intervalMs: 8_000 });
+
   useEffect(() => {
     setTrack(null);
   }, [selectedId]);
-  useEffect(() => {
-    void loadTrack();
-    if (!selectedId) return undefined;
-    const timer = window.setInterval(() => {
-      if (!document.hidden) void loadTrack();
-    }, 15_000);
-    return () => window.clearInterval(timer);
-  }, [loadTrack, selectedId]);
+
+  useSilentPolling(loadTrack, {
+    intervalMs: 8_000,
+    enabled: Boolean(selectedId),
+  });
 
   const chosen = plans.find((plan) => plan.id === selectedId);
   const historySegments = useMemo(
@@ -167,8 +173,8 @@ export default function TrackingPage({ token, planId }) {
           </select>
         </label>
         {chosen ? <StatusBadge value={chosen.status} /> : null}
-        <span className="waste-live-indicator"><i /> อัปเดตอัตโนมัติทุก 15 วินาที{lastRefresh ? ` · ล่าสุด ${formatDate(lastRefresh, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}</span>
-        <button type="button" className="waste-button waste-button--secondary" disabled={refreshing} onClick={() => void loadTrack(true)}>
+        <span className="waste-live-indicator"><i /> อัปเดตอัตโนมัติทุก 8 วินาที{lastRefresh ? ` · ล่าสุด ${formatDate(lastRefresh, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}</span>
+        <button type="button" className="waste-button waste-button--secondary" disabled={refreshing} onClick={() => void loadTrack({ showProgress: true })}>
           {refreshing ? "กำลังรีเฟรช…" : "รีเฟรชตอนนี้"}
         </button>
       </section>

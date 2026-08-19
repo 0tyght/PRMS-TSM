@@ -413,7 +413,7 @@ function createStaffToken(user) {
       staffSession: true,
     },
     config.jwtSecret,
-    { expiresIn: "30m" },
+    { expiresIn: "12h" },
   );
 }
 

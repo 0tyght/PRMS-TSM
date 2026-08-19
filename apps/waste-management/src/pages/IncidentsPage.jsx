@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { createWasteApplication } from "../composition-root/createWasteApplication.js";
 import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, StatusBadge, formatDate, toDateInput } from "../components/ui.jsx";
+import { useSilentPolling } from "../lib/useSilentPolling.js";
 
 const INCIDENT_TYPES = Object.freeze({ VEHICLE_BREAKDOWN: "รถขัดข้อง", ACCIDENT: "อุบัติเหตุ", ROAD_CLOSED: "ถนนปิด", ACCESS_BLOCKED: "เข้าถึงจุดเก็บไม่ได้", OTHER: "อื่น ๆ" });
 
@@ -45,10 +46,38 @@ function ReviewForm({ incident, vehicles, drivers, onCancel, onSubmit, saving })
 export default function IncidentsPage({ token }) {
   const api = useMemo(() => createWasteApplication(token), [token]);
   const [incidents, setIncidents] = useState([]); const [resources, setResources] = useState({ plans: [], vehicles: [], drivers: [] }); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [modal, setModal] = useState(null); const [saving, setSaving] = useState(false);
-  const load = useCallback(async () => { setLoading(true); setError(""); try { const [nextIncidents, plans, vehicles, drivers] = await Promise.all([api.get("/api/waste/incidents"), api.get("/api/waste/plans"), api.get("/api/waste/vehicles"), api.get("/api/waste/drivers")]); setIncidents(nextIncidents); setResources({ plans, vehicles, drivers }); } catch (requestError) { setError(requestError.message); } finally { setLoading(false); } }, [api]);
-  useEffect(() => { void load(); }, [load]);
-  const create = async (input) => { setSaving(true); setError(""); try { await api.post("/api/waste/incidents", input); setModal(null); await load(); } catch (requestError) { setError(requestError.message); } finally { setSaving(false); } };
-  const resolve = async (input) => { setSaving(true); setError(""); try { const hasReplacement = Boolean(input.replacementVehicleId || input.replacementDriverId); if (hasReplacement) { await api.post(`/api/waste/incidents/${modal.id}/replacement`, { replacementVehicleId: input.replacementVehicleId, replacementDriverId: input.replacementDriverId, resumePlan: input.resumePlan, resolutionNote: input.resolutionNote }); if (input.status === "RESOLVED") await api.patch(`/api/waste/incidents/${modal.id}`, { status: "RESOLVED", replacementVehicleId: input.replacementVehicleId, resolutionNote: input.resolutionNote }); } else { await api.patch(`/api/waste/incidents/${modal.id}`, { status: input.status, replacementVehicleId: null, resolutionNote: input.resolutionNote }); } setModal(null); await load(); } catch (requestError) { setError(requestError.message); } finally { setSaving(false); } };
+  const load = useCallback(async ({ silent = false, refreshResources = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
+
+    try {
+      if (silent && !refreshResources) {
+        setIncidents(await api.get("/api/waste/incidents"));
+        setError("");
+        return;
+      }
+
+      const [nextIncidents, plans, vehicles, drivers] = await Promise.all([
+        api.get("/api/waste/incidents"),
+        api.get("/api/waste/plans"),
+        api.get("/api/waste/vehicles"),
+        api.get("/api/waste/drivers"),
+      ]);
+      setIncidents(nextIncidents);
+      setResources({ plans, vehicles, drivers });
+      setError("");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [api]);
+
+  useSilentPolling(load, { intervalMs: 2_000 });
+  const create = async (input) => { setSaving(true); setError(""); try { await api.post("/api/waste/incidents", input); setModal(null); await load({ silent: true, refreshResources: true }); } catch (requestError) { setError(requestError.message); } finally { setSaving(false); } };
+  const resolve = async (input) => { setSaving(true); setError(""); try { const hasReplacement = Boolean(input.replacementVehicleId || input.replacementDriverId); if (hasReplacement) { await api.post(`/api/waste/incidents/${modal.id}/replacement`, { replacementVehicleId: input.replacementVehicleId, replacementDriverId: input.replacementDriverId, resumePlan: input.resumePlan, resolutionNote: input.resolutionNote }); if (input.status === "RESOLVED") await api.patch(`/api/waste/incidents/${modal.id}`, { status: "RESOLVED", replacementVehicleId: input.replacementVehicleId, resolutionNote: input.resolutionNote }); } else { await api.patch(`/api/waste/incidents/${modal.id}`, { status: input.status, replacementVehicleId: null, resolutionNote: input.resolutionNote }); } setModal(null); await load({ silent: true, refreshResources: true }); } catch (requestError) { setError(requestError.message); } finally { setSaving(false); } };
   return <>
     <PageHead eyebrow="INCIDENT MANAGEMENT" title="เหตุระหว่างการปฏิบัติงานเก็บขยะ" detail="รับแจ้งเหตุ ตรวจสอบ และประสานรถเก็บขยะทดแทนเมื่อแผนปฏิบัติงานเก็บขยะหยุดชะงัก" actions={<button type="button" className="waste-button waste-button--primary" onClick={() => setModal({ type: "create" })}>+ บันทึกเหตุ</button>} />
     <ErrorNotice error={error} onRetry={load} />

@@ -4,6 +4,7 @@ import WasteMap from "../components/WasteMap.jsx";
 import { EmptyState, ErrorNotice, LoadingState, PageHead, StatusBadge, formatMoney, formatNumber, toDateInput } from "../components/ui.jsx";
 import { wasteDashboardPolicy } from "../domain/WasteDashboardPolicy.js";
 import { routeMapColor } from "../lib/wasteMapConfig.js";
+import { useSilentPolling } from "../lib/useSilentPolling.js";
 
 export default function DashboardPage({ token, navigate }) {
   const api = useMemo(() => createWasteApplication(token), [token]);
@@ -13,12 +14,23 @@ export default function DashboardPage({ token, navigate }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    try { setData(await api.get(`/api/waste/dashboard?date=${date}`)); } catch (requestError) { setError(requestError.message); } finally { setLoading(false); }
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
+
+    try {
+      setData(await api.get(`/api/waste/dashboard?date=${date}`));
+      setError("");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [api, date]);
 
-  useEffect(() => { void load(); }, [load]);
+  useSilentPolling(load, { intervalMs: 4_000 });
   const summary = data?.summary || {};
   const activePlans = data?.activePlans || [];
   const routes = data?.routes || [];

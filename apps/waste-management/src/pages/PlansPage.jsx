@@ -3,6 +3,7 @@ import { createWasteApplication } from "../composition-root/createWasteApplicati
 import { wastePlanFormController } from "../application/WastePlanFormController.js";
 import { wastePlanPolicy } from "../domain/WastePlanPolicy.js";
 import { EmptyState, ErrorNotice, LoadingState, Modal, PageHead, ProgressTracker, StatusBadge, formatDate, formatNumber, toDateInput } from "../components/ui.jsx";
+import { useSilentPolling } from "../lib/useSilentPolling.js";
 
 function toIso(date, time) { return time ? new Date(`${date}T${time}:00+07:00`).toISOString() : null; }
 function toTimeInput(value) {
@@ -504,9 +505,19 @@ export default function PlansPage({ token, navigate }) {
   const [saving, setSaving] = useState(false);
   const [dialogError, setDialogError] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
+
     try {
+      if (silent) {
+        setPlans(await api.get("/api/waste/plans"));
+        setError("");
+        return;
+      }
+
       const [nextPlans, vehicles, drivers, routes] = await Promise.all([
         api.get("/api/waste/plans"),
         api.get("/api/waste/vehicles"),
@@ -516,13 +527,15 @@ export default function PlansPage({ token, navigate }) {
 
       setPlans(nextPlans);
       setResources({ vehicles, drivers, routes });
+      setError("");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [api]);
-  useEffect(() => { void load(); }, [load]);
+
+  useSilentPolling(load, { intervalMs: 2_000 });
 
   async function savePlan(input, current = null) {
     setSaving(true);
@@ -544,7 +557,7 @@ export default function PlansPage({ token, navigate }) {
       setEditing(null);
       setCreateOpen(false);
 
-      await load();
+      await load({ silent: true });
 
       return true;
     } catch (requestError) {
@@ -568,7 +581,7 @@ export default function PlansPage({ token, navigate }) {
         { status },
       );
 
-      await load();
+      await load({ silent: true });
       setStatusConfirmation(null);
 
       return true;
@@ -597,7 +610,7 @@ export default function PlansPage({ token, navigate }) {
         input,
       );
 
-      await load();
+      await load({ silent: true });
       setPublication(null);
 
       return true;
