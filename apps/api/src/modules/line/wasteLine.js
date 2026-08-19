@@ -716,24 +716,19 @@ async function queueCollectionStatusNotices(
 ) {
   if (
     plan.publicationStatus !== "PUBLISHED" ||
-    !["IN_PROGRESS", "COMPLETED"].includes(status)
+    status !== "IN_PROGRESS"
   ) {
     return 0;
   }
 
-  const statusLabel =
-    status === "IN_PROGRESS"
-      ? "กำลังปฏิบัติงาน"
-      : "ปฏิบัติงานเสร็จสิ้น";
+  const statusLabel = "กำลังปฏิบัติงาน";
 
   const message = [
     "สถานะการดำเนินการตามแผนปฏิบัติงานเก็บขยะ",
     statusLabel,
     plan.routeName,
     `เลขที่แผน ${plan.planNo}`,
-    status === "IN_PROGRESS"
-      ? "ตรวจสอบตำแหน่งรถได้จากเมนู “ตำแหน่งรถ”"
-      : "การเก็บขยะของรอบนี้เสร็จสิ้นแล้ว",
+    "ตรวจสอบตำแหน่งรถได้จากเมนู “ตำแหน่งรถ”",
   ].join("\n");
 
   const [users] =
@@ -1346,7 +1341,7 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
         ],
       );
 
-    const noticeResult = await withTransaction(
+    await withTransaction(
       async (db) => {
         await db.execute(
           `UPDATE waste_operation_plans
@@ -1363,51 +1358,11 @@ async function handleWasteAction(params, lineUserId, actors, audience) {
            WHERE id = ?`,
           [plan.vehicleId],
         );
-
-        let recipientCount = 0;
-        if (plan.publicationStatus === "PUBLISHED") {
-          const [recipientRows] = await db.execute(
-            `SELECT COUNT(*) AS recipientCount
-             FROM waste_service_users
-             WHERE route_id = ?
-               AND is_active = 1
-               AND line_user_id IS NOT NULL
-               AND line_user_id <> ''`,
-            [plan.routeId],
-          );
-          recipientCount = Number(
-            recipientRows[0]?.recipientCount || 0,
-          );
-        }
-
-        const queued =
-          await queueCollectionStatusNotices(
-            db,
-            plan,
-            "COMPLETED",
-          );
-
-        return {
-          queued,
-          recipientCount,
-        };
       },
     );
 
-    let noticeText;
-    if (plan.publicationStatus !== "PUBLISHED") {
-      noticeText =
-        "แผนนี้ไม่ได้อยู่ในสถานะประกาศ จึงไม่มีการส่งแจ้งเตือนสถานะเสร็จสิ้นให้ประชาชน";
-    } else if (noticeResult.recipientCount === 0) {
-      noticeText =
-        "ไม่พบผู้ใช้บริการที่เชื่อม LINE ในเส้นทางนี้ จึงไม่มีผู้รับแจ้งเตือนสถานะเสร็จสิ้น";
-    } else if (noticeResult.queued === 0) {
-      noticeText =
-        "สถานะเสร็จสิ้นของงานนี้ถูกจัดคิวแจ้งประชาชนไว้แล้ว ระบบจึงไม่สร้างการแจ้งเตือนซ้ำ";
-    } else {
-      noticeText =
-        `ระบบจัดคิวแจ้งสถานะเสร็จสิ้นให้ประชาชน ${noticeResult.queued.toLocaleString("th-TH")} รายแล้ว`;
-    }
+    const noticeText =
+      "ปิดแผนเรียบร้อยแล้ว ระบบแจ้งประชาชนตามการยืนยันเก็บขยะรายจุดเท่านั้น และไม่ส่งแจ้งเตือนซ้ำทั้งเส้นทางเมื่อปิดงาน";
 
     return operationResultCard(
       "บันทึกงานเสร็จสิ้นแล้ว",

@@ -450,14 +450,14 @@ export class MariaDbWastePlanAdminRepository {
   }
 
   async enqueueCollectionStatusNotices(database, { plan, status }) {
-    if (plan.publicationStatus !== "PUBLISHED" || !["IN_PROGRESS", "COMPLETED"].includes(status)) return 0;
-    const statusLabel = status === "IN_PROGRESS" ? "กำลังปฏิบัติงาน" : "ปฏิบัติงานเสร็จสิ้น";
+    if (plan.publicationStatus !== "PUBLISHED" || status !== "IN_PROGRESS") return 0;
+    const statusLabel = "กำลังปฏิบัติงาน";
     const message = [
       "สถานะการดำเนินการตามแผนปฏิบัติงานเก็บขยะ",
       statusLabel,
       plan.routeName,
       `เลขที่แผน ${plan.planNo}`,
-      status === "IN_PROGRESS" ? "ตรวจสอบตำแหน่งรถได้จากเมนู “ตำแหน่งรถ”" : "การเก็บขยะของรอบนี้เสร็จสิ้นแล้ว",
+      "ตรวจสอบตำแหน่งรถได้จากเมนู “ตำแหน่งรถ”",
     ].join("\n");
 
 

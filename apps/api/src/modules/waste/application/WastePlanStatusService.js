@@ -169,7 +169,7 @@ export class WastePlanStatusService {
 
         if (
           current.publicationStatus === "PUBLISHED" &&
-          ["IN_PROGRESS", "COMPLETED"].includes(input.status) &&
+          input.status === "IN_PROGRESS" &&
           typeof this.repository.enqueueCollectionStatusNotices === "function"
         ) {
           await this.repository.enqueueCollectionStatusNotices(db, {

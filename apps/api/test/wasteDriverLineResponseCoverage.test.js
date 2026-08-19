@@ -229,19 +229,15 @@ test("driver edge states have distinct replies and global DRIVER recovery uses F
 
   assert.match(
     line,
-    /ไม่ได้อยู่ในสถานะประกาศ จึงไม่มีการส่งแจ้งเตือน/,
+    /แจ้งประชาชนตามการยืนยันเก็บขยะรายจุดเท่านั้น/,
   );
-  assert.match(
-    line,
-    /ไม่พบผู้ใช้บริการที่เชื่อม LINE/,
-  );
-  assert.match(
-    line,
-    /ถูกจัดคิวแจ้งประชาชนไว้แล้ว/,
-  );
-  assert.match(
+  assert.doesNotMatch(
     line,
     /ระบบจัดคิวแจ้งสถานะเสร็จสิ้นให้ประชาชน/,
+  );
+  assert.doesNotMatch(
+    line,
+    /ไม่พบผู้ใช้บริการที่เชื่อม LINE ในเส้นทางนี้ จึงไม่มีผู้รับแจ้งเตือนสถานะเสร็จสิ้น/,
   );
 
   assert.match(bot, /buildWasteLineTextCard/);
