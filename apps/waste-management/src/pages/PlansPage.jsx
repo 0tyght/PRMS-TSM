@@ -461,10 +461,134 @@ function PlanForm({ api, resources, date, initial = null, onCancel, onSubmit, sa
   </form>;
 }
 
+function readinessDateParts(value) {
+  if (!value) {
+    return {
+      label: "ยังไม่กำหนด",
+      month: "-",
+      day: "-",
+      weekday: "-",
+    };
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      label: String(value),
+      month: "-",
+      day: "-",
+      weekday: "-",
+    };
+  }
+
+  const label = new Intl.DateTimeFormat(
+    "th-TH-u-ca-gregory",
+    {
+      dateStyle: "full",
+      timeZone: "Asia/Bangkok",
+    },
+  ).format(date);
+
+  const month = new Intl.DateTimeFormat(
+    "th-TH-u-ca-gregory",
+    {
+      month: "short",
+      timeZone: "Asia/Bangkok",
+    },
+  ).format(date);
+
+  const day = new Intl.DateTimeFormat(
+    "th-TH-u-ca-gregory",
+    {
+      day: "numeric",
+      timeZone: "Asia/Bangkok",
+    },
+  ).format(date);
+
+  const weekday = new Intl.DateTimeFormat(
+    "th-TH-u-ca-gregory",
+    {
+      weekday: "short",
+      timeZone: "Asia/Bangkok",
+    },
+  ).format(date);
+
+  return {
+    label,
+    month,
+    day,
+    weekday,
+  };
+}
+
+function readinessTimeRange(plan) {
+  const options = {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Bangkok",
+  };
+
+  const formatTime = (value) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return new Intl.DateTimeFormat("th-TH", options).format(date);
+  };
+
+  return `${formatTime(plan.scheduledStartAt)}-${formatTime(plan.scheduledEndAt)} น.`;
+}
+
+function readinessVehicleLabel(plan) {
+  return plan.vehicleCode
+    ? plan.registrationNo
+      ? `${plan.vehicleCode} • ${plan.registrationNo}`
+      : plan.vehicleCode
+    : plan.registrationNo || "ยังไม่กำหนด";
+}
+
+function readinessDriverLabel(plan) {
+  return plan.driverFullName || plan.driverName || "ยังไม่กำหนด";
+}
+
+function ReadinessDetailRow({ icon, label, value, hint = "" }) {
+  return <div className="waste-plan-readiness-details__row" style={{ display: "grid", gridTemplateColumns: "1.6rem minmax(7.5rem, 11rem) 1fr", gap: "0.75rem", alignItems: "start", padding: "0.75rem 0", borderBottom: "1px solid rgba(18, 52, 39, 0.08)" }}>
+    <span aria-hidden="true" style={{ fontSize: "1.1rem", lineHeight: 1.4 }}>{icon}</span>
+    <strong style={{ color: "#2c5040" }}>{label}</strong>
+    <div>
+      <div style={{ color: "#173a2f", fontWeight: 600 }}>{value}</div>
+      {hint ? <div style={{ color: "#6a7f76", fontSize: "0.92rem", marginTop: "0.2rem" }}>{hint}</div> : null}
+    </div>
+  </div>;
+}
+
 function ReadinessModal({ plan, saving, onCancel, onConfirm, error = "" }) {
   const readiness = wastePlanPolicy.readiness(plan);
+  const dateParts = readinessDateParts(plan.scheduledDate || plan.scheduledStartAt);
+  const stopCount = Number(plan.activeStopCount ?? plan.stopCount ?? 0);
 
-  return <div className="waste-confirmation"><strong>{plan.planNo} · {plan.routeName}</strong><p>ขั้นที่ 2 · ตรวจความพร้อม</p><ErrorNotice error={error} /><ul className="waste-plan-checks">{readiness.checks.map((check) => <li className={check.ready ? "is-ready" : "is-missing"} key={check.key}><b>{check.ready ? "✓" : "!"}</b><span>{check.label}</span></li>)}</ul><footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>กลับไปแก้ไข</button><button type="button" className="waste-button waste-button--primary" disabled={saving || !readiness.ready} onClick={onConfirm}>ยืนยันตรวจความพร้อม</button></footer></div>;
+  return <div className="waste-confirmation"><strong>{plan.planNo} · {plan.routeName}</strong><p>ขั้นที่ 2 · ตรวจความพร้อม</p><ErrorNotice error={error} />
+    <div className="waste-plan-readiness-details" style={{ display: "grid", gridTemplateColumns: "minmax(110px, 130px) 1fr", gap: "1rem", padding: "1rem", marginBottom: "1rem", border: "1px solid rgba(18, 52, 39, 0.12)", borderRadius: "1rem", background: "#f7faf8" }}>
+      <div aria-label="ปฏิทินวันปฏิบัติงาน" style={{ justifySelf: "start", width: "120px", borderRadius: "0.9rem", overflow: "hidden", border: "1px solid rgba(23, 107, 53, 0.18)", background: "#ffffff", boxShadow: "0 4px 16px rgba(18, 52, 39, 0.05)" }}>
+        <div style={{ background: "#176b35", color: "#ffffff", textAlign: "center", padding: "0.4rem 0.5rem", fontWeight: 700 }}>{dateParts.month}</div>
+        <div style={{ textAlign: "center", padding: "0.6rem 0.5rem 0.2rem", fontSize: "2rem", lineHeight: 1.1, color: "#173a2f", fontWeight: 800 }}>{dateParts.day}</div>
+        <div style={{ textAlign: "center", padding: "0 0.5rem 0.7rem", color: "#587065", fontWeight: 600 }}>{dateParts.weekday}</div>
+      </div>
+      <div>
+        <div style={{ color: "#173a2f", fontWeight: 700, marginBottom: "0.25rem" }}>รายละเอียดแผนก่อนยืนยันตรวจความพร้อม</div>
+        <div style={{ color: "#587065", marginBottom: "0.6rem", fontSize: "0.95rem" }}>ตรวจข้อมูลสำคัญให้ครบถ้วนก่อนเข้าสู่ขั้นประกาศแผนและส่ง LINE แจ้งประชาชน</div>
+        <ReadinessDetailRow icon="📅" label="วันที่ปฏิบัติงาน" value={dateParts.label} hint="แสดงแบบปฏิทินเพื่อให้ตรวจวันได้ชัดเจน" />
+        <ReadinessDetailRow icon="🕒" label="ช่วงเวลา" value={readinessTimeRange(plan)} hint="เวลาตามแผนที่จะประกาศให้ประชาชนทราบ" />
+        <ReadinessDetailRow icon="🗺️" label="เส้นทางเก็บขยะ" value={plan.routeName || "ยังไม่กำหนด"} hint={plan.routeCode || ""} />
+        <ReadinessDetailRow icon="♻️" label="จุดเก็บขยะ" value={stopCount ? `${formatNumber(stopCount)} จุด` : "ยังไม่กำหนด"} hint="จำนวนจุดในเส้นทางที่จะปฏิบัติงาน" />
+        <ReadinessDetailRow icon="🚛" label="รถเก็บขยะ" value={readinessVehicleLabel(plan)} />
+        <ReadinessDetailRow icon="👷" label="พนักงานประจำรถขยะ" value={readinessDriverLabel(plan)} />
+        {plan.note ? <ReadinessDetailRow icon="📝" label="หมายเหตุภายใน" value={plan.note} /> : null}
+      </div>
+    </div>
+    <ul className="waste-plan-checks">{readiness.checks.map((check) => <li className={check.ready ? "is-ready" : "is-missing"} key={check.key}><b>{check.ready ? "✓" : "!"}</b><span>{check.label}</span></li>)}</ul>
+    <footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>กลับไปแก้ไข</button><button type="button" className="waste-button waste-button--primary" disabled={saving || !readiness.ready} onClick={onConfirm}>ยืนยันตรวจความพร้อม</button></footer>
+  </div>;
 }
 
 function PublicationModal({ plan, mode, saving, onCancel, onConfirm, error = "" }) {

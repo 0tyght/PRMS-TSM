@@ -54,3 +54,58 @@ test("readiness confirmation and publication are separate workflow steps", () =>
   assert.match(plans, /ยืนยันประกาศแผน \+ ส่ง LINE/);
   assert.doesNotMatch(plans, />ตรวจและประกาศ<\/button>/);
 });
+
+
+test("readiness modal shows full operational details before confirmation", () => {
+  const plans = source("pages/PlansPage.jsx");
+
+  assert.match(
+    plans,
+    /waste-plan-readiness-details/,
+  );
+
+  assert.match(
+    plans,
+    /รายละเอียดแผนก่อนยืนยันตรวจความพร้อม/,
+  );
+
+  assert.match(
+    plans,
+    /ปฏิทินวันปฏิบัติงาน/,
+  );
+
+  assert.match(
+    plans,
+    /วันที่ปฏิบัติงาน/,
+  );
+
+  assert.match(
+    plans,
+    /ช่วงเวลา/,
+  );
+
+  assert.match(
+    plans,
+    /เส้นทางเก็บขยะ/,
+  );
+
+  assert.match(
+    plans,
+    /จุดเก็บขยะ/,
+  );
+
+  assert.match(
+    plans,
+    /รถเก็บขยะ/,
+  );
+
+  assert.match(
+    plans,
+    /พนักงานประจำรถขยะ/,
+  );
+
+  assert.match(
+    plans,
+    /ยืนยันตรวจความพร้อม/,
+  );
+});
