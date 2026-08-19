@@ -2,6 +2,40 @@ import crypto from "node:crypto";
 import { DomainRuleViolation } from "../../../domain/common/errors/DomainRuleViolation.js";
 import { WasteOperationPlan } from "../../../domain/waste/entities/WasteOperationPlan.js";
 
+function comparableDateTime(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : date.getTime();
+}
+
+function comparableDate(value) {
+  return value === undefined || value === null
+    ? null
+    : String(value).slice(0, 10);
+}
+
+function readinessInputsChanged(current, input) {
+  if (
+    input.scheduledDate !== undefined &&
+    comparableDate(input.scheduledDate) !== comparableDate(current.scheduledDate)
+  ) return true;
+
+  for (const field of ["routeId", "vehicleId", "driverId"]) {
+    if (input[field] !== undefined && input[field] !== current[field]) return true;
+  }
+
+  for (const field of ["scheduledStartAt", "scheduledEndAt"]) {
+    if (
+      input[field] !== undefined &&
+      comparableDateTime(input[field]) !== comparableDateTime(current[field])
+    ) return true;
+  }
+
+  return false;
+}
+
 export class WastePlanService {
   constructor({
     repository,
@@ -218,6 +252,13 @@ export class WastePlanService {
           db,
           id,
           input,
+          {
+            invalidateReadiness:
+              readinessInputsChanged(
+                current,
+                input,
+              ),
+          },
         );
       },
     );
@@ -238,6 +279,79 @@ export class WastePlanService {
     return {
       id,
       ...input,
+    };
+  }
+
+  async confirmReadiness(
+    id,
+    actor,
+  ) {
+    let current;
+
+    await this.repository.transaction(
+      async (db) => {
+        current =
+          await this.repository
+            .findEditableContext(
+              db,
+              id,
+              { lock: true },
+            );
+
+        if (!current) {
+          throw new DomainRuleViolation(
+            "WASTE_PLAN_NOT_FOUND",
+            "ไม่พบแผนปฏิบัติงานเก็บขยะ",
+            { status: 404 },
+          );
+        }
+
+        new WasteOperationPlan({
+          id,
+          status: current.status,
+          publicationStatus: current.publicationStatus,
+          publicationVersion: current.publicationVersion,
+          vehicleId: current.vehicleId,
+        }).assertEditable();
+
+        const resourceService =
+          this.resourceServiceFactory(db);
+
+        await resourceService.assertAssignment(
+          {
+            scheduledDate: current.scheduledDate,
+            routeId: current.routeId,
+            vehicleId: current.vehicleId,
+            driverId: current.driverId,
+            scheduledStartAt: current.scheduledStartAt,
+            scheduledEndAt: current.scheduledEndAt,
+          },
+          { excludePlanId: id },
+        );
+
+        await this.repository
+          .markReadinessConfirmed(
+            db,
+            {
+              id,
+              officerId: actor.userId,
+            },
+          );
+      },
+    );
+
+    await this.auditLog.record({
+      userId: actor.userId,
+      action: "CONFIRM_WASTE_PLAN_READINESS",
+      entityType: "WASTE_PLAN",
+      entityId: id,
+      nextValue: { readinessConfirmed: true },
+      ipAddress: actor.ipAddress,
+    });
+
+    return {
+      id,
+      readinessConfirmed: true,
     };
   }
 }

@@ -20,6 +20,7 @@ export class MariaDbWastePlanRepository {
               END AS scheduleWindowOpen,
               p.status, p.publication_status AS publicationStatus,
               p.publication_version AS publicationVersion, p.public_note AS publicNote,
+              p.readiness_confirmed_at AS readinessConfirmedAt,
               p.route_id AS routeId, r.route_code AS routeCode, r.route_name AS routeName,
               COUNT(CASE WHEN s.is_active = 1 THEN 1 END) AS activeStopCount
        FROM waste_operation_plans p
@@ -28,7 +29,7 @@ export class MariaDbWastePlanRepository {
        WHERE p.id = ?
        GROUP BY p.id, p.plan_no, p.scheduled_date, p.scheduled_start_at, p.scheduled_end_at,
                 p.status, p.publication_status, p.publication_version, p.public_note,
-                p.route_id, r.route_code, r.route_name${lock ? " FOR UPDATE" : ""}`,
+                p.readiness_confirmed_at, p.route_id, r.route_code, r.route_name${lock ? " FOR UPDATE" : ""}`,
       [planId],
     );
     return rows[0]

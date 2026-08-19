@@ -36,9 +36,10 @@ function planProgressStep(plan) {
     return 2;
   }
 
-  // A draft only completes "จัดทำแผน". "ตรวจความพร้อม" is the next
-  // workflow action and must not be marked complete merely because all
-  // required fields happen to be present.
+  if (plan.readinessConfirmedAt) {
+    return 1;
+  }
+
   return 0;
 }
 
@@ -460,12 +461,17 @@ function PlanForm({ api, resources, date, initial = null, onCancel, onSubmit, sa
   </form>;
 }
 
-function PublicationModal({ plan, mode, saving, onCancel, onConfirm, error = "" }) {
+function ReadinessModal({ plan, saving, onCancel, onConfirm, error = "" }) {
   const readiness = wastePlanPolicy.readiness(plan);
+
+  return <div className="waste-confirmation"><strong>{plan.planNo} · {plan.routeName}</strong><p>ขั้นที่ 2 · ตรวจความพร้อม</p><ErrorNotice error={error} /><ul className="waste-plan-checks">{readiness.checks.map((check) => <li className={check.ready ? "is-ready" : "is-missing"} key={check.key}><b>{check.ready ? "✓" : "!"}</b><span>{check.label}</span></li>)}</ul><footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>กลับไปแก้ไข</button><button type="button" className="waste-button waste-button--primary" disabled={saving || !readiness.ready} onClick={onConfirm}>ยืนยันตรวจความพร้อม</button></footer></div>;
+}
+
+function PublicationModal({ plan, mode, saving, onCancel, onConfirm, error = "" }) {
   const [note, setNote] = useState(plan.publicNote || "");
   const [reason, setReason] = useState("");
   if (mode === "withdraw") return <div className="waste-confirmation"><strong>{plan.planNo} · {plan.routeName}</strong><p>ระบบจะถอนตารางกำหนดการเก็บขยะประจำพื้นที่จาก LINE และส่งเหตุผลให้ผู้ใช้บริการที่ผูก LINE ในเส้นทางนี้</p><ErrorNotice error={error} /><label className="waste-dialog-field">เหตุผลการถอนประกาศ<textarea rows="3" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="เช่น รถขัดข้อง ต้องจัดรอบใหม่" /></label><footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>กลับไปตรวจสอบ</button><button type="button" className="waste-button waste-button--danger" disabled={saving || reason.trim().length < 4} onClick={() => onConfirm({ reason })}>ถอนประกาศและแจ้ง LINE</button></footer></div>;
-  return <div className="waste-confirmation"><strong>{plan.planNo} · {plan.routeName}</strong><p>ขั้นที่ 2 · ตรวจความพร้อมก่อนประกาศ</p><ErrorNotice error={error} /><ul className="waste-plan-checks">{readiness.checks.map((check) => <li className={check.ready ? "is-ready" : "is-missing"} key={check.key}><b>{check.ready ? "✓" : "!"}</b><span>{check.label}</span></li>)}</ul><div className="waste-notice-preview">
+  return <div className="waste-confirmation"><strong>{plan.planNo} · {plan.routeName}</strong><p>ขั้นที่ 3 · ประกาศตารางกำหนดการเก็บขยะประจำพื้นที่</p><ErrorNotice error={error} /><div className="waste-notice-preview">
   <div>
     <b>จุดเก็บขยะในเส้นทางนี้</b>
     <strong>{formatNumber(plan.stopTotal)} จุด</strong>
@@ -476,11 +482,11 @@ function PublicationModal({ plan, mode, saving, onCancel, onConfirm, error = "" 
   </div>
   <small>
     {Number(plan.lineRecipientCount || 0) > 0
-      ? "เมื่อยืนยันและประกาศแผน ระบบจะส่งการแจ้งเตือนให้ผู้รับ LINE ในเส้นทางนี้ทันที"
-      : "ยังไม่มีผู้ใช้บริการเชื่อม LINE ในเส้นทางนี้ แต่สามารถยืนยันและประกาศแผนได้ตามปกติ โดยจะไม่มีข้อความ LINE ที่ต้องส่ง"}
+      ? "เมื่อยืนยันประกาศแผน ระบบจะส่งการแจ้งเตือนให้ผู้รับ LINE ในเส้นทางนี้ทันที"
+      : "ยังไม่มีผู้ใช้บริการเชื่อม LINE ในเส้นทางนี้ แต่สามารถประกาศแผนได้ตามปกติ โดยจะไม่มีข้อความ LINE ที่ต้องส่ง"}
   </small>
-  <small>หลังยืนยันและประกาศแผน งานจึงจะแสดงใน LINE ของพนักงานประจำรถขยะที่ได้รับมอบหมาย</small>
-</div><label className="waste-dialog-field">ข้อความเพิ่มเติมถึงประชาชน<textarea rows="3" value={note} onChange={(event) => setNote(event.target.value)} placeholder="ไม่บังคับ เช่น โปรดนำขยะมาวางก่อนเวลา 03:00 น." /></label><footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>กลับไปแก้ไข</button><button type="button" className="waste-button waste-button--primary" disabled={saving || !readiness.ready} onClick={() => onConfirm({ publicNote: note || null })}>ยืนยันและประกาศแผน + ส่ง LINE</button></footer></div>;
+  <small>หลังประกาศแผน งานจึงจะแสดงใน LINE ของพนักงานประจำรถขยะที่ได้รับมอบหมาย</small>
+</div><label className="waste-dialog-field">ข้อความเพิ่มเติมถึงประชาชน<textarea rows="3" value={note} onChange={(event) => setNote(event.target.value)} placeholder="ไม่บังคับ เช่น โปรดนำขยะมาวางก่อนเวลา 03:00 น." /></label><footer><button type="button" className="waste-button waste-button--secondary" onClick={onCancel}>กลับ</button><button type="button" className="waste-button waste-button--primary" disabled={saving || !plan.readinessConfirmedAt} onClick={() => onConfirm({ publicNote: note || null })}>ยืนยันประกาศแผน + ส่ง LINE</button></footer></div>;
 }
 
 export default function PlansPage({ token, navigate }) {
@@ -501,6 +507,7 @@ export default function PlansPage({ token, navigate }) {
   const [editing, setEditing] = useState(null);
   const [statusConfirmation, setStatusConfirmation] = useState(null);
   const [publication, setPublication] = useState(null);
+  const [readinessPlan, setReadinessPlan] = useState(null);
   const [saving, setSaving] = useState(false);
   const [dialogError, setDialogError] = useState("");
 
@@ -588,6 +595,31 @@ export default function PlansPage({ token, navigate }) {
 
       await load({ silent: true });
       setStatusConfirmation(null);
+
+      return true;
+    } catch (requestError) {
+      setDialogError(
+        requestError.message,
+      );
+
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmReadiness(plan) {
+    setSaving(true);
+    setDialogError("");
+
+    try {
+      await api.post(
+        `/api/waste/plans/${plan.id}/readiness`,
+        {},
+      );
+
+      await load({ silent: true });
+      setReadinessPlan(null);
 
       return true;
     } catch (requestError) {
@@ -890,14 +922,15 @@ export default function PlansPage({ token, navigate }) {
     </section>
 
     <ErrorNotice error={error} onRetry={load} />
-    <section className="waste-panel">{loading ? <LoadingState /> : !plans.length ? <EmptyState title="ยังไม่มีแผนปฏิบัติงานเก็บขยะ" detail="สร้างแผนร่างจากเส้นทางจริง แล้วตรวจและประกาศตารางกำหนดการเก็บขยะประจำพื้นที่ก่อนเริ่มงาน" actionLabel="สร้างแผนร่าง" onAction={() => { setDialogError(""); setCreateOpen(true); }} /> : !filteredPlans.length ? <EmptyState title="ไม่พบแผนตามตัวกรอง" detail="ลองเปลี่ยนเงื่อนไขการค้นหา หรือล้างตัวกรองเพื่อดูแผนทั้งหมด" actionLabel="ล้างตัวกรอง" onAction={clearFilters} /> : <div className="waste-plan-list">{filteredPlans.map((plan) => <article key={plan.id}>
+    <section className="waste-panel">{loading ? <LoadingState /> : !plans.length ? <EmptyState title="ยังไม่มีแผนปฏิบัติงานเก็บขยะ" detail="สร้างแผนร่างจากเส้นทางจริง ตรวจความพร้อม แล้วจึงประกาศตารางกำหนดการเก็บขยะประจำพื้นที่ก่อนเริ่มงาน" actionLabel="สร้างแผนร่าง" onAction={() => { setDialogError(""); setCreateOpen(true); }} /> : !filteredPlans.length ? <EmptyState title="ไม่พบแผนตามตัวกรอง" detail="ลองเปลี่ยนเงื่อนไขการค้นหา หรือล้างตัวกรองเพื่อดูแผนทั้งหมด" actionLabel="ล้างตัวกรอง" onAction={clearFilters} /> : <div className="waste-plan-list">{filteredPlans.map((plan) => <article key={plan.id}>
       <div className="waste-plan-list__date"><strong>{formatDate(plan.scheduledDate, { day: "numeric" })}</strong><span>{formatDate(plan.scheduledDate, { month: "short" })}</span></div>
       <div className="waste-plan-list__main"><header><div><small>{plan.planNo}</small><h2>{plan.routeName}</h2></div><div className="waste-plan-statuses"><span className={`waste-publication waste-publication--${String(plan.publicationStatus || "DRAFT").toLowerCase()}`}>{wastePlanPolicy.publicationLabel(plan.publicationStatus)}</span><StatusBadge value={plan.status} /></div></header><dl><div><dt>รถเก็บขยะ</dt><dd>{plan.vehicleCode}</dd></div><div><dt>พนักงานประจำรถขยะ</dt><dd>{plan.driverName}</dd></div><div><dt>จุดเก็บขยะ</dt><dd>{formatNumber(plan.stopTotal)} จุด</dd></div><div><dt>เวลา</dt><dd>{plan.scheduledStartAt ? `${formatDate(plan.scheduledStartAt, { hour: "2-digit", minute: "2-digit" })}–${formatDate(plan.scheduledEndAt, { hour: "2-digit", minute: "2-digit" })}` : "ยังไม่ครบ"}</dd></div></dl><ProgressTracker steps={PLAN_PROGRESS_STEPS} currentStep={planProgressStep(plan)} currentStepCompleted ariaLabel={`ความคืบหน้า ${plan.planNo}`} />{plan.publicationStatus === "PUBLISHED" ? <div className="waste-line-delivery"><span>LINE เป้าหมาย {formatNumber(plan.lineRecipientCount)}</span><span>ส่งแล้ว {formatNumber(plan.lineSentCount)}</span><span>รอส่ง {formatNumber(plan.linePendingCount)}</span>{plan.lineFailedCount ? <span className="is-failed">ไม่สำเร็จ {formatNumber(plan.lineFailedCount)}</span> : null}</div> : null}</div>
-      <div className="waste-plan-list__actions">{plan.status === "SCHEDULED" ? <>{plan.publicationStatus !== "PUBLISHED" ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => { setDialogError(""); setEditing(plan); }}>แก้ไขแผนร่าง</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setPublication({ plan, mode: "publish" }); }}>{wastePlanPolicy.readiness(plan).ready ? "ตรวจและประกาศ" : "ตรวจความพร้อม"}</button></> : <><button type="button" className="waste-button waste-button--secondary" onClick={() => { setDialogError(""); setPublication({ plan, mode: "withdraw" }); }}>ถอนประกาศ</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setStatusConfirmation({ plan, status: "IN_PROGRESS" }); }}>เริ่มปฏิบัติงาน</button></>}<button type="button" className="waste-button waste-button--quiet" disabled={saving} onClick={() => { setDialogError(""); setStatusConfirmation({ plan, status: "CANCELLED" }); }}>ยกเลิก</button></> : null}{["IN_PROGRESS", "INTERRUPTED"].includes(plan.status) ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate(`tracking?plan=${plan.id}`)}>ติดตาม</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setStatusConfirmation({ plan, status: "COMPLETED" }); }}>บันทึกเสร็จสิ้น</button></> : null}</div>
+      <div className="waste-plan-list__actions">{plan.status === "SCHEDULED" ? <>{plan.publicationStatus !== "PUBLISHED" ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => { setDialogError(""); setEditing(plan); }}>แก้ไขแผนร่าง</button>{plan.readinessConfirmedAt ? <button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setPublication({ plan, mode: "publish" }); }}>ประกาศแผน</button> : <button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setReadinessPlan(plan); }}>ตรวจความพร้อม</button>}</> : <><button type="button" className="waste-button waste-button--secondary" onClick={() => { setDialogError(""); setPublication({ plan, mode: "withdraw" }); }}>ถอนประกาศ</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setStatusConfirmation({ plan, status: "IN_PROGRESS" }); }}>เริ่มปฏิบัติงาน</button></>}<button type="button" className="waste-button waste-button--quiet" disabled={saving} onClick={() => { setDialogError(""); setStatusConfirmation({ plan, status: "CANCELLED" }); }}>ยกเลิก</button></> : null}{["IN_PROGRESS", "INTERRUPTED"].includes(plan.status) ? <><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate(`tracking?plan=${plan.id}`)}>ติดตาม</button><button type="button" className="waste-button waste-button--primary" disabled={saving} onClick={() => { setDialogError(""); setStatusConfirmation({ plan, status: "COMPLETED" }); }}>บันทึกเสร็จสิ้น</button></> : null}</div>
     </article>)}</div>}</section>
     {createOpen ? <Modal title="สร้างแผนปฏิบัติงานเก็บขยะ" onClose={() => setCreateOpen(false)}><PlanForm api={api} resources={resources} date={toDateInput()} onCancel={() => setCreateOpen(false)} onSubmit={(input) => savePlan(input)} saving={saving} error={dialogError} /></Modal> : null}
     {editing ? <Modal title="แก้ไขแผนร่าง" onClose={() => setEditing(null)}><PlanForm api={api} resources={resources} date={toDateInput()} initial={editing} onCancel={() => setEditing(null)} onSubmit={(input) => savePlan(input, editing)} saving={saving} error={dialogError} /></Modal> : null}
-    {publication ? <Modal title={publication.mode === "publish" ? "ตรวจและประกาศตารางกำหนดการเก็บขยะประจำพื้นที่" : "ถอนประกาศตารางกำหนดการเก็บขยะประจำพื้นที่"} onClose={() => setPublication(null)}><PublicationModal {...publication} saving={saving} error={dialogError} onCancel={() => setPublication(null)} onConfirm={(input) => updatePublication(publication.plan, publication.mode, input)} /></Modal> : null}
+    {readinessPlan ? <Modal title="ตรวจความพร้อมแผนปฏิบัติงานเก็บขยะ" onClose={() => setReadinessPlan(null)}><ReadinessModal plan={readinessPlan} saving={saving} error={dialogError} onCancel={() => { const plan = readinessPlan; setReadinessPlan(null); setEditing(plan); }} onConfirm={() => confirmReadiness(readinessPlan)} /></Modal> : null}
+    {publication ? <Modal title={publication.mode === "publish" ? "ประกาศตารางกำหนดการเก็บขยะประจำพื้นที่" : "ถอนประกาศตารางกำหนดการเก็บขยะประจำพื้นที่"} onClose={() => setPublication(null)}><PublicationModal {...publication} saving={saving} error={dialogError} onCancel={() => setPublication(null)} onConfirm={(input) => updatePublication(publication.plan, publication.mode, input)} /></Modal> : null}
     {statusConfirmation ? <Modal title={STATUS_CONFIRMATIONS[statusConfirmation.status].title} onClose={() => setStatusConfirmation(null)}><div className="waste-confirmation"><ErrorNotice error={dialogError} /><strong>{statusConfirmation.plan.planNo} · {statusConfirmation.plan.routeName}</strong><p>{STATUS_CONFIRMATIONS[statusConfirmation.status].detail}</p><footer><button type="button" className="waste-button waste-button--secondary" onClick={() => setStatusConfirmation(null)}>กลับไปตรวจสอบ</button><button type="button" className={statusConfirmation.status === "CANCELLED" ? "waste-button waste-button--danger" : "waste-button waste-button--primary"} disabled={saving} onClick={() => { const { plan, status } = statusConfirmation; void updateStatus(plan.id, status); }}>{STATUS_CONFIRMATIONS[statusConfirmation.status].action}</button></footer></div></Modal> : null}
   </>;
 }

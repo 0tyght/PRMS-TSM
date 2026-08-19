@@ -34,6 +34,15 @@ export class PublishWasteOperationPlanUseCase {
     return this.repository.transaction(async (db) => {
       const record = await this.repository.findPublicationContext(db, planId, { lock: true });
       if (!record) return null;
+
+      if (!record.readinessConfirmedAt) {
+        throw new DomainRuleViolation(
+          "WASTE_PLAN_READINESS_NOT_CONFIRMED",
+          "กรุณายืนยันการตรวจความพร้อมของแผนก่อนประกาศตารางกำหนดการเก็บขยะประจำพื้นที่",
+          { status: 422 },
+        );
+      }
+
       const hasSchedule = Boolean(
         record.scheduledStartAt &&
         record.scheduledEndAt

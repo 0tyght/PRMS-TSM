@@ -9,6 +9,7 @@ function record(overrides = {}) {
     id: "plan-1", planNo: "WST-20260814-001", scheduledDate: "2026-08-14",
     scheduledStartAt: "2026-08-13T20:00:00.000Z", scheduledEndAt: "2026-08-14T04:30:00.000Z",
     status: "SCHEDULED", publicationStatus: "DRAFT", publicationVersion: 0,
+    readinessConfirmedAt: "2026-08-13T19:55:00.000Z",
     routeId: "route-1", routeCode: "THP-OFFICIAL-02", routeName: "รถคันที่ 2 – บ้านสวน",
     activeStopCount: 4, ...overrides,
   };
@@ -133,6 +134,28 @@ test("rejects a publication window closed by the database clock with a visible d
     (error) =>
       error?.name === "DomainRuleViolation" &&
       error?.code === "WASTE_PLAN_PUBLICATION_WINDOW_ENDED" &&
+      error?.status === 422,
+  );
+});
+
+test("rejects publication when readiness has not been confirmed", async () => {
+  const repository = {
+    transaction: (work) => work({}),
+    findPublicationContext: async () => record({ readinessConfirmedAt: null }),
+    markPublished: async () => { throw new Error("must not publish"); },
+    enqueueRouteNotices: async () => 0,
+  };
+  const useCase = new PublishWasteOperationPlanUseCase({
+    repository,
+    noticeFactory: new WastePlanNoticeFactory(),
+    now: () => new Date("2026-08-14T00:00:00.000Z"),
+  });
+
+  await assert.rejects(
+    () => useCase.execute({ planId: "plan-1", officerId: "officer-1", publicNote: null }),
+    (error) =>
+      error?.name === "DomainRuleViolation" &&
+      error?.code === "WASTE_PLAN_READINESS_NOT_CONFIRMED" &&
       error?.status === 422,
   );
 });

@@ -953,6 +953,31 @@ router.patch(
   },
 );
 
+router.post(
+  "/plans/:id/readiness",
+  requireRole(
+    "ADMIN",
+    "OFFICER",
+  ),
+  async (req, res, next) => {
+    try {
+      const data =
+        await wastePlanService
+          .confirmReadiness(
+            req.params.id,
+            {
+              userId: req.user.sub,
+              ipAddress: req.ip,
+            },
+          );
+
+      return res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 router.patch(
   "/plans/:id/status",
   requireRole(

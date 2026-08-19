@@ -88,6 +88,8 @@ export class MariaDbWastePlanAdminRepository {
            p.publication_status AS publicationStatus,
            p.publication_version AS publicationVersion,
            p.public_note AS publicNote,
+           p.readiness_confirmed_at AS readinessConfirmedAt,
+           p.readiness_confirmed_by AS readinessConfirmedBy,
            p.published_at AS publishedAt,
            p.withdrawn_at AS withdrawnAt,
            p.scheduled_start_at AS scheduledStartAt,
@@ -200,6 +202,8 @@ export class MariaDbWastePlanAdminRepository {
            p.status,
            p.publication_status AS publicationStatus,
            p.publication_version AS publicationVersion,
+           p.readiness_confirmed_at AS readinessConfirmedAt,
+           p.readiness_confirmed_by AS readinessConfirmedBy,
            p.plan_no AS planNo,
            DATE_FORMAT(
              p.scheduled_date,
@@ -278,6 +282,9 @@ export class MariaDbWastePlanAdminRepository {
     database,
     id,
     changes,
+    {
+      invalidateReadiness = false,
+    } = {},
   ) {
     const entries =
       Object.entries(
@@ -314,6 +321,13 @@ export class MariaDbWastePlanAdminRepository {
         },
       );
 
+    if (invalidateReadiness) {
+      sets.push(
+        "readiness_confirmed_at = NULL",
+        "readiness_confirmed_by = NULL",
+      );
+    }
+
     values.push(id);
 
     await database.execute(
@@ -321,6 +335,18 @@ export class MariaDbWastePlanAdminRepository {
        SET ${sets.join(", ")}
        WHERE id = ?`,
       values,
+    );
+  }
+
+  async markReadinessConfirmed(
+    database,
+    { id, officerId },
+  ) {
+    await database.execute(
+      `UPDATE waste_operation_plans
+       SET readiness_confirmed_at = NOW(), readiness_confirmed_by = ?
+       WHERE id = ?`,
+      [officerId, id],
     );
   }
 

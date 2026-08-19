@@ -35,7 +35,7 @@ test("modal focus setup is not restarted by every parent render", () => {
   assert.doesNotMatch(modalSource, /\}, \[onClose\]\);/);
 });
 
-test("a newly created draft has completed only the plan-creation step", () => {
+test("readiness confirmation and publication are separate workflow steps", () => {
   const plans = source("pages/PlansPage.jsx");
   const progress = plans.match(
     /function planProgressStep\(plan\) \{[\s\S]*?\n\}/,
@@ -43,9 +43,14 @@ test("a newly created draft has completed only the plan-creation step", () => {
 
   assert.ok(progress);
   assert.doesNotMatch(progress, /wastePlanPolicy\.readiness/);
+  assert.match(progress, /readinessConfirmedAt[\s\S]*?return 1/);
   assert.match(
     progress,
     /publicationStatus === "PUBLISHED"[\s\S]*?return 2/,
   );
-  assert.match(progress, /return 0;/);
+  assert.match(plans, /\/api\/waste\/plans\/\$\{plan\.id\}\/readiness/);
+  assert.match(plans, /ยืนยันตรวจความพร้อม/);
+  assert.match(plans, />ประกาศแผน<\/button>/);
+  assert.match(plans, /ยืนยันประกาศแผน \+ ส่ง LINE/);
+  assert.doesNotMatch(plans, />ตรวจและประกาศ<\/button>/);
 });
