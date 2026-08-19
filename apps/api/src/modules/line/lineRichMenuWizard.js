@@ -1521,6 +1521,34 @@ async function showWizardMenuInternal(lineUserId, definition, options = {}) {
   return true;
 }
 
+export async function clearWizardRichMenuForLineUser(lineUserId) {
+  const normalizedLineUserId = String(lineUserId || "").trim();
+
+  if (!/^U[0-9a-f]{32}$/i.test(normalizedLineUserId)) {
+    return false;
+  }
+
+  await ensureWizardSchema();
+
+  try {
+    await lineRequest(
+      "DELETE",
+      `/v2/bot/user/${encodeURIComponent(normalizedLineUserId)}/richmenu`,
+    );
+  } catch (error) {
+    if (Number(error?.status) !== 404) {
+      throw error;
+    }
+  }
+
+  await pool.execute(
+    "DELETE FROM line_runtime_rich_menus WHERE line_user_id = ?",
+    [normalizedLineUserId],
+  );
+
+  return true;
+}
+
 export async function showWizardMenu(lineUserId, definition, options = {}) {
   if (!/^U[0-9a-f]{32}$/i.test(String(lineUserId || ""))) return false;
   return enqueueUser(lineUserId, () => showWizardMenuInternal(lineUserId, definition, options));

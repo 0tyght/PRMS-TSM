@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { lineChannelSettings } from "../../line/lineChannelSettings.js";
+import { clearWizardRichMenuForLineUser } from "../../line/lineRichMenuWizard.js";
 
 
 const THEMES = Object.freeze({
@@ -82,6 +83,31 @@ export class WasteLineNotificationQueue {
       await this.markFailed(id, `LINE_${channelKind}_NOT_CONFIGURED`, Number(row.attempts || 1));
       return { status: "FAILED" };
     }
+
+    if (
+      channelKind === "CITIZEN" &&
+      !this.accessTokenOverride
+    ) {
+      await clearWizardRichMenuForLineUser(
+        row.lineUserId,
+      ).catch((error) => {
+        console.error(
+          "[waste-line-notification] clear PET rich menu failed",
+          {
+            reason: "WASTE_PUSH",
+            lineUserId:
+              String(row.lineUserId || "")
+                .slice(0, 8),
+            error:
+              String(
+                error?.message ||
+                error,
+              ),
+          },
+        );
+      });
+    }
+
     try {
       const response = await this.fetchImplementation("https://api.line.me/v2/bot/message/push", {
         method: "POST",

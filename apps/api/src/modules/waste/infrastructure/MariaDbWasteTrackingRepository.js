@@ -182,14 +182,41 @@ export class MariaDbWasteTrackingRepository {
              r.route_geojson AS CHAR
            ) AS routeGeojson,
            v.vehicle_code AS vehicleCode,
-           v.last_latitude AS latitude,
-           v.last_longitude AS longitude,
-           v.last_gps_at AS lastGpsAt
+           d.full_name AS driverName,
+           p.scheduled_start_at AS scheduledStartAt,
+           p.scheduled_end_at AS scheduledEndAt,
+
+           (
+             SELECT latest.latitude
+             FROM waste_location_logs latest
+             WHERE latest.plan_id = p.id
+             ORDER BY latest.recorded_at DESC
+             LIMIT 1
+           ) AS latitude,
+
+           (
+             SELECT latest.longitude
+             FROM waste_location_logs latest
+             WHERE latest.plan_id = p.id
+             ORDER BY latest.recorded_at DESC
+             LIMIT 1
+           ) AS longitude,
+
+           (
+             SELECT latest.recorded_at
+             FROM waste_location_logs latest
+             WHERE latest.plan_id = p.id
+             ORDER BY latest.recorded_at DESC
+             LIMIT 1
+           ) AS lastGpsAt
+
          FROM waste_operation_plans p
          INNER JOIN waste_routes r
            ON r.id = p.route_id
          INNER JOIN waste_vehicles v
            ON v.id = p.vehicle_id
+         INNER JOIN waste_drivers d
+           ON d.id = p.driver_id
          WHERE p.id = ?`,
         [planId],
       ),

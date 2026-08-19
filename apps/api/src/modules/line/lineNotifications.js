@@ -14,6 +14,29 @@ const LINE_TEXT_LIMIT = 5_000;
 const MESSAGE_SAFETY_LIMIT = 4_800;
 const REMINDER_LOCK_NAME = "prms-tsm:vaccine-household-reminders:v13";
 
+async function hasActivePetRichMenu(
+  lineUserId,
+) {
+  const normalizedLineUserId =
+    String(lineUserId || "").trim();
+
+  if (!normalizedLineUserId) {
+    return false;
+  }
+
+  const [rows] =
+    await pool.execute(
+      `SELECT 1
+       FROM line_runtime_rich_menus
+       WHERE line_user_id = ?
+         AND expires_at > NOW()
+       LIMIT 1`,
+      [normalizedLineUserId],
+    );
+
+  return Boolean(rows[0]);
+}
+
 export function shouldSendRealtimeStatusNotification(status) {
   return ACTIONABLE_STATUS_CODES.has(String(status || "").trim().toUpperCase());
 }
@@ -217,12 +240,25 @@ export async function deliverLineNotification(id) {
          WHERE id = ?`,
         [response.status, id],
       );
-      await syncRichMenuForLineUser(notification.lineUserId).catch((error) => {
-        console.error(
-          "[line-notification] rich menu sync failed",
-          String(error?.message || error),
-        );
-      });
+      if (
+        await hasActivePetRichMenu(
+          notification.lineUserId,
+        )
+      ) {
+        // PET_MENU_ACTIVE_ONLY:
+        // refresh PET Rich Menu only while the user is actually inside PET.
+        await syncRichMenuForLineUser(
+          notification.lineUserId,
+        ).catch((error) => {
+          console.error(
+            "[line-notification] rich menu sync failed",
+            String(
+              error?.message ||
+              error,
+            ),
+          );
+        });
+      }
       return { status: "SENT", httpStatus: response.status };
     }
 

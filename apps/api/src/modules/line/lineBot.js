@@ -11,6 +11,7 @@ import {
   handleNativeCitizenEvent,
 } from "./lineNativeCitizen.js";
 import {
+  clearWizardRichMenuForLineUser,
   decorateNativeCitizenResultWithRichMenu,
   handleWizardControl,
 } from "./lineRichMenuWizard.js";
@@ -96,6 +97,20 @@ function continueRichMenuTask(task, event) {
   });
 }
 
+async function clearCitizenPetRichMenu(lineUserId, reason) {
+  if (!lineUserId) return;
+
+  try {
+    await clearWizardRichMenuForLineUser(lineUserId);
+  } catch (error) {
+    console.error("[line-bot] clear PET rich menu failed", {
+      reason,
+      lineUserId: String(lineUserId).slice(0, 8),
+      error: String(error?.message || error),
+    });
+  }
+}
+
 async function loadState(lineUserId) {
   try {
     return await loadCitizenExperienceByLineUserId(lineUserId);
@@ -165,6 +180,10 @@ async function processEvent(event, channel) {
     const smartMenuRequest = smartThaPhoLineMenu.parse(event);
     if (smartMenuRequest?.action === "menu") {
       await smartThaPhoLineMenu.clearPendingFlows(lineUserId);
+      await clearCitizenPetRichMenu(
+        lineUserId,
+        "SMART_HOME",
+      );
       if (event.replyToken) await reply(event.replyToken, [smartThaPhoLineMenu.message()], channel);
       await completeLineWebhookEvent(event);
       return;
@@ -172,6 +191,16 @@ async function processEvent(event, channel) {
 
     if (smartMenuRequest?.action === "system") {
       await smartThaPhoLineMenu.clearPendingFlows(lineUserId);
+
+      if (
+        smartMenuRequest.system !==
+        "pet"
+      ) {
+        await clearCitizenPetRichMenu(
+          lineUserId,
+          `SYSTEM_${smartMenuRequest.system}`,
+        );
+      }
 
       if (smartMenuRequest.system === "waste") {
         const wasteResult = await handleWasteLineEvent({
@@ -203,6 +232,10 @@ async function processEvent(event, channel) {
 
     const wasteResult = await handleWasteLineEvent(event, { audience: "CITIZEN" });
     if (wasteResult.handled) {
+      await clearCitizenPetRichMenu(
+        lineUserId,
+        "WASTE_HANDLED",
+      );
       if (event.replyToken && wasteResult.messages?.length) {
         await reply(event.replyToken, wasteResult.messages, channel);
       }
