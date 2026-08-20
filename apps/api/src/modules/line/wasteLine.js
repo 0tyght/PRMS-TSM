@@ -5,6 +5,14 @@ import { pool, withTransaction } from "../../core/db.js";
 import { WasteCitizenScheduleService } from "../waste/application/WasteCitizenScheduleService.js";
 import { wasteLineShortcuts } from "../waste/application/WasteLineShortcutCatalog.js";
 import { WasteTrackingTokenService } from "../waste/application/WasteTrackingTokenService.js";
+import {
+  WASTE_LINE_CARD_COLORS as LINE_CARD_COLORS,
+  cardButtonsFromActions,
+  lineCardBubble,
+  lineCardButton,
+  lineCardRow,
+  lineCardText,
+} from "./WasteLineCard.js";
 
 const SESSION_MINUTES = 30;
 const DRIVER_INCIDENT_TYPES = new Set([
@@ -111,65 +119,6 @@ function formatMoney(value) {
   return Number(value || 0).toLocaleString("th-TH", { style: "currency", currency: "THB" });
 }
 
-const LINE_CARD_COLORS = Object.freeze({
-  GREEN: "#087F5B",
-  BLUE: "#126E9C",
-  ORANGE: "#B86108",
-  RED: "#B63A32",
-  SLATE: "#415B53",
-});
-
-function lineCardText(text, options = {}) {
-  return {
-    type: "text",
-    text: String(text || "-").slice(0, options.maxLength || 900),
-    size: options.size || "sm",
-    color: options.color || "#28463C",
-    ...(options.weight ? { weight: options.weight } : {}),
-    wrap: options.wrap !== false,
-    ...(options.align ? { align: options.align } : {}),
-    ...(options.flex != null ? { flex: options.flex } : {}),
-    ...(options.margin ? { margin: options.margin } : {}),
-  };
-}
-
-function lineCardRow(label, value) {
-  return {
-    type: "box",
-    layout: "horizontal",
-    margin: "md",
-    contents: [
-      lineCardText(label, { size: "xs", color: "#6B8179", flex: 3 }),
-      lineCardText(value, { size: "sm", color: "#173B2F", weight: "bold", align: "end", flex: 5 }),
-    ],
-  };
-}
-
-function lineCardButton(label, action, { color = LINE_CARD_COLORS.GREEN, style = "primary" } = {}) {
-  return { type: "button", style, height: "sm", color, action };
-}
-
-function lineCardBubble({ eyebrow = "SMART THA PHO", title, accent = LINE_CARD_COLORS.GREEN, rows = [], footerActions = [] }) {
-  return {
-    type: "bubble",
-    size: "mega",
-    header: {
-      type: "box",
-      layout: "vertical",
-      backgroundColor: accent,
-      paddingAll: "16px",
-      contents: [
-        lineCardText(eyebrow, { size: "xxs", color: "#DDF6E6", weight: "bold" }),
-        lineCardText(title, { size: "lg", color: "#FFFFFF", weight: "bold", maxLength: 120 }),
-      ],
-    },
-    body: { type: "box", layout: "vertical", paddingAll: "18px", contents: rows },
-    ...(footerActions.length
-      ? { footer: { type: "box", layout: "vertical", spacing: "sm", contents: footerActions } }
-      : {}),
-  };
-}
-
 function flexMessage(altText, contents, quickReplyItems = []) {
   const actions = wasteLineShortcuts.normalize(quickReplyItems);
   return {
@@ -201,6 +150,13 @@ function textCardTitle(lines) {
   return first.slice(0, 120) || "บริการเก็บขยะ";
 }
 
+function textCardStatus(accent) {
+  if (accent === LINE_CARD_COLORS.RED) return "ตรวจสอบข้อมูล";
+  if (accent === LINE_CARD_COLORS.ORANGE) return "ต้องดำเนินการ";
+  if (accent === LINE_CARD_COLORS.GREEN) return "ดำเนินการสำเร็จ";
+  return "ข้อมูลจากระบบ";
+}
+
 // Every outbound waste text is intentionally rendered as a Flex card.  Free-text
 // input still goes through LINE's normal composer; only the municipal response
 // gains a consistent, readable visual hierarchy.
@@ -208,6 +164,8 @@ export function buildWasteLineTextCard(text, quickReplyItems = []) {
   const source = String(text || "").trim() || "ไม่มีข้อมูลสำหรับแสดง";
   const lines = source.split("\n").map((line) => line.trim()).filter(Boolean);
   const title = textCardTitle(lines);
+  const accent = textCardAccent(source);
+  const progress = /^ขั้นตอน\s+\d+\/\d+/.test(lines[0] || "") ? lines[0] : "";
   const bodyLines = lines.filter((line, index) =>
     index !== 0 &&
     line !== title
@@ -220,10 +178,13 @@ export function buildWasteLineTextCard(text, quickReplyItems = []) {
   return flexMessage(
     source,
     lineCardBubble({
-      eyebrow: "บริการเก็บขยะ · เทศบาลท่าโพธิ์",
+      eyebrow: "SMART THA PHO · บริการเก็บขยะ",
       title,
-      accent: textCardAccent(source),
+      subtitle: progress,
+      accent,
+      statusLabel: textCardStatus(accent),
       rows: [lineCardText(bodyText, { size: "sm", color: "#28463C", maxLength: 1600 })],
+      footerActions: cardButtonsFromActions(wasteLineShortcuts.normalize(quickReplyItems), accent),
     }),
     quickReplyItems,
   );
@@ -250,7 +211,14 @@ function planStatusColor(status) {
 function operationResultCard(title, rows, quickReplyItems = [], accent = LINE_CARD_COLORS.GREEN) {
   return flexMessage(
     title,
-    lineCardBubble({ eyebrow: "ผลการดำเนินงาน", title, accent, rows }),
+    lineCardBubble({
+      eyebrow: "SMART THA PHO · ผลการดำเนินงาน",
+      title,
+      accent,
+      statusLabel: textCardStatus(accent),
+      rows,
+      footerActions: cardButtonsFromActions(wasteLineShortcuts.normalize(quickReplyItems), accent),
+    }),
     quickReplyItems,
   );
 }
@@ -421,14 +389,15 @@ export function buildDriverJobsMessage(plans, scope = "ALL") {
     {
       type: "carousel",
       contents: plans.map((plan) => lineCardBubble({
-        eyebrow: planStatusLabel(plan.status),
+        eyebrow: "แผนปฏิบัติงานเก็บขยะ",
         title: plan.planNo,
+        subtitle: plan.routeName,
         accent: planStatusColor(plan.status),
+        statusLabel: planStatusLabel(plan.status),
         rows: [
           lineCardRow("วันปฏิบัติงาน", formatThaiDate(plan.scheduledDate)),
           lineCardRow("เวลา", formatThaiTimeRange(plan.scheduledStartAt, plan.scheduledEndAt)),
           lineCardRow("รถเก็บขยะ", plan.vehicleCode),
-          lineCardRow("เส้นทาง", plan.routeName),
           lineCardRow("จุดเก็บขยะ", `${Number(plan.stopTotal || 0).toLocaleString("th-TH")} จุด`),
         ],
         footerActions: [
@@ -446,14 +415,16 @@ export function buildCitizenScheduleMessage(result, quickReplyItems = []) {
     {
       type: "carousel",
       contents: result.schedules.map((schedule) => lineCardBubble({
-        eyebrow: schedule.routeCode || "ตารางเก็บขยะ",
+        eyebrow: "กำหนดการเก็บขยะ",
         title: schedule.routeName,
+        subtitle: schedule.routeCode || "ตารางประจำพื้นที่",
         accent: planStatusColor(schedule.status),
+        statusLabel: planStatusLabel(schedule.status),
         rows: [
           lineCardRow("วันเก็บขยะ", formatThaiDate(schedule.scheduledDate)),
           lineCardRow("เวลาโดยประมาณ", formatThaiTimeRange(schedule.scheduledStartAt, schedule.scheduledEndAt)),
-          lineCardRow("สถานะ", planStatusLabel(schedule.status)),
         ],
+        footerActions: cardButtonsFromActions(wasteLineShortcuts.normalize(quickReplyItems), planStatusColor(schedule.status)),
       })),
     },
     quickReplyItems,
@@ -468,17 +439,18 @@ export function buildCitizenChargesMessage(charges, quickReplyItems = []) {
     {
       type: "carousel",
       contents: charges.map((charge) => lineCardBubble({
-        eyebrow: labels[charge.status] || charge.status,
+        eyebrow: "ค่าบริการเก็บขยะ",
         title: formatMoney(charge.amount),
+        subtitle: `รอบ ${formatThaiDate(charge.billingPeriod)}`,
         accent: colors[charge.status] || LINE_CARD_COLORS.SLATE,
+        statusLabel: labels[charge.status] || charge.status,
         rows: [
-          lineCardRow("รอบค่าบริการ", formatThaiDate(charge.billingPeriod)),
-          lineCardRow("สถานะ", labels[charge.status] || charge.status),
           ...(["PENDING", "OVERDUE"].includes(charge.status)
             ? [lineCardRow("กำหนดชำระ", formatThaiDate(charge.dueDate))]
             : []),
           ...(charge.paidAt ? [lineCardRow("ชำระเมื่อ", formatThaiDate(charge.paidAt))] : []),
         ],
+        footerActions: cardButtonsFromActions(wasteLineShortcuts.normalize(quickReplyItems), colors[charge.status] || LINE_CARD_COLORS.SLATE),
       })),
     },
     quickReplyItems,
@@ -492,9 +464,11 @@ function buildDriverPlanDetailMessage({ plan, status, collectedStops, stopTotal,
   return flexMessage(
     `รายละเอียดงาน ${plan.planNo}`,
     lineCardBubble({
-      eyebrow: status,
-      title: plan.planNo,
+      eyebrow: "รายละเอียดแผนปฏิบัติงานเก็บขยะ",
+      title: plan.routeName,
+      subtitle: plan.planNo,
       accent: planStatusColor(plan.status),
+      statusLabel: status,
       rows: [
         lineCardRow("วันปฏิบัติงาน", formatThaiDate(plan.scheduledDate)),
         lineCardRow("เวลา", formatThaiTimeRange(plan.scheduledStartAt, plan.scheduledEndAt)),
@@ -517,10 +491,12 @@ function buildCollectionStopsMessage(plan, stops, quickReplyItems = []) {
     {
       type: "carousel",
       contents: stops.map((stop) => lineCardBubble({
-        eyebrow: `จุดเก็บขยะลำดับ ${stop.sequenceNo}`,
+        eyebrow: "ยืนยันการเก็บขยะ",
         title: stop.stopName,
-        accent: LINE_CARD_COLORS.GREEN,
-        rows: [lineCardRow("สถานะ", "รอยืนยันการเก็บขยะ")],
+        subtitle: `จุดเก็บขยะลำดับ ${stop.sequenceNo}`,
+        accent: LINE_CARD_COLORS.ORANGE,
+        statusLabel: "รอยืนยัน",
+        rows: [lineCardText("ตรวจสอบจุดเก็บขยะให้ถูกต้องก่อนยืนยันการเก็บ", { size: "xs", color: "#49665C" })],
         footerActions: [
           lineCardButton(
             "ยืนยันเก็บขยะแล้ว",

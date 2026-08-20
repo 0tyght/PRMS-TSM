@@ -1,15 +1,20 @@
 import crypto from "node:crypto";
 import { lineChannelSettings } from "../../line/lineChannelSettings.js";
 import { showWasteCitizenRichMenu } from "../../line/CitizenSystemRichMenus.js";
+import {
+  lineCardBubble,
+  lineCardButton,
+  lineCardText,
+} from "../../line/WasteLineCard.js";
 
 
 const THEMES = Object.freeze({
-  SCHEDULE_PUBLISHED: { kicker: "ตารางเก็บขยะ", title: "แจ้งกำหนดการเก็บขยะ", accent: "#176B50", action: ["ดูตารางกำหนดการ", "waste=citizen_schedule", "ตารางกำหนดการเก็บขยะประจำพื้นที่"] },
-  SCHEDULE_WITHDRAWN: { kicker: "ตารางเก็บขยะ", title: "แจ้งเปลี่ยนแปลงกำหนดการ", accent: "#8A5A22", action: ["ตรวจตารางล่าสุด", "waste=citizen_schedule", "ตารางกำหนดการเก็บขยะประจำพื้นที่"] },
-  COLLECTION_STATUS: { kicker: "สถานะการเก็บขยะ", title: "อัปเดตการปฏิบัติงาน", accent: "#176B50", action: ["ดูตำแหน่งรถ", "waste=citizen_location", "ดูตำแหน่งรถเก็บขยะ"] },
-  CHARGE_NOTICE: { kicker: "ค่าบริการเก็บขยะ", title: "ใบแจ้งค่าบริการ", accent: "#7A5B2F", action: ["ตรวจสอบค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการเก็บขยะ"] },
-  PAYMENT_REMINDER: { kicker: "ค่าบริการเก็บขยะ", title: "แจ้งเตือนกำหนดชำระ", accent: "#9A4C2D", action: ["ตรวจสอบค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการเก็บขยะ"] },
-  PLAN_ASSIGNMENT: { kicker: "งานเก็บขยะ", title: "ได้รับมอบหมายงาน", accent: "#315E86", action: ["ดูงานของฉัน", "waste=driver_jobs", "ดูแผนปฏิบัติงานเก็บขยะที่ได้รับมอบหมาย"] },
+  SCHEDULE_PUBLISHED: { kicker: "กำหนดการเก็บขยะ", title: "มีกำหนดการเก็บขยะใหม่", status: "แจ้งกำหนดการ", accent: "#176B50", action: ["ดูตารางกำหนดการ", "waste=citizen_schedule", "ตารางกำหนดการเก็บขยะประจำพื้นที่"] },
+  SCHEDULE_WITHDRAWN: { kicker: "กำหนดการเก็บขยะ", title: "มีการเปลี่ยนแปลงกำหนดการ", status: "โปรดตรวจสอบ", accent: "#8A5A22", action: ["ตรวจตารางล่าสุด", "waste=citizen_schedule", "ตารางกำหนดการเก็บขยะประจำพื้นที่"] },
+  COLLECTION_STATUS: { kicker: "สถานะการเก็บขยะ", title: "อัปเดตการปฏิบัติงาน", status: "กำลังดำเนินการ", accent: "#176B50", action: ["ดูตำแหน่งรถ", "waste=citizen_location", "ดูตำแหน่งรถเก็บขยะ"] },
+  CHARGE_NOTICE: { kicker: "ค่าบริการเก็บขยะ", title: "ใบแจ้งค่าบริการ", status: "รอตรวจสอบ", accent: "#7A5B2F", action: ["ตรวจสอบค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการเก็บขยะ"] },
+  PAYMENT_REMINDER: { kicker: "ค่าบริการเก็บขยะ", title: "แจ้งเตือนกำหนดชำระ", status: "ใกล้ถึงกำหนด", accent: "#9A4C2D", action: ["ตรวจสอบค่าบริการ", "waste=citizen_charges", "ตรวจสอบค่าบริการเก็บขยะ"] },
+  PLAN_ASSIGNMENT: { kicker: "งานเก็บขยะ", title: "ได้รับมอบหมายงาน", status: "รอปฏิบัติงาน", accent: "#315E86", action: ["ดูงานของฉัน", "waste=driver_jobs", "ดูแผนปฏิบัติงานเก็บขยะที่ได้รับมอบหมาย"] },
 });
 
 export function lineChannelKindForWasteNotification(notificationType) {
@@ -21,27 +26,21 @@ export function lineChannelKindForWasteNotification(notificationType) {
 
 export function buildWasteLinePushMessage(notificationType, text) {
   const sourceText = String(text || "").trim();
-  const theme = THEMES[notificationType] || { kicker: "บริการเก็บขยะ", title: "แจ้งข้อมูลจากเทศบาล", accent: "#176B50", action: null };
-  const footer = theme.action ? {
-    type: "box", layout: "vertical", paddingAll: "16px",
-    contents: [{ type: "button", style: "primary", height: "sm", color: theme.accent,
-      action: { type: "postback", label: theme.action[0], data: theme.action[1], displayText: theme.action[2] } }],
-  } : null;
+  const theme = THEMES[notificationType] || { kicker: "บริการเก็บขยะ", title: "แจ้งข้อมูลจากเทศบาล", status: "ข้อมูลใหม่", accent: "#176B50", action: null };
+  const action = theme.action
+    ? { type: "postback", label: theme.action[0], data: theme.action[1], displayText: theme.action[2] }
+    : null;
   return {
     type: "flex",
     altText: (sourceText || theme.title).slice(0, 400),
-    contents: {
-      type: "bubble", size: "mega",
-      header: { type: "box", layout: "vertical", paddingAll: "18px", backgroundColor: theme.accent,
-        contents: [
-          { type: "text", text: "เทศบาลเมืองท่าโพธิ์", color: "#E7F1ED", size: "xs", weight: "bold" },
-          { type: "text", text: theme.kicker, color: "#FFFFFF", size: "sm", margin: "sm" },
-          { type: "text", text: theme.title, color: "#FFFFFF", size: "xl", weight: "bold", wrap: true, margin: "sm" },
-        ] },
-      body: { type: "box", layout: "vertical", paddingAll: "18px",
-        contents: [{ type: "text", text: sourceText || "มีข้อมูลใหม่จากระบบบริการเก็บขยะ", size: "sm", color: "#31473F", wrap: true }] },
-      ...(footer ? { footer } : {}),
-    },
+    contents: lineCardBubble({
+      eyebrow: `SMART THA PHO · ${theme.kicker}`,
+      title: theme.title,
+      accent: theme.accent,
+      statusLabel: theme.status,
+      rows: [lineCardText(sourceText || "มีข้อมูลใหม่จากระบบบริการเก็บขยะ", { size: "sm", maxLength: 1600 })],
+      footerActions: action ? [lineCardButton(action.label, action, { color: theme.accent })] : [],
+    }),
   };
 }
 

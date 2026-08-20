@@ -139,6 +139,17 @@ test("renders every ordinary waste LINE response as a readable Flex card", () =>
   assertValidActions(actionsOf(message));
 });
 
+test("surfaces the next meaningful action on a card instead of hiding it only below the composer", () => {
+  const message = buildWasteLineTextCard(
+    "ยืนยันตัวตนพนักงานประจำรถขยะ\nกรุณาพิมพ์รหัสพนักงานที่เทศบาลบันทึกไว้",
+    catalog.driverGuest(),
+  );
+  const actions = cardActionsOf(message);
+  assert.ok(actions.some((action) => action.data === "waste=driver_link"));
+  assert.equal(message.contents.header.backgroundColor, undefined);
+  assert.equal(message.contents.body.contents[0].backgroundColor, "#F4F8F5");
+});
+
 test("deduplicates repeated shortcuts before sending them to LINE", () => {
   const menu = catalog.driverMenu();
   assert.deepEqual(catalog.normalize([...menu, ...menu]), menu);

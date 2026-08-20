@@ -29,7 +29,7 @@ function accentOf(text) {
   return buildWasteLineTextCard(
     text,
     catalog.driverIdentity(),
-  ).contents.header.backgroundColor;
+  ).contents.header.contents[0].contents[0].color;
 }
 
 test("FR2 validates employee code before asking for phone", () => {
@@ -186,7 +186,7 @@ test("generic waste card does not duplicate a multi-line title in body", () => {
   const title =
     message.contents.header.contents[1].text;
   const body =
-    message.contents.body.contents[0].text;
+    message.contents.body.contents[0].contents[0].text;
 
   assert.equal(
     title,
@@ -199,6 +199,10 @@ test("generic waste card does not duplicate a multi-line title in body", () => {
   assert.match(
     body,
     /กรุณาพิมพ์รหัสพนักงาน/,
+  );
+  assert.equal(
+    message.contents.body.contents[0].backgroundColor,
+    "#F4F8F5",
   );
 });
 
