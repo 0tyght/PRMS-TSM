@@ -34,14 +34,45 @@ test("WasteDashboardPolicy resolves routes and bounded progress", () => {
     }),
     75,
   );
+  assert.deepEqual(
+    wasteDashboardPolicy.filterPlansByRoute(
+      [{ routeId: "r1" }, { routeId: "r2" }],
+      "r2",
+    ),
+    [{ routeId: "r2" }],
+  );
 });
 
 test("WasteReportPolicy summarizes operational completeness", () => {
-  const summary = wasteReportPolicy.summarize([
+  const operations = [
     { status: "COMPLETED", stopTotal: 10, collectedStops: 10 },
-    { status: "IN_PROGRESS", stopTotal: 10, collectedStops: 5 },
-  ]);
-  assert.deepEqual(summary, { totalPlans: 2, completedPlans: 1, totalStops: 20, collectedStops: 15, completionPercent: 75 });
+    { status: "IN_PROGRESS", stopTotal: 10, collectedStops: 5, planNo: "WST-02", routeName: "หมู่ 3", vehicleCode: "DEMO-W01", driverName: "สมชาย" },
+    { status: "SCHEDULED", stopTotal: 4, collectedStops: 0, planNo: "WST-03", routeName: "หมู่ 4" },
+  ];
+  const summary = wasteReportPolicy.summarize(operations);
+  assert.deepEqual(summary, { totalPlans: 3, completedPlans: 1, totalStops: 24, collectedStops: 15, completionPercent: 63 });
+  assert.equal(
+    wasteReportPolicy.filterOperations(
+      operations,
+      { search: "สมชาย" },
+    ).length,
+    1,
+  );
+  assert.deepEqual(
+    wasteReportPolicy.statusBreakdown(operations),
+    { scheduled: 1, inProgress: 1, completed: 1, interrupted: 0 },
+  );
+  assert.deepEqual(
+    wasteReportPolicy.billingSummary([
+      { status: "PAID", count: 1, amount: 100 },
+      { status: "PENDING", count: 2, amount: 50 },
+      { status: "OVERDUE", count: 1, amount: 25 },
+    ]),
+    { totalAmount: 175, totalCount: 4, paidAmount: 100, paidCount: 1, pendingAmount: 50, pendingCount: 2, overdueAmount: 25, overdueCount: 1 },
+  );
+  assert.equal(wasteReportPolicy.isValidDateRange("2026-08-01", "2026-08-21"), true);
+  assert.equal(wasteReportPolicy.isValidDateRange("2026-08-21", "2026-08-01"), false);
+  assert.equal(wasteReportPolicy.billingPeriodDate("2026-08"), "2026-08-01");
 });
 
 test("WasteBillingPolicy calculates outstanding charges", () => {

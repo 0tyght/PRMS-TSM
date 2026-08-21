@@ -10,6 +10,7 @@ export default function DashboardPage({ token, navigate }) {
   const api = useMemo(() => createWasteApplication(token), [token]);
   const [date, setDate] = useState(toDateInput());
   const [data, setData] = useState(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const [selectedRouteId, setSelectedRouteId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -22,6 +23,7 @@ export default function DashboardPage({ token, navigate }) {
 
     try {
       setData(await api.get(`/api/waste/dashboard?date=${date}`));
+      setLastUpdatedAt(new Date());
       setError("");
     } catch (requestError) {
       setError(requestError.message);
@@ -35,6 +37,10 @@ export default function DashboardPage({ token, navigate }) {
   const activePlans = data?.activePlans || [];
   const routes = data?.routes || [];
   const selectedRoute = wasteDashboardPolicy.selectedRoute(routes, selectedRouteId);
+  const visiblePlans = wasteDashboardPolicy.filterPlansByRoute(
+    activePlans,
+    selectedRouteId,
+  );
   const routesWithoutGeometry = wasteDashboardPolicy.routeWithoutGeometryCount(routes);
   const collectionProgress = wasteDashboardPolicy.collectionProgress(summary);
 
@@ -49,7 +55,16 @@ export default function DashboardPage({ token, navigate }) {
   }, [activePlans, routes]);
 
   return <>
-    <PageHead eyebrow="ศูนย์ควบคุมการเก็บขยะ" title="ภาพรวมการเก็บขยะ" detail="ติดตามแผนปฏิบัติงานเก็บขยะ รถเก็บขยะ และเหตุที่ต้องดำเนินการจากข้อมูลจริง" actions={<label className="waste-date-field"><span>วันที่ปฏิบัติงาน</span><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>} />
+    <PageHead
+      eyebrow="ศูนย์ควบคุมการเก็บขยะ"
+      title="ภาพรวมการเก็บขยะ"
+      detail="ติดตามแผนปฏิบัติงานเก็บขยะ รถเก็บขยะ และเหตุที่ต้องดำเนินการจากข้อมูลจริง"
+      actions={<div className="waste-dashboard-actions">
+        <label className="waste-date-field"><span>วันที่ปฏิบัติงาน</span><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
+        <button type="button" className="waste-button waste-button--secondary" onClick={() => void load()}>รีเฟรชข้อมูล</button>
+        {lastUpdatedAt ? <span className="waste-dashboard-updated" aria-live="polite">อัปเดต {lastUpdatedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> : null}
+      </div>}
+    />
     <ErrorNotice error={error} onRetry={load} />
     {loading ? <LoadingState /> : <>
       <section className="waste-kpis waste-kpis--operational">
@@ -116,7 +131,7 @@ export default function DashboardPage({ token, navigate }) {
   </header>
 
   <WasteMap
-    plans={activePlans}
+    plans={visiblePlans}
     routes={routes}
     selectedRouteId={selectedRouteId}
   />
@@ -207,7 +222,7 @@ export default function DashboardPage({ token, navigate }) {
 </article>
         <article className="waste-panel waste-panel--attention"><header className="waste-panel__head"><div><p>รายการเร่งดำเนินการ</p><h2>รายการที่ต้องติดตาม</h2></div><button type="button" className="waste-text-button" onClick={() => navigate("incidents")}>ดูทั้งหมด</button></header><div className="waste-attention-metric"><span>ค่าบริการค้างชำระ</span><strong>{formatMoney(summary.overdueAmount)}</strong><small>{formatNumber(summary.overdueCharges)} รายการ</small></div>{data?.incidents?.length ? <ul className="waste-incident-list">{data.incidents.map((incident) => <li key={incident.id}><span>!</span><div><strong>{incident.vehicleCode || incident.planNo || "เหตุที่แจ้งเข้ามา"}</strong><p>{incident.description}</p></div><StatusBadge value={incident.status} /></li>)}</ul> : <EmptyState title="ไม่มีเหตุค้างดำเนินการ" detail="เมื่อพนักงานประจำรถขยะแจ้งเหตุหรือเจ้าหน้าที่บันทึกเหตุ รายการจะแสดงที่นี่" />}</article>
       </section>
-      <section className="waste-panel"><header className="waste-panel__head"><div><p>การปฏิบัติงานประจำวัน</p><h2>แผนปฏิบัติงานเก็บขยะ</h2></div><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate("plans")}>จัดการแผนปฏิบัติงานเก็บขยะ</button></header>{activePlans.length ? <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th>แผนปฏิบัติงานเก็บขยะ</th><th>เส้นทาง</th><th>รถ / พนักงานประจำรถขยะ</th><th>ความคืบหน้า</th><th>สถานะ</th></tr></thead><tbody>{activePlans.map((plan) => <tr key={plan.id}><td><strong>{plan.planNo}</strong><small>{plan.scheduledDate}</small></td><td>{plan.routeName}</td><td><strong>{plan.vehicleCode}</strong><small>{plan.driverName}</small></td><td><div className="waste-progress"><i><b style={{ width: `${wasteDashboardPolicy.planProgress(plan)}%` }} /></i><span>{formatNumber(plan.collectedStops)} / {formatNumber(plan.stopTotal)} จุด</span></div></td><td><StatusBadge value={plan.status} /></td></tr>)}</tbody></table></div> : <EmptyState title="ยังไม่มีแผนปฏิบัติงานเก็บขยะในวันนี้" detail="สร้างแผนโดยระบุเส้นทาง รถ และพนักงานประจำรถขยะ เพื่อเริ่มติดตามการเก็บขยะ" actionLabel="สร้างแผนปฏิบัติงานเก็บขยะ" onAction={() => navigate("plans")} />}</section>
+      <section className="waste-panel"><header className="waste-panel__head"><div><p>การปฏิบัติงานประจำวัน</p><h2>{selectedRoute ? `แผนปฏิบัติงาน: ${selectedRoute.routeCode}` : "แผนปฏิบัติงานเก็บขยะ"}</h2></div><button type="button" className="waste-button waste-button--secondary" onClick={() => navigate("plans")}>จัดการแผนปฏิบัติงานเก็บขยะ</button></header>{visiblePlans.length ? <div className="waste-table-wrap"><table className="waste-table"><thead><tr><th scope="col">แผนปฏิบัติงานเก็บขยะ</th><th scope="col">เส้นทาง</th><th scope="col">รถ / พนักงานประจำรถขยะ</th><th scope="col">ความคืบหน้า</th><th scope="col">สถานะ</th></tr></thead><tbody>{visiblePlans.map((plan) => <tr key={plan.id}><td><strong>{plan.planNo}</strong><small>{plan.scheduledDate}</small></td><td>{plan.routeName}</td><td><strong>{plan.vehicleCode}</strong><small>{plan.driverName}</small></td><td><div className="waste-progress"><i><b style={{ width: `${wasteDashboardPolicy.planProgress(plan)}%` }} /></i><span>{formatNumber(plan.collectedStops)} / {formatNumber(plan.stopTotal)} จุด</span></div></td><td><StatusBadge value={plan.status} /></td></tr>)}</tbody></table></div> : <EmptyState title={selectedRoute ? "ยังไม่มีแผนปฏิบัติงานสำหรับเส้นทางที่เลือก" : "ยังไม่มีแผนปฏิบัติงานเก็บขยะในวันนี้"} detail={selectedRoute ? "เลือกทุกเส้นทางเพื่อกลับไปดูแผนทั้งหมด หรือสร้างแผนใหม่ให้เส้นทางนี้" : "สร้างแผนโดยระบุเส้นทาง รถ และพนักงานประจำรถขยะ เพื่อเริ่มติดตามการเก็บขยะ"} actionLabel="จัดการแผนปฏิบัติงานเก็บขยะ" onAction={() => navigate("plans")} />}</section>
     </>}
   </>;
 }

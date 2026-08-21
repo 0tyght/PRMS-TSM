@@ -12,6 +12,19 @@ export class WasteDashboardPolicy {
     return "";
   }
 
+  filterPlansByRoute(
+    plans = [],
+    routeId = "",
+  ) {
+    if (!routeId) {
+      return plans;
+    }
+
+    return plans.filter(
+      (plan) => plan.routeId === routeId,
+    );
+  }
+
   planProgress(plan = {}) {
     const total = Number(plan.stopTotal || 0);
     const completed = Number(plan.collectedStops || 0);
